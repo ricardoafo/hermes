@@ -13,6 +13,7 @@ from hypothesis import given
 from hypothesis import strategies as st
 
 from hermes.application.backtest.funnel_replay import COST_STRESS
+from hermes.application.calibration.batch_floors import SIGNED_BEFORE_CAP_ROW
 from hermes.application.calibration.research_batch import (
     BATCH_CHECK_NAMES,
     FLOORS,
@@ -627,3 +628,112 @@ def test_a_floor_value_is_accepted_iff_it_is_at_least_as_strict(
         refused = False
 
     assert refused is not floor.holds(float(value))
+
+
+# ---------------------------------------------------------------------------
+# ADR-029 §4: the round-trip cap row (issue #1240)
+# ---------------------------------------------------------------------------
+
+
+def test_a_new_batch_candidate_without_the_cap_is_refused() -> None:
+    """ADR-029 §4 caps every candidate's Train run, so every new candidate signs the row."""
+    fm = batch_front_matter()
+    del fm["candidates"][1]["round_trips_90d_max"]
+
+    error = _refusal(fm)
+
+    assert (error.check, error.message) == (
+        "funnel_floors",
+        "candidates[1] signs no round_trips_90d_max (ADR-029 §4)",
+    )
+
+
+def test_a_candidate_holding_under_a_day_without_the_cap_row_is_refused() -> None:
+    """ADR-029 §5: a candidate that holds under a day is told why its cap is missing."""
+    fm = batch_front_matter()
+    del fm["candidates"][1]["round_trips_90d_max"]
+    fm["candidates"][1]["holding"] = "under_a_day"
+
+    error = _refusal(fm)
+
+    assert (error.check, error.message) == (
+        "funnel_floors",
+        "candidates[1] holds under a day but signs no round_trips_90d_max (ADR-029 §4)",
+    )
+
+
+def test_each_candidate_carries_its_own_signed_cap() -> None:
+    """The signed cap reaches the gate as the candidate's own number."""
+    fm = batch_front_matter()
+    fm["candidates"][1].update(holding="under_a_day", round_trips_90d_max=120)
+
+    batch = parse_batch(BATCH_PATH, batch_text(fm))
+
+    assert [c.round_trips_90d_max for c in batch.candidates] == [250, 120]
+
+
+def test_a_cap_above_250_is_refused_as_looser_than_adr_029() -> None:
+    """ADR-029 §4: a batch may tighten the cap, never loosen it; 251 is one past it."""
+    fm = batch_front_matter()
+    fm["candidates"][0]["round_trips_90d_max"] = 251
+
+    error = _refusal(fm)
+
+    assert (error.check, error.message) == (
+        "funnel_floors",
+        "candidates[0].round_trips_90d_max 251 is looser than ADR-029 §4 (<= 250)",
+    )
+
+
+def test_batch_check_fails_funnel_floors_for_a_missing_cap_row() -> None:
+    """``hermes batch check`` names the missing row on the funnel_floors line."""
+    fm = batch_front_matter()
+    del fm["candidates"][0]["round_trips_90d_max"]
+    text, git = signed(fm)
+
+    assert _checks(text, git)["funnel_floors"] == BatchCheck(
+        "funnel_floors", False, "candidates[0] signs no round_trips_90d_max (ADR-029 §4)"
+    )
+
+
+def test_batch_check_names_the_signed_caps_on_funnel_floors() -> None:
+    """A batch that signs caps says so on the funnel_floors line, next to the floors."""
+    fm = batch_front_matter()
+    fm["candidates"][0]["round_trips_90d_max"] = 120
+    text, git = signed(fm)
+
+    assert _checks(text, git)["funnel_floors"].detail == (
+        "dsr_min 0.95; every ADR-021 §5 floor held; round trips per 90 days at most [120, 250]"
+    )
+
+
+def test_only_the_batches_signed_before_the_cap_row_are_exempt() -> None:
+    """swing-b1 and swing-b2 were signed before ADR-029 §4's row; no other batch may skip it."""
+    assert frozenset({"swing-b1", "swing-b2"}) == SIGNED_BEFORE_CAP_ROW
+
+
+def test_an_exempt_batch_id_parses_without_the_cap() -> None:
+    """The exemption reads the batch_id the parser already uses, so an exempt batch needs no cap."""
+    fm = batch_front_matter()
+    fm["batch_id"] = "swing-b1"
+    for candidate in fm["candidates"]:
+        del candidate["round_trips_90d_max"]
+    path = BATCH_PATH.replace("/b1.md", "/swing-b1.md")
+
+    batch = parse_batch(path, batch_text(fm))
+
+    assert [c.round_trips_90d_max for c in batch.candidates] == [None, None]
+
+
+def test_the_batches_signed_before_the_cap_row_sign_no_cap() -> None:
+    """swing-b1 and swing-b2 were signed without the row, so the gate adds none to them.
+
+    Pre-registration binds: a row they did not sign must not judge them.
+    """
+    paths = ("swing-b1", "swing-b2")
+    batches = [
+        parse_batch(path, (REPO_ROOT / path).read_text("utf-8"))
+        for path in (f"docs/experiments/swing-mvp1/batches/{name}.md" for name in paths)
+    ]
+
+    assert [[c.round_trips_90d_max for c in b.candidates] for b in batches] == [[None] * 4] * 2

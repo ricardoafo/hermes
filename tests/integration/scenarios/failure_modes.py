@@ -76,6 +76,11 @@ _FUZZ_CONFIG = _U + "infrastructure/config/test_loader_fuzz.py::"
 _CONTENTION = _I + "adapters/ledger/test_ledger_contention.py::"
 _FILE_LOCK = _U + "infrastructure/test_file_lock.py::"
 _META = _I + "metamorphic/test_backtest_relations.py::"
+_CAP = _U + "application/calibration/test_round_trip_cap.py::"
+_GATE = _U + "application/calibration/test_signed_gate.py::"
+_EVIDENCE = _U + "application/calibration/test_evidence_files.py::"
+_BATCH = _U + "application/calibration/test_research_batch.py::"
+_RUN_BACKTEST = _U + "scripts_backtest/test_run_portfolio_backtest.py::"
 _STOPS = _S + "test_exchange_stops.py::"
 _KEEPER = _U + "application/execution/test_exchange_stops.py::"
 _KEEPER_MACHINE = _U + "application/execution/test_exchange_stops_state_machine.py::"
@@ -1416,6 +1421,55 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             proved_by=(
                 _NULL + "test_fewer_series_than_one_over_q_is_a_usage_error",
                 _NULL + "test_a_series_that_crashes_exits_3_and_writes_no_record",
+            ),
+        ),
+        FailureMode(
+            "A candidate over 250 round trips in a 90-day window passes Train (ADR-029 §4)",
+            proved_by=(
+                _CAP + "test_251_round_trips_in_one_window_fail_the_row",
+                _CAP + "test_exactly_250_round_trips_in_one_window_pass_the_row",
+                _CAP + "test_a_round_trip_exactly_90_days_after_the_first_shares_its_window",
+                _CAP + "test_a_round_trip_just_over_90_days_after_the_first_starts_another_window",
+                _CAP + "test_the_busiest_window_equals_a_count_from_every_start",
+                _GATE + "test_251_round_trips_in_90_days_fail_a_capped_candidate_s_train",
+            ),
+        ),
+        FailureMode(
+            "A capped candidate's evidence carries no round-trip times and the cap row passes",
+            proved_by=(
+                _CAP + "test_evidence_without_round_trip_times_fails_the_row",
+                _GATE + "test_a_capped_candidate_without_round_trip_times_fails",
+            ),
+        ),
+        FailureMode(
+            "Round-trip times disagree with the trade count, or are naive or not UTC",
+            proved_by=(
+                _EVIDENCE + "test_unusable_round_trip_times_are_refused_with_the_reason",
+                _RUN_BACKTEST + "test_evidence_dates_every_round_trip_the_performance_file_counts",
+            ),
+        ),
+        FailureMode(
+            "A round-trip time from the sealed OOS window reaches the gate",
+            proved_by=(
+                _U + "application/calibration/test_backtest_funnel.py::TestValidateEvidence::"
+                "test_a_round_trip_opened_on_the_oos_start_is_refused",
+            ),
+        ),
+        FailureMode(
+            "A new batch signs a candidate without the cap, or a cap above 250",
+            proved_by=(
+                _BATCH + "test_a_new_batch_candidate_without_the_cap_is_refused",
+                _BATCH + "test_only_the_batches_signed_before_the_cap_row_are_exempt",
+                _BATCH + "test_a_candidate_holding_under_a_day_without_the_cap_row_is_refused",
+                _BATCH + "test_a_cap_above_250_is_refused_as_looser_than_adr_029",
+                _BATCH + "test_batch_check_fails_funnel_floors_for_a_missing_cap_row",
+            ),
+        ),
+        FailureMode(
+            "The cap row judges a batch signed before it, changing a signed verdict",
+            proved_by=(
+                _BATCH + "test_the_batches_signed_before_the_cap_row_sign_no_cap",
+                _GATE + "test_a_candidate_that_signed_no_cap_gets_no_round_trip_row",
             ),
         ),
         FailureMode(

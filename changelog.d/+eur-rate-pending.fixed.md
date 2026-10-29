@@ -1,0 +1,1 @@
+- A fill whose EUR rate the daily pass prices later now logs `eur_rate_pending` at info, so the daily report no longer counts each live fill as an `eur_rate_lookup_failed` warning; real FX provider failures still warn (#996).

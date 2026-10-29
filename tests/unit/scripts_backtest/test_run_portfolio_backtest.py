@@ -369,6 +369,19 @@ def test_evidence_daily_equity_is_the_base_run(funnel_run: _SyntheticRun) -> Non
     assert evidence["start_date"] == _WINDOW[0]
 
 
+def test_evidence_dates_every_round_trip_the_performance_file_counts(
+    funnel_run: _SyntheticRun,
+) -> None:
+    """ADR-029 §4: the cap row counts the same round trips as the §9 trade rows."""
+    evidence = json.loads(funnel_run.evidence.read_text())
+    performance = json.loads(funnel_run.performance.read_text())
+
+    assert (len(evidence["round_trip_opened_at"]), evidence["trade_count"]) == (
+        len(performance["trades"]),
+        len(performance["trades"]),
+    )
+
+
 def test_without_the_flag_one_trial_and_no_evidence(tmp_path: Path) -> None:
     """R-3: a run without the flag logs only the base trial and writes no evidence file."""
     run = _run_driver(tmp_path, funnel=False)
