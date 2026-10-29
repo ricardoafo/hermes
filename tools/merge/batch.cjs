@@ -171,26 +171,15 @@ async function runBatch({ base, candidates, ops, log = () => {} }) {
  * workspace holds the PRs' versions of every file, including these.
  *
  * @param {{ cwd: string, base: string, gatesScript: string, failFile: string,
- *           ciConclusion: (head: string) => Promise<string|null> }} input
+ *           token: string, ciConclusion: (head: string) => Promise<string|null> }} input
  * @returns {BatchOps}
  */
-function gitOps({ cwd, base, gatesScript, failFile, ciConclusion }) {
+function gitOps({ cwd, base, gatesScript, failFile, token, ciConclusion }) {
   const git = (args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
-  // actions/checkout leaves the job token in .git/config as an
-  // extraheader. The gates run the batch's code, so the header moves out
-  // of the config on first use and is passed to each fetch on the
-  // command line instead: nothing the gates can read holds it.
-  let auth = null;
-  const authed = (args) => {
-    if (auth === null) {
-      const key = 'http.https://github.com/.extraheader';
-      auth = git(['config', '--local', '--get', key]).stdout.trim();
-      if (auth) {
-        git(['config', '--local', '--unset-all', key]);
-      }
-    }
-    return git(auth ? ['-c', `http.https://github.com/.extraheader=${auth}`, ...args] : args);
-  };
+  // The job checks out with persist-credentials off, so no file the gates
+  // can read holds the token. Each fetch gets it on the command line.
+  const header = `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`;
+  const authed = (args) => git(['-c', `http.https://github.com/.extraheader=${header}`, ...args]);
   const must = (args) => {
     const r = git(args);
     if (r.status !== 0) {
