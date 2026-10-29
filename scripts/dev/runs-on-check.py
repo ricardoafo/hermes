@@ -8,7 +8,11 @@ token. A ``runs-on`` passes when:
 
 - it is a list that contains ``self-hosted``; or
 - it is an expression whose last ``||`` operand is ``fromJSON('[...]')`` of a
-  list that contains ``self-hosted`` and which names no hosted image anywhere.
+  list that contains ``self-hosted`` and which names no hosted image anywhere; or
+- it is the fork route: a pull request from a fork goes to a GitHub-hosted
+  image, everything else to one of the forms above, and the job reads no
+  secret but the job token. A fork's code must not run on the self-hosted
+  pool, and a fork's run gets a read-only token and no secrets.
 
 Usage:
     python3 scripts/dev/runs-on-check.py [WORKFLOW_DIR]    (default .github/workflows)
@@ -30,6 +34,12 @@ import yaml
 
 HOSTED_IMAGE = re.compile(r"\b(?:ubuntu|windows|macos)-(?:latest|\d)", re.IGNORECASE)
 _FALLBACK = re.compile(r"fromJSON\(\s*'(\[[^']*\])'\s*\)\s*\)?\s*\}\}\s*$")
+_FORK_ROUTE = re.compile(
+    r"^\$\{\{\s*github\.event_name == 'pull_request'"
+    r" && github\.event\.pull_request\.head\.repo\.full_name != github\.repository"
+    r" && '(?P<image>ubuntu-\d+\.\d+)' \|\| \((?P<rest>.+)\)\s*\}\}$"
+)
+_SECRET = re.compile(r"secrets\.(\w+)")
 
 
 def violation(runs_on: Any) -> str | None:
@@ -55,6 +65,25 @@ def violation(runs_on: Any) -> str | None:
     return None if "self-hosted" in labels else "the fallback list has no self-hosted"
 
 
+def fork_route_violation(runs_on: Any, job: dict[str, Any]) -> str | None:
+    """Return why a fork-routed ``runs_on`` is unsafe, or ``None`` when it is safe.
+
+    Only called for an expression that names a hosted image. The image must be
+    reached through the exact fork condition, the other branch must pass
+    :func:`violation` on its own, and the job may read no secret but the job token.
+    """
+    match = _FORK_ROUTE.match(runs_on.strip()) if isinstance(runs_on, str) else None
+    if match is None:
+        return "names a GitHub-hosted image"
+    inner = violation("${{ " + match.group("rest") + " }}")
+    if inner is not None:
+        return f"fork route: the non-fork branch {inner}"
+    secrets = sorted({name for name in _SECRET.findall(json.dumps(job)) if name != "GITHUB_TOKEN"})
+    if secrets:
+        return f"fork route: the job reads secrets a fork's run must not hold: {', '.join(secrets)}"
+    return None
+
+
 def check(directory: Path) -> list[str]:
     """Return one message per job in ``directory``'s workflows that can use a hosted runner."""
     problems: list[str] = []
@@ -65,6 +94,8 @@ def check(directory: Path) -> list[str]:
             if not isinstance(job, dict) or "uses" in job:
                 continue  # a reusable-workflow call runs on the callee's runner, checked there
             reason = violation(job.get("runs-on"))
+            if reason == "names a GitHub-hosted image":
+                reason = fork_route_violation(job.get("runs-on"), job)
             if reason is not None:
                 problems.append(f"{path.name}: job '{name}': {reason}")
     return problems
@@ -85,11 +116,28 @@ def self_test() -> int:
         ("${{ vars.R || fromJSON('[\"linux\"]') }}", False),
         ("${{ vars.R || fromJSON('[\"self-hosted\"]') && 'windows-latest' }}", False),
     ]
+    fork = (
+        "${{ github.event_name == 'pull_request'"
+        " && github.event.pull_request.head.repo.full_name != github.repository"
+        " && 'ubuntu-24.04' || (" + pinned[4:-3] + ") }}"
+    )
+    fork_cases = [
+        (fork, {}, True),
+        (fork, {"env": {"T": "${{ secrets.GITHUB_TOKEN }}"}}, True),
+        (fork, {"env": {"K": "${{ secrets.VPS_SSH_KEY }}"}}, False),
+        (fork.replace("!=", "=="), {}, False),
+        (fork.replace('"self-hosted",', ""), {}, False),
+    ]
     failures = [str(case) for case, ok in cases if (violation(case) is None) != ok]
+    failures += [
+        str(case)
+        for case, job, ok in fork_cases
+        if ((violation(case) is None or fork_route_violation(case, job) is None) != ok)
+    ]
     if failures:
         print(f"SELF-TEST FAIL: {failures}", file=sys.stderr)
         return 1
-    print(f"SELF-TEST PASS: {len(cases)} cases")
+    print(f"SELF-TEST PASS: {len(cases) + len(fork_cases)} cases")
     return 0
 
 

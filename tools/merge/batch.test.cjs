@@ -11,7 +11,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { BISECT_CONFLICT_GATE, runBatch, gitOps } = require('./batch.cjs');
+const { BISECT_CONFLICT_GATE, gateEnv, runBatch, gitOps } = require('./batch.cjs');
 const { BATCH_CONFLICT_REASON } = require('./decisions.cjs');
 
 /**
@@ -179,4 +179,18 @@ test('gitOps: exposes every operation runBatch needs', () => {
     Object.keys(ops).sort(),
     ['ciConclusion', 'containsBase', 'fetchHead', 'gate', 'merge', 'reset', 'tree'],
   );
+});
+
+test('gateEnv: drops every token the step carries and keeps the rest', () => {
+  const env = gateEnv({
+    'INPUT_GITHUB-TOKEN': 'ghs_x',
+    ACTIONS_RUNTIME_TOKEN: 'r',
+    ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'i',
+    GITHUB_TOKEN: 'g',
+    gh_token: 'lower',
+    PATH: '/usr/bin',
+    HOME: '/home/runner',
+    UV_CACHE_DIR: '/cache',
+  });
+  assert.deepEqual(env, { PATH: '/usr/bin', HOME: '/home/runner', UV_CACHE_DIR: '/cache' });
 });

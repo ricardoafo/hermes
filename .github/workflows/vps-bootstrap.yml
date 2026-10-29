@@ -35,7 +35,8 @@ permissions:
 jobs:
   bootstrap:
     name: Bootstrap hermes-01
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]') }}
+    # The ops runner, not the CI pool: the CI pool runs pull request code.
+    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]') }}
     environment: prod
     timeout-minutes: 10
 
@@ -212,3 +213,8 @@ jobs:
               "$VPS_SSH_USER@$VPS_SSH_HOST" \
               "env $(printf '%q ' "${env_args[@]}") bash" \
               < scripts/deploy/vps_bootstrap.sh
+
+      # The runner container outlives the job, so the key must not.
+      - name: Remove the SSH keyfile
+        if: always()
+        run: rm -f ~/.ssh/vps_id

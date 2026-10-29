@@ -50,9 +50,13 @@ jobs:
   # matching the old fail-fast: false matrix — surface every violation.
   # Docs-only changesets skip the code checks.
   # ─────────────────────────────────────────────────────────────────────
+  #
+  # A pull request from a fork runs on a GitHub-hosted runner, never on
+  # the self-hosted pool: its code is untrusted and the pool shares a
+  # host with the deploy runners. Steps that need the pool's data skip.
   ci-success:
     name: CI success
-    runs-on: ${{ vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]') }}
+    runs-on: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04' || (vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]')) }}
     # A normal run takes 5-8 minutes on a busy pool. Each network step
     # has its own short timeout, so a hung download fails that step
     # instead of holding a runner until this cap. 35, not 20: with many
@@ -422,8 +426,10 @@ jobs:
       # and compares decisions only; no metric, no trial (ADR-025). Exits
       # at once when no engine file changed. Last, so a red unit tier is
       # reported before the replay's minutes are spent.
+      # Forks skip it: the bar data lives on the self-hosted pool, and a
+      # maintainer re-runs a fork's engine change from a branch here.
       - name: Train decision replay
-        if: ${{ !cancelled() && github.event_name == 'pull_request' && steps.unit.outcome == 'success' }}
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && steps.unit.outcome == 'success' }}
         timeout-minutes: 15
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
