@@ -3,7 +3,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions         ● live · checked 14:00 · next 18:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions       ● live · checked 12m ago · next 18:00  ◑ CONTROL ROOM
   ┏━ SERVICES  ──────────────────────────────────── computed   ┏━ DATA AND TIMING  ───────────────────────────── computed
    ▸ hermes        active (running)   no timer                  market data    last bar check 10-03 14:00 · 12 min ago
      bot           active (running)   no timer                  order book     not available yet (fetched only when a
@@ -46,7 +46,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions             ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions           ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
   ┏━ SERVICES  ──────────────────────────────────────────────────────── computed   ┏━ DATA AND TIMING  ───────────────────────────────────────────────── computed
    ▸ hermes        active (running)   no timer                                      market data    last bar check 10-03 14:00 · 12 min ago
      bot           active (running)   no timer                                      order book     not available yet (fetched only when a signal fills)
@@ -98,7 +98,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                             ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                           ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
   ┏━ SERVICES  ──────────────────────────────────────────────────────────────────────────────────────────────── computed   ┏━ DATA AND TIMING  ───────────────────────────────────────────────────────────────────────────────────────── computed
    ▸ hermes        active (running)   no timer                                                                              market data    last bar check 10-03 14:00 · 12 min ago
      bot           active (running)   no timer                                                                              order book     not available yet (fetched only when a signal fills)
@@ -165,7 +165,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA        ● live · checked 12m ago · next 18:00  ◑
   ┏━ SERVICES  ─────────────────────────────────────────────────────── computed
    ▸ hermes        active (running)   no timer
      bot           active (running)   no timer
@@ -196,7 +196,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions        ● live · checked 14:00 · next 18:00 14:12:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions      ● live · checked 12m ago · next 18:00 14:12:00  ◑ NEON
   ┏━ SERVICES  ──────────────────────────────────── computed   ┏━ DATA AND TIMING  ───────────────────────────── computed
    ▸ hermes        active (running)   no timer                  market data    last bar check 10-03 14:00 · 12 min ago
      bot           active (running)   no timer                  order book     not available yet (fetched only when a
@@ -239,7 +239,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                     ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                   ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ NEON
   ┏━ SERVICES  ──────────────────────────────────────────────────────────────────────────────────────────────── computed   ┏━ DATA AND TIMING  ───────────────────────────────────────────────────────────────────────────────────────── computed
    ▸ hermes        active (running)   no timer                                                                              market data    last bar check 10-03 14:00 · 12 min ago
      bot           active (running)   no timer                                                                              order book     not available yet (fetched only when a signal fills)
@@ -306,7 +306,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA        ● live · checked 12m ago · next 18:00  ◑
   ┏━ SERVICES  ─────────────────────────────────────────────────────── computed
    ▸ hermes        active (running)   no timer
      bot           active (running)   no timer
