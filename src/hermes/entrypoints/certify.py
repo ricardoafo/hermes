@@ -456,6 +456,7 @@ def _certify_batch(parsed: argparse.Namespace, stream: TextIO, err: TextIO) -> i
                 f"the gate out of {record.state} is not implemented for batch candidates; "
                 "ADR-026 signs the backtest gate only."
             ),
+            round_trip_cap=candidate.round_trips_90d_max,
         )
 
     now = now_utc()

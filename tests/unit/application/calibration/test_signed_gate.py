@@ -5,7 +5,8 @@ The judge tests write a synthetic batch and a candidate's three evidence files
 """
 
 import json
-from datetime import UTC, datetime
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +35,7 @@ from hermes.domain.calibration.trial_record import TrialSummary
 from hermes.infrastructure.project_root import load_pre_registration
 from tests.support.candidate_evidence import (
     BODY,
+    DAYS,
     SECONDARY_V1,
     STRATEGY_ID,
     TRAIN_DAYS,
@@ -138,11 +140,11 @@ def test_validation_vs_train_binds_on_a_validation_run(tmp_path: Path) -> None:
 
 
 def test_a_strong_candidate_passes_every_check_on_validation(tmp_path: Path) -> None:
-    """The gate's rows: v1's backtest rows, then the funnel, every one PASS on strong evidence."""
+    """The gate's rows: v1's backtest rows, the funnel, then the ADR-029 §4 cap, all PASS."""
     result = _judge(tmp_path, "validation")
 
     assert [(c.check, c.status) for c in result.checks] == [
-        (name, "PASS") for name in (*_V1_ROWS, *FUNNEL_CHECK_NAMES)
+        (name, "PASS") for name in (*_V1_ROWS, *FUNNEL_CHECK_NAMES, "round_trip_cap")
     ]
 
 
@@ -309,3 +311,65 @@ def test_judge_candidate_is_a_candidate_judge() -> None:
     judge: CandidateJudge = judge_candidate
 
     assert judge is judge_candidate
+
+
+# ---------------------------------------------------------------------------
+# ADR-029 §4: the round-trip cap row (issue #1240)
+# ---------------------------------------------------------------------------
+
+_TRAIN_DAY = datetime(2021, 6, 1, tzinfo=UTC)
+
+
+def _hourly(count: int) -> list[datetime]:
+    """``count`` round trips opened one hour apart in Train: one 90-day window."""
+    return [_TRAIN_DAY + timedelta(hours=i) for i in range(count)]
+
+
+def _capped(tmp_path: Path, split: Split, trips: list[datetime] | None) -> GateResult:
+    files = write_candidate(
+        tmp_path,
+        days=TRAIN_DAYS if split == "train" else DAYS,
+        round_trip_opened_at=trips,
+        round_trip_times=trips is not None,
+    ).files
+    batch = candidate_batch(round_trip_cap=250)
+    return judge_candidate(STRATEGY_ID, split, files, batch, _FEW_TRIALS, v1=_V1, files=_FILES)
+
+
+def test_250_round_trips_in_one_window_pass_the_round_trip_row(tmp_path: Path) -> None:
+    """ADR-029 §4: exactly the cap passes, and the row follows the funnel rows."""
+    result = _capped(tmp_path, "validation", _hourly(250))
+
+    assert [(c.check, c.status) for c in result.checks][-2:] == [
+        (FUNNEL_CHECK_NAMES[-1], "PASS"),
+        ("round_trip_cap", "PASS"),
+    ]
+
+
+def test_251_round_trips_in_90_days_fail_a_capped_candidate_s_train(tmp_path: Path) -> None:
+    """ADR-029 §4: one round trip over the cap fails the Train verdict."""
+    result = _capped(tmp_path, "train", _hourly(251))
+
+    assert (_statuses(result)["round_trip_cap"], result.passed) == ("FAIL", False)
+
+
+def test_a_capped_candidate_without_round_trip_times_fails(tmp_path: Path) -> None:
+    """Evidence written before the row cannot show the cap held, so the row fails closed."""
+    result = _capped(tmp_path, "train", None)
+
+    assert (_statuses(result)["round_trip_cap"], result.passed) == ("FAIL", False)
+
+
+def test_a_candidate_that_signed_no_cap_gets_no_round_trip_row(tmp_path: Path) -> None:
+    """Batches signed before ADR-029 §4 sign no cap and are judged on the rows they signed."""
+    files = write_candidate(tmp_path, days=TRAIN_DAYS, round_trip_opened_at=_hourly(251)).files
+    batch = candidate_batch()
+    uncapped = replace(
+        batch, candidates=tuple(replace(c, round_trips_90d_max=None) for c in batch.candidates)
+    )
+
+    result = judge_candidate(
+        STRATEGY_ID, "train", files, uncapped, _FEW_TRIALS, v1=_V1, files=_FILES
+    )
+
+    assert [c.check for c in result.checks] == [*_V1_ROWS, *FUNNEL_CHECK_NAMES]

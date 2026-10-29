@@ -11,7 +11,9 @@ that read history through :class:`~hermes.ports.git_history.GitHistoryPort`
 (the signing hash, the card hashes and the bound code), and returns one
 :class:`BatchCheck` per check so the operator sees each pass and fail.
 
-Reference: ADR-026 §1, §2; ADR-021 §5; issue #1057.
+A candidate may sign an ADR-029 §4 round-trip cap (:mod:`.batch_floors`).
+
+Reference: ADR-026 §1, §2; ADR-021 §5; ADR-029 §4, §5; issues #1057, #1240.
 """
 
 import hashlib
@@ -35,6 +37,15 @@ from hermes.application.calibration.backtest_funnel import (
     FunnelThresholdError,
     FunnelThresholds,
     parse_funnel_block,
+)
+from hermes.application.calibration.batch_floors import (
+    CAP_KEYS,
+    FLOORS,
+    SIGNED_BEFORE_CAP_ROW,
+    Floor,
+    RoundTripCapError,
+    caps_detail,
+    signed_cap,
 )
 from hermes.ports.files import FilesPort
 from hermes.ports.git_history import GitHistoryPort
@@ -139,33 +150,6 @@ ParameterValue = int | Decimal
 # ---------------------------------------------------------------------------
 
 
-@dataclass(frozen=True, slots=True)
-class Floor:
-    """One ADR-021 §5 bound a batch's funnel block may tighten but never loosen."""
-
-    key: str
-    bound: float
-    at_least: bool
-    """True: the value must be >= ``bound``; False: <= ``bound``."""
-
-    def holds(self, value: float) -> bool:
-        """Return True when ``value`` is at the floor or stricter."""
-        return value >= self.bound if self.at_least else value <= self.bound
-
-    def describe(self) -> str:
-        """The bound as the refusal states it, such as ``>= 0.95``."""
-        return f"{'>=' if self.at_least else '<='} {self.bound:g}"
-
-
-FLOORS: Final = (
-    Floor("dsr_min", 0.95, at_least=True),
-    Floor("pbo_max", 0.05, at_least=False),
-    Floor("t_stat_above", 3.0, at_least=True),
-    Floor("trade_count_min", 100, at_least=True),
-)
-"""ADR-021 §5 and ADR-026 §1: DSR >= 0.95, PBO <= 0.05, t above 3, at least 100 trades."""
-
-
 class BatchError(ValueError):
     """A batch broke one check.
 
@@ -210,6 +194,7 @@ class Candidate:
     summary: str
     code_paths: tuple[str, ...]
     parameters: tuple[Parameter, ...]
+    round_trips_90d_max: int | None = None
 
     def funnel_replays(self) -> tuple[FunnelReplay, ...]:
         """The base run, each neighbour in parameter then value order, then the cost stress."""
@@ -443,7 +428,7 @@ def _raw_candidates(front_matter: Mapping[str, object]) -> tuple[_RawCandidate, 
         if not isinstance(item, Mapping):
             raise BatchError("front_matter", f"candidates[{index}] must be a mapping")
         raw = _RawCandidate(index, {str(k): v for k, v in item.items()})
-        _keys(raw.where, raw.fields, _CANDIDATE_KEYS, frozenset())
+        _keys(raw.where, raw.fields, _CANDIDATE_KEYS, CAP_KEYS)
         out.append(raw)
     return tuple(out)
 
@@ -483,7 +468,18 @@ def _candidate(raw: _RawCandidate) -> Candidate:
         summary=_summary(where, raw.fields["summary"]),
         code_paths=_code_paths(where, raw.fields["code_paths"]),
         parameters=_parameters(where, raw.fields["parameters"]),
+        round_trips_90d_max=signed_cap(raw.fields, where, required=False),
     )
+
+
+def _caps(header: _Header) -> str:
+    try:
+        required = header.batch_id not in SIGNED_BEFORE_CAP_ROW
+        return caps_detail(
+            [signed_cap(r.fields, r.where, required=required) for r in header.candidates]
+        )
+    except RoundTripCapError as exc:
+        raise BatchError("funnel_floors", str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -667,6 +663,7 @@ def parse_batch(path: str, text: str) -> ResearchBatch:
     _section_present(header, body)
     _parameters_cap(header)
     funnel = _funnel(front_matter)
+    _caps(header)
     selection = _selection(front_matter)
     signed_by, date_signed, digest, scope, precursor, code_commit = _signature(
         front_matter, header.status
@@ -912,7 +909,7 @@ def check_batch(
         ("section_present", lambda: _section_present(header, body)),
         ("card_hashes", after_parse(lambda b: _card_hashes(b, git, head))),
         ("parameters_cap", lambda: _parameters_cap(header)),
-        ("funnel_floors", lambda: _funnel_described(front_matter)),
+        ("funnel_floors", lambda: _funnel_described(front_matter) + _caps(header)),
         ("selection", lambda: _selection_described(front_matter)),
         (
             "strategy_ids_known",

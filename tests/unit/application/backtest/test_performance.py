@@ -11,6 +11,7 @@ Invariants (822-portfolio-backtest change.md D-4):
   without a variance are refused.
 """
 
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -18,7 +19,11 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from hermes.application.backtest.performance import performance_file, round_trips
+from hermes.application.backtest.performance import (
+    performance_file,
+    round_trip_opened_at,
+    round_trips,
+)
 from hermes.application.backtest.replay import BacktestRun
 from hermes.domain.calibration.trial_record import TrialSummary
 from hermes.domain.statistics.performance import TradeResult
@@ -110,6 +115,43 @@ class TestRoundTrips:
             ]
         )
         assert trade.gross_pnl == pytest.approx(float((sell - buy) * qty))
+
+
+def _at(fill: Fill, hours: int) -> Fill:
+    return replace(fill, timestamp=_T0 + timedelta(hours=hours))
+
+
+class TestRoundTripOpenedAt:
+    """ADR-029 §4 counts round trips by when they opened (issue #1240)."""
+
+    def test_each_closed_round_trip_is_dated_by_its_first_buy(self) -> None:
+        """ETH opens at +1h and closes first; BTC opens at +0h, adds at +2h, closes at +3h.
+
+        Closing order is ETH then BTC, and BTC's date is its first BUY, not the add.
+        """
+        opened = round_trip_opened_at(
+            [
+                _at(_fill(OrderSide.BUY, "1", "100", "0", BTC_USDT), 0),
+                _at(_fill(OrderSide.BUY, "1", "10", "0", _ETH), 1),
+                _at(_fill(OrderSide.SELL, "1", "9", "0", _ETH), 2),
+                _at(_fill(OrderSide.BUY, "1", "101", "0", BTC_USDT), 2),
+                _at(_fill(OrderSide.SELL, "2", "130", "0", BTC_USDT), 3),
+            ]
+        )
+
+        assert opened == [_T0 + timedelta(hours=1), _T0]
+
+    def test_a_position_still_open_has_no_opening_time(self) -> None:
+        """A trip that never closed is not a trade, so the cap never counts it."""
+        opened = round_trip_opened_at(
+            [
+                _at(_fill(OrderSide.BUY, "1", "100", "0"), 0),
+                _at(_fill(OrderSide.SELL, "1", "110", "0"), 1),
+                _at(_fill(OrderSide.BUY, "1", "100", "0"), 5),
+            ]
+        )
+
+        assert opened == [_T0]
 
 
 class TestPerformanceFile:

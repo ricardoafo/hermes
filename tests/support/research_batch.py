@@ -43,6 +43,7 @@ def _candidate(strategy_id: str, family: str, section: str) -> dict[str, Any]:
             "lookback": {"base": 20, "neighbours": [15, 25]},
             "atr_mult": {"base": "3.0", "neighbours": ["2.5", "3.5"]},
         },
+        "round_trips_90d_max": 250,
     }
 
 

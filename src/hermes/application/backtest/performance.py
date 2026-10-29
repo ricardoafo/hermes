@@ -17,16 +17,17 @@ openspec/archive/822-portfolio-backtest/change.md D-4.
 """
 
 from collections.abc import Iterable
+from datetime import datetime
 from typing import Any
 
 from hermes.application.backtest.replay import BacktestRun
 from hermes.domain.calibration.trial_record import TrialSummary
-from hermes.domain.portfolio.round_trips import RoundTripFill
+from hermes.domain.portfolio.round_trips import ClosedRoundTrip, RoundTripFill
 from hermes.domain.portfolio.round_trips import round_trips as closed_round_trips
 from hermes.domain.statistics.performance import TradeResult
 from hermes.domain.trading.fill import Fill
 
-__all__ = ["performance_file", "round_trips"]
+__all__ = ["performance_file", "round_trip_opened_at", "round_trips"]
 
 
 def round_trips(fills: Iterable[Fill]) -> list[TradeResult]:
@@ -42,7 +43,23 @@ def round_trips(fills: Iterable[Fill]) -> list[TradeResult]:
         RoundTripError: A SELL fill sells more than is held in its pair, or a
             fee is not in the pair's quote currency.
     """
-    closed = closed_round_trips(
+    return [TradeResult(gross_pnl=float(t.gross_pnl), fees=float(t.fees)) for t in _closed(fills)]
+
+
+def round_trip_opened_at(fills: Iterable[Fill]) -> list[datetime]:
+    """Return when each closed round trip of ``fills`` opened, in the order they closed.
+
+    The ADR-029 §4 cap counts round trips per 90 days by these times; they
+    come from the same loop as :func:`round_trips`, so both count the same trades.
+
+    Raises:
+        RoundTripError: As :func:`round_trips`.
+    """
+    return [t.entered_at for t in _closed(fills)]
+
+
+def _closed(fills: Iterable[Fill]) -> list[ClosedRoundTrip]:
+    return closed_round_trips(
         RoundTripFill(
             pair=fill.order.pair,
             side=fill.order.side,
@@ -53,7 +70,6 @@ def round_trips(fills: Iterable[Fill]) -> list[TradeResult]:
         )
         for fill in fills
     )
-    return [TradeResult(gross_pnl=float(t.gross_pnl), fees=float(t.fees)) for t in closed]
 
 
 def performance_file(
