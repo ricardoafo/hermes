@@ -3,12 +3,15 @@
 Not wired into any entrypoint until MVP2 (issue #1220): it places real
 orders, so it stays parked rather than deleted.
 
-Implements :class:`~hermes.ports.exchange.ExchangePort` and
-:class:`~hermes.ports.exchange.StopLossPort` with signed REST calls:
+Implements :class:`~hermes.ports.exchange.ExchangePort`,
+:class:`~hermes.ports.exchange.StopLossPort` and
+:class:`~hermes.ports.exchange_stops.ExchangeStopsPort` with signed REST calls:
 
 - ``POST /api/v3/order`` for market, IOC limit and stop-loss-limit orders;
 - ``DELETE /api/v3/order`` to cancel (idempotent: an order that is already
   gone is not an error);
+- ``GET /api/v3/openOrders`` and ``GET /api/v3/order`` to list the resting
+  stops and tell what became of one (#1080);
 - ``GET /api/v3/depth`` for the order book, ``GET /api/v3/account`` for
   balances and commission rates.
 
@@ -67,9 +70,15 @@ from hermes.adapters._shared.wire import (
     binance_symbol,
     wire_decimal,
 )
-from hermes.domain.errors import ExchangeError, NetworkError
+from hermes.domain.errors import (
+    ExchangeError,
+    NetworkError,
+    OrderNotPlacedError,
+    OrderStatusUnknownError,
+)
 from hermes.domain.fees import FeeSchedule, FeeTier
 from hermes.domain.market_data.orderbook import Orderbook, OrderbookLevel
+from hermes.domain.trading.exchange_stop import RestingStop, StopFate
 from hermes.domain.trading.fill import Fill, Rejection
 from hermes.domain.trading.order import Order, OrderSide
 from hermes.domain.value_objects.currency import Currency
@@ -107,10 +116,12 @@ _WEIGHTS: Final[dict[str, int]] = {
     "query": 4,
     "trades": 20,
     "ticker": 2,
+    "open_orders": 6,
 }
 _CLIENT_ID_PREFIX: Final = "hermes-"
 _STILL_WORKING: Final = frozenset({"PENDING_NEW", "NEW", "PARTIALLY_FILLED"})
 _STOP_ON_BOOK: Final = _STILL_WORKING | {"FILLED"}
+_STOP_TYPES: Final = frozenset({"STOP_LOSS", "STOP_LOSS_LIMIT"})
 _FALLBACK_TAKER_RATE: Final = Decimal("0.001")
 """The pre-registered 10 bps taker fee, used when a third-asset commission cannot be priced."""
 _DEPTH_LIMIT: Final = 100
@@ -289,9 +300,7 @@ class BinanceSpotAdapter:
             ExchangeError: Any other refusal.
             NetworkError: Transport failure.
         """
-        symbol, sep, binance_id = order_id.partition(":")
-        if not sep or not symbol or not binance_id.isdigit():
-            raise ValueError(f"order_id must be SYMBOL:ORDERID, got {order_id!r}")
+        symbol, binance_id = _split_order_id(order_id)
         try:
             self._signed(
                 "DELETE",
@@ -414,6 +423,62 @@ class BinanceSpotAdapter:
         if not isinstance(order_id, int):
             raise ExchangeError(msg=f"stop-loss reply has no orderId: {body!r}")
         return f"{symbol}:{order_id}"
+
+    def resting_stop_losses(self, *, pair: Pair) -> tuple[RestingStop, ...]:
+        """Return every stop-loss sell Binance holds open for ``pair`` (#1080).
+
+        Raises:
+            ExchangeError: Malformed reply or refusal.
+            NetworkError: Transport failure.
+        """
+        symbol = binance_symbol(pair)
+        rows = self._signed_rows(
+            "/api/v3/openOrders", {"symbol": symbol}, weight=_WEIGHTS["open_orders"]
+        )
+        try:
+            return tuple(
+                RestingStop(
+                    order_id=f"{symbol}:{int(row['orderId'])}",
+                    pair=pair,
+                    qty=parse_decimal(row["origQty"], "origQty")
+                    - parse_decimal(row["executedQty"], "executedQty"),
+                    stop_price=parse_decimal(row["stopPrice"], "stopPrice"),
+                )
+                for row in rows
+                if row.get("type") in _STOP_TYPES and row.get("side") == "SELL"
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ExchangeError(msg=f"malformed open order: {exc!r}") from exc
+
+    def stop_loss_fate(self, *, order_id: str) -> StopFate:
+        """Return what became of the stop ``SYMBOL:ORDERID`` (#1080).
+
+        ``NEW`` and ``PARTIALLY_FILLED`` still rest; ``FILLED`` sold; any
+        other status, or an order Binance does not know (-2013), sold nothing.
+
+        Raises:
+            ValueError: ``order_id`` is not ``SYMBOL:ORDERID``.
+            ExchangeError: Malformed reply or any other refusal.
+            NetworkError: Transport failure.
+        """
+        symbol, binance_id = _split_order_id(order_id)
+        try:
+            body = self._signed(
+                "GET",
+                "/api/v3/order",
+                {"symbol": symbol, "orderId": binance_id},
+                weight=_WEIGHTS["query"],
+            )
+        except _BinanceRefusalError as refusal:
+            if refusal.code == _NO_SUCH_ORDER:
+                return StopFate.GONE
+            raise
+        status = body.get("status")
+        if not isinstance(status, str):
+            raise ExchangeError(msg=f"order reply has no status: {body.get('orderId')!r}")
+        if status in _STILL_WORKING:
+            return StopFate.RESTING
+        return StopFate.FILLED if status == "FILLED" else StopFate.GONE
 
     # ------------------------------------------------------------------
     # Wire
@@ -705,30 +770,13 @@ class _ServerError(ExchangeError):
     """Binance answered 5xx: for an order, its execution status is unknown."""
 
 
-@dataclass(frozen=True, slots=True)
-class OrderNotPlacedError(ExchangeError):
-    """An order whose submission failed is confirmed absent on Binance: safe to retry.
+def _split_order_id(order_id: str) -> tuple[str, str]:
+    """Return the symbol and Binance id of ``SYMBOL:ORDERID``.
 
-    Confirmed means two lookups, a short wait apart, both found no such order.
-
-    Attributes:
-        client_order_id: The ``newClientOrderId`` the lookup used.
+    Raises:
+        ValueError: ``order_id`` is not of that shape.
     """
-
-    client_order_id: str = ""
-
-
-@dataclass(frozen=True, slots=True)
-class OrderStatusUnknownError(ExchangeError):
-    """Neither the submission nor the lookup told whether the order exists.
-
-    Never retry blindly: the order may be live. Reconcile it on Binance by
-    ``client_order_id`` first.
-
-    Attributes:
-        client_order_id: The ``newClientOrderId`` the order was sent with.
-        order_id: Binance's order id when a lookup found the order, else ``None``.
-    """
-
-    client_order_id: str = ""
-    order_id: int | None = None
+    symbol, sep, binance_id = order_id.partition(":")
+    if not sep or not symbol or not binance_id.isdigit():
+        raise ValueError(f"order_id must be SYMBOL:ORDERID, got {order_id!r}")
+    return symbol, binance_id
