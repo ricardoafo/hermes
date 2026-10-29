@@ -1,0 +1,1 @@
+- Release bundles now ship the lab's `hermes-lab-memory.sh` and `hermes-lab-health-ping.sh`, so the staging memory watch and liveness ping no longer fail with exit 127 on a box that runs them.

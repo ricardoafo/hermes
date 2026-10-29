@@ -219,7 +219,7 @@ and every shadow's status then fails, so a copied URL turns the lab check red
 instead of pinging as prod.
 
 The one-time operator steps, once the lab runs a release that carries
-`hermes-lab-health-ping.sh` (the bundle fix is #1286):
+`hermes-lab-health-ping.sh` (any release built after #1286):
 
 1. On healthchecks.io, create a new check named `hermes lab`: period 5
    minutes, grace 10 minutes. Copy its ping URL.
