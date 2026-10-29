@@ -335,7 +335,9 @@ class FunnelEvidence:
 
     ``daily_equity[i]`` is the equity at the end of ``start_date + i`` days.
     Trial, neighbour and running-strategy series hold one return per day
-    after the first, over the same days.
+    after the first, over the same days. ``round_trip_opened_at`` holds when
+    each closed round trip of the base run opened (ADR-029 §4), one per
+    ``trade_count``.
     """
 
     strategy_id: str
@@ -346,6 +348,7 @@ class FunnelEvidence:
     trials: Mapping[str, tuple[float, ...]] | None = None
     neighbour_trial_ids: tuple[str, ...] | None = None
     running_strategies: Mapping[str, tuple[float, ...]] | None = None
+    round_trip_opened_at: tuple[datetime, ...] | None = None
 
     @property
     def end_date(self) -> date:
@@ -365,8 +368,8 @@ def validate_evidence(evidence: FunnelEvidence, thresholds: FunnelThresholds) ->
 
     Raises:
         FunnelEvidenceError: Too few or non-positive equity points, a series
-            of another length, a neighbour that is not a trial, or a last day
-            on or after the OOS start (change D-7).
+            of another length, a neighbour that is not a trial, a last day or
+            a round trip on or after the OOS start (change D-7, ADR-023 §4).
     """
     points = len(evidence.daily_equity)
     if points < _MIN_POINTS:
@@ -376,6 +379,12 @@ def validate_evidence(evidence: FunnelEvidence, thresholds: FunnelThresholds) ->
     if evidence.end_date >= thresholds.oos_start:
         raise FunnelEvidenceError(
             f"evidence ends on {evidence.end_date}, which reaches the OOS start "
+            f"{thresholds.oos_start}"
+        )
+    sealed = [t for t in evidence.round_trip_opened_at or () if t.date() >= thresholds.oos_start]
+    if sealed:
+        raise FunnelEvidenceError(
+            f"a round trip opened {sealed[0].isoformat()}, which reaches the OOS start "
             f"{thresholds.oos_start}"
         )
     stress = evidence.cost_stress
