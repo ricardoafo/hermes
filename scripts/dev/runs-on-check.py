@@ -39,7 +39,8 @@ _FORK_ROUTE = re.compile(
     r" && github\.event\.pull_request\.head\.repo\.full_name != github\.repository"
     r" && '(?P<image>ubuntu-\d+\.\d+)' \|\| \((?P<rest>.+)\)\s*\}\}$"
 )
-_SECRET = re.compile(r"secrets\.(\w+)")
+_EXPRESSION = re.compile(r"\$\{\{(.*?)\}\}", re.DOTALL)
+_SECRET = re.compile(r"\bsecrets\b(?:\s*\.\s*(\w+)|\s*\[\s*['\"](\w+)['\"]\s*\])?")
 
 
 def violation(runs_on: Any) -> str | None:
@@ -78,10 +79,32 @@ def fork_route_violation(runs_on: Any, job: dict[str, Any]) -> str | None:
     inner = violation("${{ " + match.group("rest") + " }}")
     if inner is not None:
         return f"fork route: the non-fork branch {inner}"
-    secrets = sorted({name for name in _SECRET.findall(json.dumps(job)) if name != "GITHUB_TOKEN"})
+    secrets = sorted(_secrets_read(job) - {"GITHUB_TOKEN"})
     if secrets:
         return f"fork route: the job reads secrets a fork's run must not hold: {', '.join(secrets)}"
     return None
+
+
+def _strings(node: Any) -> list[str]:
+    """Return every key and scalar in ``node``, depth first."""
+    if isinstance(node, dict):
+        return [text for key, value in node.items() for text in (str(key), *_strings(value))]
+    if isinstance(node, list):
+        return [text for item in node for text in _strings(item)]
+    return [str(node)]
+
+
+def _secrets_read(job: dict[str, Any]) -> set[str]:
+    """Return the secrets ``job`` reads; ``*`` stands for the whole context.
+
+    Covers ``secrets.X``, ``secrets['X']``, a bare ``secrets`` (as in
+    ``toJSON(secrets)``) inside an expression, and ``secrets: inherit``.
+    """
+    found = {"*"} if job.get("secrets") is not None else set()
+    for text in _strings(job):
+        for expression in _EXPRESSION.findall(text):
+            found |= {dot or bracket or "*" for dot, bracket in _SECRET.findall(expression)}
+    return found
 
 
 def check(directory: Path) -> list[str]:
@@ -125,6 +148,10 @@ def self_test() -> int:
         (fork, {}, True),
         (fork, {"env": {"T": "${{ secrets.GITHUB_TOKEN }}"}}, True),
         (fork, {"env": {"K": "${{ secrets.VPS_SSH_KEY }}"}}, False),
+        (fork, {"env": {"K": "${{ secrets['VPS_SSH_KEY'] }}"}}, False),
+        (fork, {"env": {"K": "${{ toJSON(secrets) }}"}}, False),
+        (fork, {"uses": "./.github/workflows/w.yml", "secrets": "inherit"}, False),
+        (fork, {"name": "Holds no secrets"}, True),
         (fork.replace("!=", "=="), {}, False),
         (fork.replace('"self-hosted",', ""), {}, False),
     ]

@@ -12,6 +12,7 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+import yaml
 
 from tests.support.paths import REPO_ROOT
 
@@ -119,14 +120,24 @@ def test_the_fork_route_passes_when_the_job_holds_only_the_job_token(tmp_path: P
     assert _script().check(tmp_path) == []
 
 
-def test_the_fork_route_fails_when_the_job_reads_a_secret(tmp_path: Path) -> None:
-    """A job that can run on a hosted image must not read a deploy secret."""
-    _workflow(tmp_path, _quoted(_FORK), run='"echo ${{ secrets.VPS_SSH_KEY }}"')
+@pytest.mark.parametrize(
+    ("read", "names"),
+    [
+        ("secrets.VPS_SSH_KEY", "VPS_SSH_KEY"),
+        ("secrets['VPS_SSH_KEY']", "VPS_SSH_KEY"),
+        ("toJSON(secrets)", "*"),
+    ],
+)
+def test_the_fork_route_fails_when_the_job_reads_a_secret(
+    tmp_path: Path, read: str, names: str
+) -> None:
+    """A job that can run on a hosted image must not read a deploy secret, in any syntax."""
+    _workflow(tmp_path, _quoted(_FORK), run=_quoted("echo ${{ " + read + " }}"))
 
     problems = _script().check(tmp_path)
 
     assert problems == [
-        "w.yml: job 'j': fork route: the job reads secrets a fork's run must not hold: VPS_SSH_KEY"
+        f"w.yml: job 'j': fork route: the job reads secrets a fork's run must not hold: {names}"
     ]
 
 
@@ -150,11 +161,16 @@ def test_a_fork_route_that_is_not_exact_fails(
     assert _script().check(tmp_path) == [f"w.yml: job 'j': {expected}"]
 
 
-def test_ci_routes_forks_to_a_hosted_image_and_everything_else_to_the_pool() -> None:
-    """ci.yml's one job uses the fork route, so a fork's code never reaches server-01."""
-    text = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+def test_ci_routes_forks_to_a_hosted_image_and_everything_else_to_the_pool(
+    tmp_path: Path,
+) -> None:
+    """ci.yml's job uses the exact fork route, and the guard accepts it as it stands."""
+    ci = REPO_ROOT / ".github" / "workflows" / "ci.yml"
+    (tmp_path / "ci.yml").write_text(ci.read_text(encoding="utf-8"), encoding="utf-8")
+    jobs = yaml.safe_load(ci.read_text(encoding="utf-8"))["jobs"]
+    script = _script()
 
-    assert (
-        "github.event.pull_request.head.repo.full_name != github.repository && 'ubuntu-24.04'"
-        in text
-    )
+    routed = [name for name, job in jobs.items() if script.violation(job.get("runs-on"))]
+
+    assert routed == ["ci-success"]
+    assert script.check(tmp_path) == []
