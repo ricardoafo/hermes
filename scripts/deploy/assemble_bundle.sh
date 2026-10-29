@@ -41,9 +41,12 @@ install -d "$stage/docs/experiments/swing-mvp1"
 install -m 0644 docs/experiments/swing-mvp1/pre-registration-v1.md \
     docs/experiments/swing-mvp1/fee-history.csv "$stage/docs/experiments/swing-mvp1/"
 # The units run these from /opt/hermes/current/deploy/ (health ping,
-# failure notifier, backup): each release carries its own copy.
+# failure notifier, backup) and the lab's from
+# /opt/hermes-staging/current/deploy/ (memory watch, liveness ping):
+# each release carries its own copy.
 install -d "$stage/deploy" "$stage/bin"
 install -m 0755 deploy/hermes-health-ping.sh deploy/hermes-notify-failure.sh deploy/hermes-notify-crash.sh deploy/hermes-daily-line.sh deploy/hermes-backup.sh deploy/hermes-console.sh "$stage/deploy/"
+install -m 0755 deploy/hermes-lab-memory.sh deploy/hermes-lab-health-ping.sh "$stage/deploy/"
 install -m 0755 scripts/deploy/install_release.sh scripts/deploy/health_gate.sh \
     scripts/deploy/rollback.sh scripts/deploy/schema_guard.py "$stage/bin/"
 # install_release.sh installs the units and timers that changed, as
