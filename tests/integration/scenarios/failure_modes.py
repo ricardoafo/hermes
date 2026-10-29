@@ -647,6 +647,8 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 _STORAGE + "test_hermes_serve_on_a_ledger_in_use_exits_with_the_refusal_code",
                 _STORAGE + "test_the_serve_lock_is_released_when_the_first_serve_exits",
                 _FILE_LOCK + "test_a_holder_process_that_is_killed_frees_the_lock",
+                _I + "lower_env/test_installed_operations.py"
+                "::test_a_second_serve_on_the_ledger_in_use_is_refused_and_changes_nothing",
             ),
         ),
         FailureMode(
