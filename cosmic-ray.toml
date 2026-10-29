@@ -22,6 +22,9 @@
 ##   - Weekly cron (Sundays 11:45 UTC), or a manual dispatch with
 ##     `mutation` ticked.
 ##   - Blocking: the run fails below an 80% kill rate (#406).
+##   - Sharded (#1213): six legs each run a share of the mutants
+##     (`scripts/dev/mutation-shard.py select`); `mutation-verdict` merges
+##     them and fails if any mutant went unrun.
 ##
 ## Known equivalent mutants in domain/lots (cannot be killed, listed in
 ## #406): `!=`/`==` on Currency members swapped for `is not`/`is` (enum
