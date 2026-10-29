@@ -78,7 +78,11 @@ from run_calibration_full import _depth_frac, _execution_fields, _select, _sharp
 from hermes.adapters.fees.binance_history import load_binance_fee_history
 from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
 from hermes.adapters.trial_log.jsonl_file import JsonlTrialLog
-from hermes.application.backtest.performance import performance_file, round_trips
+from hermes.application.backtest.performance import (
+    performance_file,
+    round_trip_opened_at,
+    round_trips,
+)
 from hermes.application.backtest.replay import BacktestRun, ExecutionModel, replay
 from hermes.application.calibration.harness import CalibrationHarness
 from hermes.application.calibration.research_batch import BatchError, Candidate, parse_batch
@@ -502,6 +506,7 @@ async def _run(args: argparse.Namespace) -> int:
                 {r.replay.trial_id: r.run.daily_equity for r in results},
                 trade_count=len(round_trips(primary.run.fills)),
                 replays=grid.replays,
+                round_trip_opened_at=round_trip_opened_at(primary.run.fills),
             )
         except ValueError as err:
             print(f"ERROR: trials logged, funnel evidence not written: {err}", file=sys.stderr)

@@ -285,3 +285,34 @@ def test_too_short_a_run_still_writes_its_evidence_with_empty_folds() -> None:
     evidence = fe.funnel_evidence("swing-x", _curves(["5000", "5050"]), trade_count=0)
     folds = evidence["folds"]
     assert (folds["walk_forward"]["folds"], folds["purged_cpcv"]["folds"]) == ([], [])
+
+
+def test_evidence_writes_each_round_trip_opening_time_as_utc_iso() -> None:
+    """ADR-029 §4: the cap row reads when each base-run round trip opened, in UTC."""
+    opened = [datetime(2021, 1, 1, 4, tzinfo=UTC), datetime(2021, 1, 2, 8, 30, tzinfo=UTC)]
+
+    evidence = fe.funnel_evidence(
+        "swing-x", _curves(["5000", "5050", "5000"]), trade_count=2, round_trip_opened_at=opened
+    )
+
+    assert evidence["round_trip_opened_at"] == [
+        "2021-01-01T04:00:00+00:00",
+        "2021-01-02T08:30:00+00:00",
+    ]
+
+
+def test_evidence_without_round_trip_times_has_no_key() -> None:
+    """A caller that passes no times writes the evidence exactly as before the cap row."""
+    evidence = fe.funnel_evidence("swing-x", _curves(["5000", "5050", "5000"]), trade_count=0)
+
+    assert sorted(evidence) == [
+        "cost_stress",
+        "daily_equity",
+        "folds",
+        "neighbour_trial_ids",
+        "running_strategies",
+        "start_date",
+        "strategy_id",
+        "trade_count",
+        "trials",
+    ]

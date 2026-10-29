@@ -4,9 +4,9 @@ ADR-026 §1 and §4: every candidate in a batch is judged by the same gate, with
 thresholds read from the signed batch, so a new strategy needs no gate code.
 :func:`evaluate_signed_gate` is that gate: v1's backtest gate (the §9 rows
 pre-registration v1 signed) with the ``dsr`` row at the signed floor and the
-ADR-021 §5 funnel rows after it. Pre-registration v2 and every batch
-candidate go through it; only the thresholds differ, and they come from the
-signed document.
+ADR-021 §5 funnel rows after it, then the ADR-029 §4 round-trip cap row for a
+candidate that signs one. Pre-registration v2 and every batch candidate go
+through it; only the thresholds differ, and they come from the signed document.
 
 :func:`judge_candidate` is the call the batch judge (issue #1059) makes once
 per candidate. Its DSR uses the trial summary the judge passes in, so every
@@ -14,7 +14,7 @@ candidate in a batch is deflated by the same N (ADR-026 §4). On a Train-only
 run ``validation_vs_train`` is not applicable (issue #1037): it compares the
 Validation stretch with Train, and a Train run has no Validation stretch.
 
-Reference: ADR-026 §1, §4; ADR-021 §5; issue #1058.
+Reference: ADR-026 §1, §4; ADR-021 §5; ADR-029 §4; issues #1058, #1240.
 """
 
 import hashlib
@@ -43,6 +43,7 @@ from hermes.application.calibration.evidence_files import (
     load_performance,
 )
 from hermes.application.calibration.research_batch import ResearchBatch, heading_level
+from hermes.application.calibration.round_trip_cap import round_trip_cap_row
 from hermes.application.calibration.window_metrics import TrialStats, compute_window_metrics
 from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.domain.calibration.certification import CertificationRecord, CertificationState
@@ -161,12 +162,14 @@ def evaluate_signed_gate(
     thresholds: FunnelThresholds,
     funnel: FunnelEvidence | None,
     refusal: str,
+    round_trip_cap: int | None = None,
 ) -> GateReport:
     """Evaluate the gate out of the record's state for a strategy signed with a funnel.
 
     Pure, like :func:`evaluate_next_gate`. Out of ``UNTRUSTED`` it is v1's
     backtest gate with the ``dsr`` row at ``>= dsr_min`` and the funnel rows
-    appended; ``DEAD`` and ``CERTIFIED`` are refused as in v1; every other
+    appended, then the ADR-029 §4 ``round_trip_cap`` row when the strategy
+    signed a cap; ``DEAD`` and ``CERTIFIED`` are refused as in v1; every other
     state is refused with ``refusal``, because no later gate is signed yet.
 
     Args:
@@ -178,6 +181,8 @@ def evaluate_signed_gate(
         thresholds: The signed ``backtest_funnel`` block.
         funnel: The run's validated funnel evidence; ``None`` fails the gate.
         refusal: Why a state with no signed gate is refused.
+        round_trip_cap: The signed ``round_trips_90d_max``; ``None`` adds no row,
+            as for v2 and every batch signed before ADR-029.
 
     Returns:
         The :class:`GateReport` for the next transition.
@@ -189,7 +194,18 @@ def evaluate_signed_gate(
         return report
     dsr = evidence.backtest.dsr if evidence.backtest else None
     rows = tuple(_dsr_row(row, dsr, dsr_min) if row.name == "dsr" else row for row in report.checks)
-    return replace(report, checks=(*rows, *_funnel_rows(funnel, thresholds)))
+    cap_rows = (
+        ()
+        if round_trip_cap is None
+        else (
+            round_trip_cap_row(
+                funnel.round_trip_opened_at if funnel else None,
+                cap=round_trip_cap,
+                train_end=thresholds.train_end,
+            ),
+        )
+    )
+    return replace(report, checks=(*rows, *_funnel_rows(funnel, thresholds), *cap_rows))
 
 
 def _dsr_row(row: GateCheck, dsr: float | None, floor: float) -> GateCheck:
@@ -341,6 +357,7 @@ def judge_candidate(
         thresholds=batch.funnel.thresholds,
         funnel=funnel,
         refusal="",
+        round_trip_cap=candidate.round_trips_90d_max,
     )
     checks = tuple(check_result(row, split) for row in report.checks)
     return GateResult(
