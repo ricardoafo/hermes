@@ -33,7 +33,7 @@ as `NOT AVAILABLE`, never skipped silently.
 A real cutover starts from one of these. A drill starts from the calendar.
 
 - Binance announces a residency or KYC change the account cannot meet
-  (the ARG-DNI risk in ADR-004 Context).
+  (the account-terms risk in ADR-004).
 - Binance freezes withdrawals or trading for the account.
 - `hermes health market_data` fails for more than a day while Kraken's
   public API answers.

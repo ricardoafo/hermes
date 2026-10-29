@@ -2,7 +2,7 @@
 
 Each test states the behaviour the engine should have and fails today. When a
 fix lands the test passes, ``strict=True`` turns that into a failure, and the
-marker comes off in the fixing PR. No behaviour here changes without Rick's
+marker comes off in the fixing PR. No behaviour here changes without the maintainer's
 decision; the fixes go to the Go-live thread.
 
 Item 2 of issue #690 (a late bar dropped silently) is not a defect through the

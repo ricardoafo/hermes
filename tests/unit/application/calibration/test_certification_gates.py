@@ -64,7 +64,7 @@ _ALL_PASS = GateEvidence(
     shadow=_SHADOW,
     oos=_PASSING,
     live=LiveEvidence(days=90, kill_fired=False),
-    sign_off=OperatorSignOff("Ricardo", LIVE_APPROVAL_PHRASE, _OOS_DAY),
+    sign_off=OperatorSignOff("Operator", LIVE_APPROVAL_PHRASE, _OOS_DAY),
     sha256="e" * 64,
 )
 
@@ -296,8 +296,8 @@ class TestLiveApprovalGate:
         [
             None,
             OperatorSignOff("", LIVE_APPROVAL_PHRASE, _OOS_DAY),
-            OperatorSignOff("Ricardo", "yes", _OOS_DAY),
-            OperatorSignOff("Ricardo", "live_approved", _OOS_DAY),
+            OperatorSignOff("Operator", "yes", _OOS_DAY),
+            OperatorSignOff("Operator", "live_approved", _OOS_DAY),
         ],
     )
     def test_without_exact_sign_off_fails(

@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-17
 **Status**: Accepted (merged in PR #988)
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 **Supersedes**: none.
 **Amends**: [ADR-018](adr-018-ci-cd-infrastructure-and-resource-budget.md), adding a read-only data mount to the CI
 runners, and sits beside [ADR-023](adr-023-backtest-runs-on-server-01.md), which this ADR does not change.

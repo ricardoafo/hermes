@@ -63,7 +63,7 @@ test('empty, non-JSON or off-schema output throws instead of passing', () => {
 
 test('the comment starts with the sticky marker and leads with the plain-language card', () => {
   const body = renderComment(parseReview(raw()), meta);
-  assert.ok(body.startsWith(`${MARKER}\n## For Rick: ready for your approval`));
+  assert.ok(body.startsWith(`${MARKER}\n## For the maintainer: ready for your approval`));
   assert.match(body, /\*\*What changes for you:\*\* The status command shows the last bar time\./);
   assert.match(body, /\*\*Risk:\*\* low\. Read-only display code\./);
   assert.match(body, /abcdef0 · \[run\]\(https:\/\/github\.com\/o\/r\/actions\/runs\/1\)/);
@@ -71,7 +71,7 @@ test('the comment starts with the sticky marker and leads with the plain-languag
 
 test('blocking and optional findings are grouped with their location', () => {
   const body = renderComment(parseReview(raw({ verdict: 'changes_needed', findings: [blocking, optional] })), meta);
-  assert.match(body, /## For Rick: changes needed/);
+  assert.match(body, /## For the maintainer: changes needed/);
   assert.match(body, /\*\*Blocking \(1\)\*\*\n\n- \*\*Rounding\*\* \(`src\/a\.py:3`\): Uses float\./);
   assert.match(body, /\*\*Optional \(1\)\*\*\n\n- \*\*Name\*\*: Rename x\./);
 });
@@ -102,13 +102,13 @@ test('a failed run says the PR is not ready', () => {
 
 test('the sticky comment is the workflow\'s own marker comment (#778)', () => {
   const ours = { login: AUTHOR };
-  const comments = [{ id: 1, body: 'hello', user: ours }, { id: 2, body: `${MARKER}\n## For Rick`, user: ours }, { id: 3, body: null }];
+  const comments = [{ id: 1, body: 'hello', user: ours }, { id: 2, body: `${MARKER}\n## For the maintainer`, user: ours }, { id: 3, body: null }];
   assert.equal(stickyCommentId(comments), 2);
   assert.equal(stickyCommentId([{ id: 1, body: `quote ${MARKER}`, user: ours }]), null);
 });
 
 test('a marker comment from anyone else is never taken over (#778)', () => {
-  const forged = [{ id: 7, body: `${MARKER}\n## For Rick: ready`, user: { login: 'someone' } }];
+  const forged = [{ id: 7, body: `${MARKER}\n## For the maintainer: ready`, user: { login: 'someone' } }];
   assert.equal(stickyCommentId(forged), null);
 });
 
@@ -131,7 +131,7 @@ test('only the review and merge-gate paths count as the review path (#778)', () 
   assert.deepEqual(reviewPathChanges('M\tsrc/hermes/a.py\n'), []);
 });
 
-test('an approve on a PR that touches the review path becomes Rick\'s decision (#778)', () => {
+test('an approve on a PR that touches the review path becomes the maintainer\'s decision (#778)', () => {
   const guarded = guardReviewPath(parseReview(raw()), ['.github/workflows/ai-review.yml']);
   assert.equal(guarded.verdict, 'needs_decision');
   assert.equal(outcome(guarded).pass, false);

@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-05
 **Status**: Accepted (merged in PR #764)
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 **Supersedes**: none. It refines the runner sections of `docs/guides/ci-runners-and-merge-queue.md` and builds on
 [ADR-017](adr-017-test-tiers-as-enforced.md) (which tiers exist) by deciding where and when they run.
 
@@ -238,7 +238,7 @@ inferred from the configuration, not proven. Raised by the security review.
 | Step | What | Who | Status |
 | --- | --- | --- | --- |
 | 0 | Cap the Docker VM (`.wslconfig`: 10 threads, 12 GB), scale CI to D2's count | Code Owner, PowerShell | stopgap; the 2-run CI cap stays until step 4 |
-| 1 | This ADR, docs-only PR | Claude | after the decisions |
+| 1 | This ADR, docs-only PR | Bot | after the decisions |
 | 2 | #694: no-op runs, release gate on the ops runner, daily checks at 11:30 Madrid. It already resolves the `cd.yml` conflict with merged PR #737 | CI writer | built, held |
 | 3 | #686 and #685: bake the review tools into the image, pin the review model. Runner rebuild | CI writer, then Code Owner rebuilds | built, held |
 | 4 | Isolation per D11 (first), compose budget per D2, AI review on `CI success` per D4, PR concurrency per D5 | CI writer | new |

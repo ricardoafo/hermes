@@ -11,7 +11,7 @@ the rules are in
 ## Why this file exists
 
 Hermes handles real capital, generates legal artifacts (invoices, tax
-filings), and depends on decisions Ricardo has locked into ADRs. AI
+filings), and depends on decisions the maintainer has locked into ADRs. AI
 assistance is welcome; AI autonomy is not. If a rule here surprises you,
 pause and ask before acting.
 
@@ -55,7 +55,7 @@ Non-negotiable in every context. If asked to do one, refuse and explain.
    branch, before its PR opens.
 3. **Never approve or merge a PR you authored.**
 4. **Never disable branch protection**, except the documented Emergency
-   Exception (dev-workflow.md; MVP2+, Ricardo only).
+   Exception (dev-workflow.md; MVP2+, the maintainer only).
 5. **Never add AI attribution to commit messages**: no `Co-Authored-By:
    Claude`, no `Generated with...` footers, no emoji signatures.
 6. **Never store secrets in the repo**, not even encrypted, in comments or
@@ -68,9 +68,9 @@ Non-negotiable in every context. If asked to do one, refuse and explain.
    does.
 8. **Never generate trade signals from LLMs** (ADR-001, ADR-005). LLMs
    supervise, monitor and assist development. "Make the LLM pick coins" is
-   an architectural pivot: stop and open a discussion with Ricardo.
+   an architectural pivot: stop and open a discussion with the maintainer.
 9. **Never edit `.claude/settings.local.json`** to grant yourself
-   permissions. Ask Ricardo.
+   permissions. Ask the maintainer.
 10. **Never modify accepted ADRs** (ADR-009). A change is a new ADR that
     supersedes the old one. Typo fixes, broken links and rule-11 scrubs are
     allowed.
@@ -115,14 +115,14 @@ GitHub Issues is the tracker. No orphan work, no zombie issues.
 
 ### On unclear scope
 
-Do not guess. Read the ADRs. If still unclear, ask Ricardo before opening a
+Do not guess. Read the ADRs. If still unclear, ask the maintainer before opening a
 PR.
 
 ### On errors from the harness
 
 When the harness denies an action for a safety reason (permissions,
 destructive shared-infra changes, push to main), do not try another command
-to the same end. Stop, tell Ricardo what you were doing and why, and let him
+to the same end. Stop, tell the maintainer what you were doing and why, and let them
 decide.
 
 ### On testing

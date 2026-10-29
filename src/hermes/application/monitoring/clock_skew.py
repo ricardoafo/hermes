@@ -3,7 +3,7 @@
 A host clock far from Binance's time breaks serve quietly: with the clock more
 than five minutes ahead, every bar close looks older than the live-book window,
 so each entry falls back to the bar-close book and RO-04 halts it as stale.
-RO-04 stays as it is (Rick, 17 Oct 2026, issue #859 item 2, option A); the
+RO-04 stays as it is (the maintainer, 17 Oct 2026, issue #859 item 2, option A); the
 skew itself becomes a P0 alert and turns ``hermes status`` red.
 
 The bar feed already measures the skew at the midpoint of each ``/api/v3/time``

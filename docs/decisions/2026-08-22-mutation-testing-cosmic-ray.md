@@ -1,7 +1,7 @@
 # Adopt `cosmic-ray` as the Phase 1 mutation-testing gate
 
 **Date**: 2026-08-22
-**Author**: claude on behalf of Ricardo
+**Author**: Maintainer
 **Related**: `docs/guides/ai-authored-tests.md` §"The mutation kill rate is
 the load-bearing gate", `docs/decisions/2026-08-22-drop-safety.md` (Phase-0
 `mutmut` blocker context), GH #118 (feasibility spike)

@@ -1,7 +1,7 @@
-"""Every way we know Hermes can fail, with its proof, its open issue or Rick's acceptance.
+"""Every way we know Hermes can fail, with its proof, its open issue or the maintainer's acceptance.
 
 ``test_failure_mode_list.py`` fails when an entry has no answer, when a gap
-names no issue, when an accepted risk has no dated approval from Rick, or when
+names no issue, when an accepted risk has no dated approval from the maintainer, or when
 an entry names a test that does not exist.
 
 The list starts from a hater pass over serve, the adapters and the ledger
@@ -15,7 +15,7 @@ Each failure mode is in one of three states:
 - ``proved_by``: tests that fail if Hermes stops handling it.
 - ``gap``: ``issue #N: what happens today``. Says "inferred" when nobody has
   run it yet.
-- ``accepted``: ``approved by Rick YYYY-MM-DD: why we live with it``.
+- ``accepted``: ``approved by the maintainer YYYY-MM-DD: why we live with it``.
 """
 
 from dataclasses import dataclass
@@ -95,7 +95,7 @@ class FailureMode:
         name: What goes wrong, in plain words.
         proved_by: Test node ids that fail when Hermes stops handling it.
         gap: ``issue #N: ...`` when it is not handled or not proved yet.
-        accepted: ``approved by Rick YYYY-MM-DD: ...`` when we live with it.
+        accepted: ``approved by the maintainer YYYY-MM-DD: ...`` when we live with it.
 
     """
 

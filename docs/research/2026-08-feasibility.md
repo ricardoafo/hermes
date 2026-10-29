@@ -1,7 +1,7 @@
 # Feasibility digest — 2026-08
 
 **Date**: 2026-08-21 (bootstrap placeholder)
-**Author**: claude on behalf of Ricardo
+**Author**: Maintainer
 **Fed decisions**: [ADR-001](../architecture/adr-001-llm-as-supervisor.md),
 [ADR-005](../architecture/adr-005-ai-ml-support-boundary.md)
 **Sources**: internal engram observations from research tracks 1-7

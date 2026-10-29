@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-17
 **Status**: Accepted (merged in PR #943)
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 **Supersedes**: none.
 **Superseded in part by**: [ADR-026](adr-026-research-batch-and-signed-champion-rule.md) (§5, a Validation run waits for the Code Owner's click, and §9, `workflow_dispatch` is the only trigger, for strategies signed in a batch)
 **Amends**: [ADR-018](adr-018-ci-cd-infrastructure-and-resource-budget.md), adding a backtest runner to its D2 runner
@@ -73,13 +73,13 @@ to fail before the first OOS bar is read.
 ### 5. A Validation run waits for the Code Owner
 
 A `validation` run uses the GitHub environment `backtest-validation`. GitHub offers required reviewers on private
-repositories only under Enterprise, so the Code Owner's OK is that he starts the run himself: one Run workflow click
-from his account, one logged Validation touch. Agents act on GitHub as the bot account, so they cannot start one.
+repositories only under Enterprise, so the Code Owner's OK is that they start the run themselves: one Run workflow click
+from their account, one logged Validation touch. Agents act on GitHub as the bot account, so they cannot start one.
 
 - The environment accepts only `main`, and the workflow refuses any run, Train or Validation, from another ref:
   every run executes that code on server-01 and logs a trial.
 - Before reading data, the run stops unless both `github.actor` and `github.triggering_actor` are the Code Owner,
-  so a bot dispatch, or a bot re-run of a run he started, fails closed.
+  so a bot dispatch, or a bot re-run of a run they started, fails closed.
 - A `train` run uses the environment `backtest-train`, which needs no click but accepts only `main`.
 - Each Validation touch counts against the family budget of [ADR-021](adr-021-strategy-lifecycle-ready-and-done.md) §5
   from v2 on. For v1, pre-registration §4 ("touch sparingly") applies.
@@ -127,7 +127,7 @@ artifacts, never read these runs' logs beyond pass or fail, and never put a numb
 
 ### 9. Who dispatches
 
-`workflow_dispatch` is the only trigger. A Validation run happens only when the Code Owner starts it himself (§5). A Train run
+`workflow_dispatch` is the only trigger. A Validation run happens only when the Code Owner starts it themselves (§5). A Train run
 is a trial too, so agents dispatch one only when the Code Owner asks for it.
 
 ## Security (ADR-019)

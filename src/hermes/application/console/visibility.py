@@ -1,7 +1,7 @@
 """Which surfaces may show shadow P&L.
 
-The operator sees shadow money on the console he pulls himself: the CLI, the
-TUI and Telegram replies to his own commands. Every other surface is blind:
+The operator sees shadow money on the console they pull themselves: the CLI, the
+TUI and Telegram replies to their own commands. Every other surface is blind:
 pushed Telegram messages, Slack, reports, MCP tools, the supervisor desk, the
 challenger lab and the ADR-012 evaluation loops. The rule is a closed allow
 list with no date, environment or configuration override, so a new surface is

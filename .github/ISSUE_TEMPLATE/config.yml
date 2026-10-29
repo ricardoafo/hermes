@@ -1,13 +1,11 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Dev workflow discipline
-    url: https://github.com/ricardoafo/hermes/blob/main/docs/guides/dev-workflow.md
-    about: Branching, commits, PRs, merge policy. Read before opening.
-  - name: Architecture Decision Records
+  - name: Security vulnerability
+    url: https://github.com/ricardoafo/hermes/security/advisories/new
+    about: Report security bugs privately. Never in a public issue.
+  - name: Contributing guide
+    url: https://github.com/ricardoafo/hermes/blob/main/CONTRIBUTING.md
+    about: How to set up, make a change and open a pull request.
+  - name: Architecture decision records
     url: https://github.com/ricardoafo/hermes/tree/main/docs/architecture
-    about: All accepted ADRs. Reference these when opening issues.
-  - name: SDD workflow (for architectural changes)
-    url: https://github.com/ricardoafo/hermes/blob/main/docs/guides/dev-workflow.md
-    about: >
-      For cross-cutting or architectural changes, use SDD (spec-driven
-      development) instead of a plain issue. Run `/sdd-new <change-name>`.
+    about: The accepted ADRs. Reference the relevant one when you open an issue.

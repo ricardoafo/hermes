@@ -42,7 +42,7 @@ Open `tests/integration/scenarios/failure_modes.py`. For each item:
 - Not there: add it. Every entry has exactly one answer:
   - `proved_by`: the node ids of tests that would fail if it broke;
   - `gap`: `issue #N: what happens` (file the issue first);
-  - `accepted`: `approved by Rick YYYY-MM-DD: why`.
+  - `accepted`: `approved by the maintainer YYYY-MM-DD: why`.
 
 `tests/integration/scenarios/test_failure_mode_list.py` fails on an entry with
 no answer or one that names a test that does not exist.
@@ -58,7 +58,7 @@ on main, strict or not: CI green has to mean every test passed.
 
 - Defect you can fix (a clear bug, no behaviour choice): fix it in this PR,
   with its test, and say so in the PR body.
-- Defect whose fix needs Rick's decision or belongs to another PR: keep the
+- Defect whose fix needs the maintainer's decision or belongs to another PR: keep the
   test out of the PR (save it where the fix's owner can find it), file the
   issue with the evidence, and record the failure mode as a `gap` in the
   catalogue.
@@ -72,8 +72,8 @@ If you found none, say so.
 
 ## Rules that still apply
 
-- Behaviour choices on halts, caps, sizing, fees, metrics or kills go to Rick.
-  Ask, and hold the test until he answers; never change the behaviour on
+- Behaviour choices on halts, caps, sizing, fees, metrics or kills go to the maintainer.
+  Ask, and hold the test until they answer; never change the behaviour on
   your own.
 - Synthetic data only. Never use live prices, or any data from 2025-09-01 on.
 - No outside project names and no AI attribution (AGENTS.md rules 5 and 11).

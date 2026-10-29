@@ -36,7 +36,7 @@ jobs:
     name: Backtest (${{ inputs.split }})
     runs-on: [self-hosted, hermes-backtest]
     # Both environments accept only main; Validation also needs the owner
-    # to start the run himself (ADR-023 §5).
+    # to start the run themselves (ADR-023 §5).
     environment: ${{ inputs.split == 'validation' && 'backtest-validation' || 'backtest-train' }}
     timeout-minutes: 120
     permissions:
@@ -94,9 +94,9 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       # Required reviewers are not offered on private repos under this
-      # plan, so the Code Owner starting the run himself is the Validation
+      # plan, so the Code Owner starting the run themselves is the Validation
       # OK. Agents act on GitHub as the bot account and are refused, also
-      # when re-running a run he started.
+      # when re-running a run they started.
       - name: Code Owner started this Validation touch
         if: ${{ inputs.split == 'validation' }}
         env:

@@ -1,7 +1,7 @@
 # Credential storage layered by env — dotenv / GH Secrets / systemd EnvironmentFile
 
 **Date**: 2026-08-23
-**Author**: claude on behalf of Ricardo
+**Author**: Maintainer
 **Related**: ADR-003 §04 (secrets via pydantic-settings env-var loading),
 `docs/decisions/2026-08-23-slack-alongside-telegram.md` (env var names for
 notification channels), MVP1 status (#141)

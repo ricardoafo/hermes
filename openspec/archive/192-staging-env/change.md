@@ -31,7 +31,7 @@ a script bug that lets a staging deploy touch prod paths; D-3 makes that structu
   enabled by anything in this change.
 - `scripts/deploy/install_release.sh`, `rollback.sh`, `health_gate.sh`: a target selected by `HERMES_TARGET`
   (`prod` default, `staging`), mapping every path, the unit, the run-as user and the env file (D-3).
-- `docs/guides/staging-on-hermes-01.md`: runbook with a Mermaid diagram, including every manual step for Rick.
+- `docs/guides/staging-on-hermes-01.md`: runbook with a Mermaid diagram, including every manual step for the maintainer.
 
 ### Out
 
@@ -100,7 +100,7 @@ docs/guides/staging-on-hermes-01.md             runbook + Mermaid
 ## Risks
 
 - **Bootstrap copies the new unit file** into `/etc/systemd/system` on its next run. It is inert: nothing enables
-  it and its user does not exist until Rick creates it.
+  it and its user does not exist until the maintainer creates it.
 - **Shared box resources** (CPU, Binance rate limits from the same IP): documented in the runbook.
 
 ## Dependencies on other changes

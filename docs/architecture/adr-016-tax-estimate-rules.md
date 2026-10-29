@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-03
 **Status**: Accepted (merged in PR #401)
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 **Supersedes**: [ADR-002](adr-002-tax-posture.md) Decision item 1, the rate-scale sentence only ("2026 scale: 19% up to
 €6,000; 21% up to €50,000; 23% up to €200,000; 27% up to €300,000; 28% above"). Everything else in ADR-002 stands.
 

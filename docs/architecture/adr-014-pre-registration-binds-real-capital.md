@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-03
 **Status**: Accepted — decided by the Code Owner on 2026-10-03 (MVP1 readiness review); confirmed at PR review. Decision 5's `1.0.0-shadow.N` sentence superseded by [ADR-027](adr-027-zero-major-versions-until-real-capital.md)
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 **Supersedes**: the real-capital dates in [ADR-004](adr-004-exchange-decision.md) (Decision item 3, "before Nov-2026 real-capital deployment", and the matching "before Nov 2026 real-capital deployment" in Why) and in [ADR-006](adr-006-versioning-strategy.md) §1 pre-release tags (shadow "Aug-Nov 2026"; `1.0.0` for €1000+ real capital "end 2026-Q4"). Nothing else in either ADR changes.
 
 ---

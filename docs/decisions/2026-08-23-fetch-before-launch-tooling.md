@@ -1,7 +1,7 @@
 # Fetch-before-launch as a wrapper script, not a git hook
 
 **Date**: 2026-08-23
-**Author**: claude on behalf of Ricardo
+**Author**: Maintainer
 **Related**: AGENTS.md §"On sub-agent delegation" rule 4, Wave 4 (PR #133 —
 introduced the AGENTS.md norm), Wave 5 (PR #140 — process hardening
 cadence), GH #146 (this change), engram `preferences/post-pr-discipline`

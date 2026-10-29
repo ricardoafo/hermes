@@ -1,7 +1,7 @@
 # Guides — how-to prose for humans
 
 Reproducible procedures. Setup, dev workflow, release, operations.
-Written for a human operator (Ricardo) or a future collaborator. Not
+Written for a human operator (the maintainer) or a future collaborator. Not
 for machines. Per [ADR-009](../architecture/adr-009-documentation-strategy.md)
 §3 (Guides).
 
@@ -24,7 +24,7 @@ script after merging `main` in.
 | ----- | -------------- |
 | [ai-authored-tests.md](ai-authored-tests.md) | What makes a unit test meaningful, how AI typically fails at writing tests, the unit-test standard every test in this repo follows, and the tooling that enforces it. |
 | [ai-development-lifecycle.md](ai-development-lifecycle.md) | End-to-end flow from idea to VPS runtime; how milestones, issues, and the project board fill in as work moves. |
-| [ai-review.md](ai-review.md) | How the independent AI review works on every PR, what the "For Rick" card means, how writers act on findings, and how the reviewer token is set up. |
+| [ai-review.md](ai-review.md) | How the independent AI review works on every PR, what the maintainer card means, how writers act on findings, and how the reviewer token is set up. |
 | [automation-trust-chain.md](automation-trust-chain.md) | How PRs #209 + #210 + #213 combine to give a hands-off "idea → merge to main" flow. Cross-repo reproduction reference. |
 | [ci-runners-and-merge-queue.md](ci-runners-and-merge-queue.md) | Where CI jobs run, how they are routed, and how the merge queue batches, gates and merges approved PRs. |
 | [code-conventions.md](code-conventions.md) | Design patterns, error handling, immutability, factories, async, performance, polyglot posture, testing, time handling, event schema versioning, feature flags, engine pause, migrations, and public/internal API conventions. |
@@ -51,7 +51,7 @@ script after merging `main` in.
 
 ## When NOT to add a guide
 
-- One-off setup that only Ricardo will ever do (put it in a script + a
+- One-off setup that only the maintainer will ever do (put it in a script + a
   decision journal entry).
 - Documentation of *what* the code does (that's Google-style docstrings
   in code — per ADR-009 §5).

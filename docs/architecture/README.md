@@ -19,7 +19,7 @@ table.
 | [001](adr-001-llm-as-supervisor.md) | The LLM supervises; it does not trade | Accepted | — |
 | [002](adr-002-tax-posture.md) | Tax posture — automated own-capital trading declared under the savings base, with dynamic FIFO in EUR | Accepted | [ADR-016](adr-016-tax-estimate-rules.md) (Decision item 1, rate scale only) |
 | [003](adr-003-solution-architecture/) | Solution Architecture | Accepted | — |
-| [004](adr-004-exchange-decision.md) | Exchange decision — Binance primary via ARG-DNI, Kraken hot backup, agnostic port at the code boundary | Accepted | — |
+| [004](adr-004-exchange-decision.md) | Exchange decision — Binance primary, Kraken hot backup, agnostic port at the code boundary | Accepted | — |
 | [005](adr-005-ai-ml-support-boundary.md) | AI/ML support boundary — ML supports the deterministic engine, monitors our behavior, and assists development; it never generates trade decisions | Accepted | — |
 | [006](adr-006-versioning-strategy.md) | Versioning strategy — SemVer for the release surface, numbered SQL migrations for the ledger, versioned config schemas for parameters | Accepted | [ADR-014](adr-014-pre-registration-binds-real-capital.md) (pre-release calendar), [ADR-022](adr-022-release-versions-and-deploy-cadence.md) (§1 "Version bump rules", release-cut mechanics) and [ADR-027](adr-027-zero-major-versions-until-real-capital.md) (`0.y.z` and `1.0.0-shadow.N` pre-release lines) |
 | [007](adr-007-testing-strategy.md) | Testing strategy — pytest + property tests + snapshot tests + targeted mutation testing, with SEV-1 protection at every layer | Accepted | [ADR-017](adr-017-test-tiers-as-enforced.md) (tier cadences, mutation tool and scope, coverage table, test data) |
@@ -43,8 +43,8 @@ table.
 | [025](adr-025-train-decision-replay-on-engine-prs.md) | Engine PRs replay Train and compare decisions, on the CI pool with the klines mounted read-only | Accepted | — |
 | [026](adr-026-research-batch-and-signed-champion-rule.md) | Research batches — several signed candidates backtested together, Validation started by the pipeline, and a champion picked by a signed rule | Accepted | — |
 | [027](adr-027-zero-major-versions-until-real-capital.md) | Release versions are `0.y.z` until a champion trades real money; `1.0.0-shadow.N` is retired | Accepted | — |
-| [028](adr-028-release-cut-every-merge-window.md) | A release is cut at every merge window | Proposed | [ADR-030](adr-030-every-merge-deploys-with-a-computed-version.md) (every merge deploys with a computed version) |
-| [029](adr-029-one-hour-bars-for-intraday-holding-candidates.md) | 1h bars for intraday-holding candidates, in backtest, shadow and prod together | Proposed | — |
+| [028](adr-028-release-cut-every-merge-window.md) | A release is cut at every merge window | Superseded | [ADR-030](adr-030-every-merge-deploys-with-a-computed-version.md) (every merge deploys with a computed version) |
+| [029](adr-029-one-hour-bars-for-intraday-holding-candidates.md) | 1h bars for intraday-holding candidates, in backtest, shadow and prod together | Accepted | — |
 | [030](adr-030-every-merge-deploys-with-a-computed-version.md) | Every merge to `main` deploys to hermes-01 with a version computed from what changed | Accepted | — |
 | [031](adr-031-research-sweep-for-a-strong-champion.md) | Research sweeps, 100+ signed candidates per batch to find one strong champion | Accepted | — |
 <!-- adr-index-end -->

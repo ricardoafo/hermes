@@ -6,7 +6,7 @@
 `github.com/ricardoafo/hermes`.
 **Description**: End-to-end flow from idea to VPS runtime; how milestones, issues, and the project board fill in as work moves.
 
-This document maps every step from "Ricardo has an idea" to "code runs on
+This document maps every step from "The maintainer has an idea" to "code runs on
 the VPS and reports back". For each step it says WHO does it, WHAT gets
 produced, WHERE it lives, and WHEN it moves to the next step. Progress
 tracking lives in three surfaces: **Milestones** (long-lived phase buckets),
@@ -57,7 +57,7 @@ flowchart TB
 
 | Surface | What it holds | When items appear | When they close |
 | ------- | -------------- | ------------------- | ---------------- |
-| **Milestones** (MVP1 / MVP2) | Long-lived planning buckets. Every open issue and PR belongs to exactly one. | At issue-creation time (`--milestone` flag or GH UI dropdown). Assigned based on WHICH PHASE the work belongs to. | Automatic — when all issues in the milestone are closed. `open_issues=0` triggers the milestone's own closed state (manual close by Ricardo). |
+| **Milestones** (MVP1 / MVP2) | Long-lived planning buckets. Every open issue and PR belongs to exactly one. | At issue-creation time (`--milestone` flag or GH UI dropdown). Assigned based on WHICH PHASE the work belongs to. | Automatic — when all issues in the milestone are closed. `open_issues=0` triggers the milestone's own closed state (manual close by the maintainer). |
 | **Issues** | Atomic units of work. Every PR closes at least one. | User (or AI) files via `.github/ISSUE_TEMPLATE/{bug,feature,chore}.yml`. Labels applied by the template + by the `auto-label` CI job. | Automatic — PR merges with `Closes #N` in the body. Manual close is also allowed for wontfix / duplicate. |
 | **Project board** ([Project Hermes](https://github.com/users/ricardoafo/projects/4)) | Visual pipeline: Backlog → In progress → In review → Done. | Automatic — `add-to-project` CI job (see `.github/workflows/ci.yml`) adds every new issue and PR. Existing items were bulk-added at project creation. | Automatic — GH Project workflow "Item closed → Done" (configured once in the project UI, not in CI). |
 
@@ -71,7 +71,7 @@ in hermes.
 
 ### 1. Ideation
 
-- **Who**: Ricardo (idea, bug report, feature ask)
+- **Who**: Maintainer (idea, bug report, feature ask)
 - **Where**: informal — chat with Claude, a note, a Telegram alert
 - **State**: ✅ Ready (no tooling needed)
 
@@ -86,7 +86,7 @@ in hermes.
 
 ### 3. Issue creation
 
-- **Who**: Ricardo or Agent (on Ricardo's direction)
+- **Who**: Maintainer or Agent (on the maintainer's direction)
 - **What**: Open GitHub issue with the right template
   (`bug.yml` / `feature.yml` / `chore.yml`). Labels + milestone applied at
   creation time via `--label` and `--milestone` flags (or template defaults).
@@ -97,14 +97,14 @@ in hermes.
 
 ### 4. Feature branch
 
-- **Who**: Ricardo or bot (`ai-bot`)
+- **Who**: Maintainer or bot (`ai-bot`)
 - **What**: Branch off `main` with a Conventional Commits prefix
   (`feat/*`, `fix/*`, etc. — see [dev-workflow.md § Branching](dev-workflow.md#branching-model))
 - **State**: ✅ Ready
 
 ### 5. Local implementation
 
-- **Who**: Ricardo or bot
+- **Who**: Maintainer or bot
 - **What**: Write code + tests. Every commit runs the pre-commit hook chain
   (markdownlint, ruff, mypy, conventional-commit validation, gitleaks, the
   weak-assertion guard, etc.).
@@ -117,7 +117,7 @@ in hermes.
 
 ### 6. Push + delete local + open PR
 
-- **Who**: bot (via Agent) or Ricardo
+- **Who**: bot (via Agent) or the maintainer
 - **What**: four commands, in this order:
 
   ```bash
@@ -178,7 +178,7 @@ in hermes.
 
 ### 8. Human review
 
-- **Who**: Ricardo
+- **Who**: Maintainer
 - **Where**: GitHub web / mobile app
 - **What**: Auto-request comes via CODEOWNERS (`* @ricardoafo`) +
   `--reviewer` on PR create. Review is mandatory — branch protection blocks
@@ -220,7 +220,7 @@ in hermes.
 
 ### 11. Release
 
-- **Who**: CD, on every merge Ricardo lets onto `main`
+- **Who**: CD, on every merge the maintainer lets onto `main`
 - **What**: `scripts/deploy/next_version.py` decides whether the push ships
   and computes its version from the changelog fragments and engine files since
   the last `v` tag (ADR-030; `0.y.z` until real capital, ADR-027). CD tags
@@ -242,7 +242,7 @@ in hermes.
 
 ### 13. Operate + incident
 
-- **Who**: VPS runtime + healthchecks.io + Telegram + Ricardo
+- **Who**: VPS runtime + healthchecks.io + Telegram + the maintainer
 - **What**: Structlog → journald, healthchecks.io ping loop, Telegram
   alerts on failure. Incidents trigger `bug-triager` agent → new issue
   with severity per rubric → back to step 1.
@@ -330,7 +330,7 @@ of each part, read the file that owns it:
 - Deploys and operating the host: [`operator-usage.md`](operator-usage.md),
   [`vps-operations.md`](vps-operations.md)
 
-## One-time setup (Ricardo, in the browser)
+## One-time setup (the maintainer, in the browser)
 
 Two settings live in GitHub's UI and can't be fully configured via CLI:
 

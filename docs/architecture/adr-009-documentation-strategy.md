@@ -6,7 +6,7 @@
 **Amended**: 2026-08-21 — added §7 (SDD change artifacts, dual-source convention); Neutral bullet on openspec/engram revised to match
 **Amended**: 2026-08-22 — §6 consolidates 3-file change spec (proposal.md + spec.md + design.md) into single `change.md`; adds §6a "when to skip SDD entirely" bar
 **Amended**: 2026-08-22 — §6 documents `issue.md` tracking-issue convention; PR body rendered from `change.md` + `issue.md` via `scripts/dev/render-pr-body.sh`
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 **Supersedes**: —
 
 ## Context

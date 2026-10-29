@@ -2,8 +2,6 @@ name: Chore
 description: Tooling, deps, CI, config, repo hygiene. No user-visible runtime impact.
 title: "[chore] "
 labels: ["type:chore"]
-assignees:
-  - ricardoafo
 body:
   - type: input
     id: summary

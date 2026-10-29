@@ -9,7 +9,7 @@ time, as the real one would; monotonic time does not jump
 Whatever the local clock says, every bar is handled once and none is skipped.
 Serve records the jump and the fix as clock-skew anomalies (issue #859). A
 clock behind trades as a steady one; a clock ahead leaves the breakout entry
-halted on a stale book, as Rick chose (RO-04 unchanged, the skew alerted).
+halted on a stale book, as the maintainer chose (RO-04 unchanged, the skew alerted).
 """
 
 import functools
@@ -128,7 +128,7 @@ def test_a_clock_jumped_ahead_across_the_breakout_close_leaves_the_entry_halted(
 
     Five hours ahead, the breakout close looks older than the live-book
     window, the entry falls back to the bar-close book and RO-04 refuses it as
-    stale. Rick chose to keep that halt and alert the clock instead (17 Oct
+    stale. The maintainer chose to keep that halt and alert the clock instead (17 Oct
     2026), so no trade happens; the next test proves the alert.
     """
     assert jumped("ahead").trades == []

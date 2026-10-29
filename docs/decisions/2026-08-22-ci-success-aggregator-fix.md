@@ -1,7 +1,7 @@
 # ci-success aggregator — replace grep-based check with Python allowlist
 
 **Date**: 2026-08-22
-**Author**: claude on behalf of Ricardo
+**Author**: Maintainer
 **Related**: PR #72 (merged red), PR #73 (merged red), issue #78, meta issue #71
 
 ## Decision

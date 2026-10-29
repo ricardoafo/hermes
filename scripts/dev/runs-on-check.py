@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Fail any workflow job whose ``runs-on`` can resolve to a GitHub-hosted runner (#1069).
 
-CI runs on server-01's self-hosted runners only (Rick, 2026-10-17; issue #754).
+CI runs on server-01's self-hosted runners only (the maintainer, 2026-10-17; issue #754).
 A job that falls back to ``ubuntu-latest`` when a runner variable is unset would
-run on a machine that is not his, holding the deploy secrets and the write
+run on a machine that is not theirs, holding the deploy secrets and the write
 token. A ``runs-on`` passes when:
 
 - it is a list that contains ``self-hosted``; or

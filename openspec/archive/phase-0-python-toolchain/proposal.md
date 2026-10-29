@@ -3,7 +3,7 @@
 **SDD change**: `phase-0-python-toolchain`
 **Date**: 2026-08-21
 **Status**: Proposed
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 
 Mirror of engram topic key `sdd/phase-0-python-toolchain/proposal` (see ADR-009 §6 dual-source rule).
 

@@ -1,7 +1,7 @@
 # Test Tiers — What Runs Where
 
 **Type**: Guide (living document — PR any change)
-**Owners**: Ricardo Afonso
+**Owners**: Maintainer
 **Applies to**: every test in this repo and every spec test-plan section.
 **Description**: The single table of test tiers: what each one is, which workflow or command runs it, how often, and whether it is live or planned; plus coverage floors and layer-isolation contracts.
 

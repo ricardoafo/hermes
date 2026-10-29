@@ -1,6 +1,6 @@
 """Serve comes back from downtime without back-dated fills (issue #1078, ADR-024 §7).
 
-The rule, decided by Rick on 2026-10-17 at 22:54 UTC:
+The rule, decided by the maintainer on 2026-10-17 at 22:54 UTC:
 
 - A bar that closed while serve was down is recorded as missed. The strategy still
   reads it, so its decisions match the backtest's.

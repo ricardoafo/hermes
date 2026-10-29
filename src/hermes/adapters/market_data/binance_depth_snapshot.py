@@ -13,7 +13,7 @@ one, ``https://data-api.binance.vision``).
 - **Frozen upstream** (#859 item 1, option A): a book whose ``lastUpdateId``
   has not moved since an earlier response is as old as that response, so it
   keeps the earlier stamp and RO-04 halts entries on it. A cached or frozen
-  upstream book no longer passes as fresh. Rick approved this new reason to
+  upstream book no longer passes as fresh. The maintainer approved this new reason to
   halt as a kill-rule change on 17 Oct 2026.
 - **Cache**: the last book per pair is reused for ``cache_seconds`` (1 s by
   default, below RO-04's 2 s limit), so a burst of reads costs one request.

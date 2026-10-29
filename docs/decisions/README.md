@@ -1,7 +1,7 @@
 # Decisions journal — small, dated, easy to append
 
 Small operational decisions that don't warrant a full ADR but that
-future-Ricardo will want to find later. Per
+a future maintainer will want to find later. Per
 [ADR-009](../architecture/adr-009-documentation-strategy.md) §4
 (Decisions journal).
 

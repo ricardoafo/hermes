@@ -24,7 +24,7 @@
 #   # <Title>
 #
 #   **Type**: Guide (living document — PR any change)
-#   **Owners**: Ricardo Afonso
+#   **Owners**: Maintainer
 #   **Applies to**: ...
 #   **Description**: One-line summary that shows up in the index cell.
 #

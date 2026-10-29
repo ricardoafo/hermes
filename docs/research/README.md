@@ -1,7 +1,7 @@
 # Research — background investigations
 
 Investigations that fed decisions. Not primary sources; digests of what
-Ricardo (or Claude on his behalf) learned from external material. Per
+The maintainer learned from external material. Per
 [ADR-009](../architecture/adr-009-documentation-strategy.md) §6
 (Research).
 
@@ -12,7 +12,7 @@ Ricardo (or Claude on his behalf) learned from external material. Per
 - Investigation that took >30 minutes and produced a decision
 - Digest of external material (papers, articles, competitor analysis,
   regulatory bindings) with citations
-- Reproducible — future-Ricardo could re-run the investigation
+- Reproducible — a future maintainer could re-run the investigation
 
 **Decision journal entry**:
 
@@ -41,7 +41,7 @@ Body:
 # {Topic}
 
 **Date**: YYYY-MM-DD (investigation concluded)
-**Author**: Ricardo / claude
+**Author**: Maintainer
 **Fed decisions**: ADR-NNN, journal entry YYYY-MM-DD-...
 **Sources**: bullet list with URLs, doc IDs, book chapters
 

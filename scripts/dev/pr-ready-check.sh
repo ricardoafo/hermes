@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Ready-to-merge gate: a PR opens only when it could merge right now.
 #
-# Rick reviews ready PRs only, approves what he agrees with, and the
+# The maintainer reviews ready PRs only, approves what they agree with, and the
 # queue merges approved PRs. A PR that is behind main with a conflict,
 # has commits still on the laptop, or never passed the full local suite
 # wastes that review: it gets approved, then needs another push, which

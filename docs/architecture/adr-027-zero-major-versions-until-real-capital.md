@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-17
 **Status**: Accepted (merged in PR #1092)
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 **Supersedes**: [ADR-022](adr-022-release-versions-and-deploy-cadence.md) §1 ("Shadow builds are `1.0.0-shadow.N`");
 the `0.x.y` and `1.0.0-shadow.N` pre-release lines of [ADR-006](adr-006-versioning-strategy.md) §1; and, in
 [ADR-014](adr-014-pre-registration-binds-real-capital.md) decision 5, the sentence "`1.0.0-shadow.N` covers shadow mode

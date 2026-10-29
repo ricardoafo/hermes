@@ -1,7 +1,7 @@
 # Hetzner Storage Box — Setup Runbook
 
 Nightly backup destination for `hermes-01`. Storage Box `hermes-storage-box-1`
-in Falkenstein (same DC as VPS, ~1ms latency), user `u656997`, SSH on port 23.
+in the same location as the VPS (~1ms latency), user `uXXXXXX` (your box's user), SSH on port 23.
 
 Encrypted, deduplicated backups via `borg`. Fires at 03:00 UTC via
 `hermes-backup.timer`.
@@ -16,7 +16,7 @@ with a separate full-access key, never from the VPS.
 One-time, done by operator at [robot.hetzner.com](https://robot.hetzner.com):
 
 1. Storage Boxes → order **BX11** (1 TB, ~€3.81/mo).
-2. Location: **FSN1** (Falkenstein) to match `hermes-01`.
+2. Location: the same location as the VPS.
 3. In the box's settings enable:
    - **SSH support** (needed for borg over SSH)
    - **ZFS snapshots** (defence-in-depth against a ransomed VPS pushing empty repos)
@@ -59,7 +59,7 @@ step.
 Add these lines (see `deploy/systemd/hermes.env.example` for template):
 
 ```bash
-HERMES_BACKUP_BORG_REPO=ssh://u656997@u656997.your-storagebox.de:23/./hermes-backup
+HERMES_BACKUP_BORG_REPO=ssh://uXXXXXX@uXXXXXX.your-storagebox.de:23/./hermes-backup
 HERMES_BACKUP_SSH_PORT=23
 BORG_PASSPHRASE=<generated in section 4>
 # Optional dead-man's-switch:
@@ -117,7 +117,7 @@ Don't wait until 03:00 for the first backup — run it now to validate the wirin
 sudo systemctl start hermes-backup.service
 journalctl -u hermes-backup.service -f
 # Expect "Backup OK" at the end. Then verify on the Storage Box side:
-BORG_PASSPHRASE="..." borg list ssh://u656997@u656997.your-storagebox.de:23/./hermes-backup
+BORG_PASSPHRASE="..." borg list ssh://uXXXXXX@uXXXXXX.your-storagebox.de:23/./hermes-backup
 ```
 
 ## 7. Restore drill (run once after the first backup)
@@ -146,7 +146,7 @@ The VPS never prunes. From a machine you trust (not hermes-01), with a second
 key that has **no** `command=` restriction in the box's `authorized_keys`:
 
 ```bash
-export BORG_REPO=ssh://u656997@u656997.your-storagebox.de:23/./hermes-backup
+export BORG_REPO=ssh://uXXXXXX@uXXXXXX.your-storagebox.de:23/./hermes-backup
 export BORG_PASSPHRASE=...   # from the password manager
 borg list                    # first: every archive you expect is still there
 borg prune --stats --keep-daily 7 --keep-weekly 4 --keep-monthly 12 --glob-archives 'hermes-*'
@@ -167,7 +167,7 @@ backup key instead of running what the client asks:
 ```bash
 # On hermes-01, as root:
 sudo -u hermes ssh -p 23 -i /var/lib/hermes/.ssh/hermes-backup_ed25519 \
-    -o IdentitiesOnly=yes u656997@u656997.your-storagebox.de ls < /dev/null
+    -o IdentitiesOnly=yes uXXXXXX@uXXXXXX.your-storagebox.de ls < /dev/null
 ```
 
 No file listing means the forced command won, and with it `--append-only`.
@@ -197,7 +197,7 @@ is a click in Cloud Console, ~1 min downtime.
 
 | Resource | Monthly cost | Notes |
 | ---------- | -------------- | ------- |
-| Storage Box BX11 (1 TB, Falkenstein) | ~€3.81 | Pre-paid annually gets ~5% off |
+| Storage Box BX11 (1 TB) | ~€3.81 | Pre-paid annually gets ~5% off |
 | Estimated egress | €0 | Same-DC as VPS, no bandwidth charge |
 | **Total backup infra** | **~€4/mo** | |
 

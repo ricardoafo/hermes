@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-03
 **Status**: Accepted (merged in PR #444)
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 **Supersedes**: in part, [ADR-003 §06](adr-003-solution-architecture/06-notifications.md) "Telegram adapter —
 outbound-only, no polling" and its rejected-alternatives row "Webhook / polling for inbound commands", for the
 read-only commands below only. Everything else in ADR-003 §06 and [ADR-008](adr-008-observability-strategy.md)

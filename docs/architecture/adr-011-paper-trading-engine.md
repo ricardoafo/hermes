@@ -1,8 +1,8 @@
 # ADR-011: Paper-trading engine — hexagonal fill kernel with same-code-path backtest / shadow / live parity, bucket-aware domain, calibration as CI gate, risk overlay, and pre-registered Strategy Development Protocol
 
 **Date**: 2026-08-25
-**Status**: Accepted — confirmed by Ricardo on 2026-10-03; text merged unchanged via #231 on 2026-08-26
-**Deciders**: Ricardo Afonso (product owner, theorist), Claude (proposer, synthesizer)
+**Status**: Accepted — confirmed by the maintainer on 2026-10-03; text merged unchanged via #231 on 2026-08-26
+**Deciders**: Maintainer
 **Supersedes**: —
 **Superseded in part by**: [ADR-013](adr-013-shadow-composition-root.md) (D-02, the location of the composition root, and the Shadow row of the mode table)
 

@@ -31,7 +31,7 @@ process only and booked figures keep using the ECB rate.
 
 - The countdown to the next bar: it already ticks every second in the status row (`in 3h 47m 12s`).
 - A countdown to certification: certification is counted in whole days (ADR-021), nothing to tick.
-- The quote on the Portfolio screen and in the money footnote: the System tab is the one place that already names the rate; more places can follow if Rick wants them.
+- The quote on the Portfolio screen and in the money footnote: the System tab is the one place that already names the rate; more places can follow if the maintainer wants them.
 - Items 4, 8 and 9 of #722.
 
 ## Decisions

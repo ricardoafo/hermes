@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-03
 **Status**: Accepted (merged in PR #471)
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 **Supersedes**: in part, [ADR-007](adr-007-testing-strategy.md): its tier cadences (§Test categorization), the
 mutation tool and scope (§Tool stack, §Mutation testing), the per-package coverage table (§Coverage) and the test-data
 rules (§Test data). Everything else in ADR-007 stands, including the SEV-1 annotation, the property-test and snapshot

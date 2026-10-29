@@ -14,7 +14,7 @@ dual-source rule).
 When serve comes back from downtime it evaluates every bar that closed while
 it was down. Today those bars are filled as if live: an exit is dated at the
 old bar's close on the §6.2 book, and an entry is halted as RO-04, which counts
-towards the kill inputs. This change applies the rule Rick set for ADR-024 §7:
+towards the kill inputs. This change applies the rule the maintainer set for ADR-024 §7:
 a bar reached more than the live window (5 min) after its close is recorded as
 missed, its entry is not filled, its exit fills at the price when serve is
 back, stamped now, and one restart report names the downtime, the missed bars
@@ -41,7 +41,7 @@ service now waits for time sync.
 
 - The per-shadow missed-bar budget: issue #1076 reads the `BarMissed` rows.
 - Enabling `systemd-time-wait-sync.service` on hermes-01: a machine step for
-  Rick, sent through the coordinator.
+  the maintainer, sent through the coordinator.
 - The cutover move tool (issue #1085).
 
 ## Decisions
@@ -140,7 +140,7 @@ Test tiers touched: unit, property, integration
 
 - **A clock far off at boot** marks live bars as missed (entries passed over)
   or missed bars as live. Mitigation: `After=time-sync.target`, the existing
-  clock-skew alert, and Rick enabling `systemd-time-wait-sync.service`.
+  clock-skew alert, and the maintainer enabling `systemd-time-wait-sync.service`.
 - **A crash between the `BarMissed` row and `BarProcessed`** re-handles the bar
   and writes a second row. Mitigation: the row is appended just before
   `BarProcessed`; #1076's budget should count distinct bar keys.
@@ -151,4 +151,4 @@ Test tiers touched: unit, property, integration
 
 - ADR-024 §7 (merged in PR #1082).
 - Issue #1076 consumes the `BarMissed` rows.
-- VPS step for Rick: enable `systemd-time-wait-sync.service` on hermes-01.
+- VPS step for the maintainer: enable `systemd-time-wait-sync.service` on hermes-01.

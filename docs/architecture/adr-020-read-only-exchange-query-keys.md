@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-06
 **Status**: Accepted (merged in PR #800)
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 **Supersedes**: in part, [ADR-019](adr-019-security-baseline-and-threat-model.md): Decision 2 and the "Until MVP2"
 bullet of §Exchange API keys. Everything else in ADR-019 stands.
 
@@ -17,7 +17,7 @@ public reply on 2026-10-04, so this test is the only drift check on the fee the 
 the Query Funds permission only, and the test skips when the key is missing.
 
 Read literally, ADR-019 would delete that key and silently turn the fee check off. The conflict was found after
-ADR-019 was approved but before it merged. On 2026-10-06 at 01:30 Madrid, Rick chose "Keep fee check": keep the
+ADR-019 was approved but before it merged. On 2026-10-06 at 01:30 Madrid, the maintainer chose "Keep fee check": keep the
 read-only key and ban only trade-capable keys. ADR-019 merged before the wording change landed. ADR-019 is Accepted,
 so the change is this ADR (ADR-009 lifecycle, AGENTS.md rule 10).
 

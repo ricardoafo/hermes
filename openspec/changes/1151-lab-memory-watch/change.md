@@ -34,7 +34,7 @@ changes only after a successful send keeps it to one message per crossing.
 
 ### Out
 
-- Enabling the timer on hermes-01 (Rick's machine step).
+- Enabling the timer on hermes-01 (the maintainer's machine step).
 - Recording the one-day figures in issue #1151, which needs the shadow
   line from issue #1076 running first.
 - Any prod unit or prod alert path.

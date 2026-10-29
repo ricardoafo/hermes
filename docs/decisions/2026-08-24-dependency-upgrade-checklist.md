@@ -1,7 +1,7 @@
 # Dependency-upgrade review checklist
 
 **Date**: 2026-08-24
-**Author**: claude on behalf of Ricardo
+**Author**: Maintainer
 **Related**: [Dependabot over Renovate](2026-08-21-dependabot-over-renovate.md),
 [Drop `safety`](2026-08-22-drop-safety.md), ADR-010 (Security policy),
 GH #141 (MVP1 status), PR #140 (Wave 5 process cadence), PR #149 (Wave 6

@@ -1,18 +1,15 @@
 name: Bug report
-description: Report a defect. Bug-triager agent will pick this up and assign severity.
+description: Report a defect.
 title: "[bug] "
 labels: ["type:fix"]
-assignees:
-  - ricardoafo
 body:
   - type: markdown
     attributes:
       value: |
-        Structured bug report. Every field matters — the `bug-triager` agent uses
-        the severity rubric at `~/.claude/rules/severity-rubric.md` to classify
-        this and cite the exact axis row (e.g. `Security axis S2` or `Functional
-        axis F1`). No vibes-based severity. See
-        [docs/guides/dev-workflow.md](../../docs/guides/dev-workflow.md).
+        Structured bug report. Every field matters: triage uses the severity
+        rubric at `docs/guides/severity-rubric.md` to classify this and cite the
+        exact axis row (e.g. `Security axis S2` or `Functional axis F1`). See
+        [CONTRIBUTING.md](https://github.com/ricardoafo/hermes/blob/main/CONTRIBUTING.md).
 
   - type: input
     id: summary
@@ -107,7 +104,7 @@ body:
     attributes:
       label: Proposed severity + rubric row
       description: >
-        Your best guess. Bug-triager will validate. Cite the row.
+        Your best guess; triage will confirm it. Cite the row.
         Format: `SEV-N (axis, row)`.
       placeholder: "SEV-2 (Functional axis F1) — wrong legal output; blocks merge; fix in 72h"
     validations:

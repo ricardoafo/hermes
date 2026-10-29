@@ -1,9 +1,9 @@
 # ADR-003: Solution Architecture
 
-**Status**: Accepted (all 10 sections approved by Ricardo Afonso on 2026-08-20)
+**Status**: Accepted (all 10 sections approved by the maintainer on 2026-08-20)
 **Accepted**: 2026-08-21
 **Date**: 2026-08-20
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 **Supersedes**: —
 
 ## System at a glance
@@ -72,7 +72,7 @@ Foundational context:
 
 - **ADR-001** — LLM as supervisor (Claude never generates trade decisions)
 - **ADR-002** — Tax posture (DGT V2232-25, savings base, dynamic FIFO calculator) *(pending)*
-- **ADR-004** — Exchange decision (Binance primary via ARG-DNI, exchange-agnostic architecture, Kraken as documented backup) *(pending)*
+- **ADR-004** — Exchange decision (Binance primary, exchange-agnostic architecture, Kraken as documented backup) *(pending)*
 
 ## Decision
 
@@ -146,16 +146,16 @@ Rule of thumb: **every abstraction must earn its keep at OUR scale**. No pattern
 
 | Section                           | Approved by    | Date       |
 | --------------------------------- | -------------- | ---------- |
-| Code Organization (Hexagonal)     | Ricardo Afonso | 2026-08-20 |
-| Data Flow                         | Ricardo Afonso | 2026-08-20 |
-| Persistence & Schema              | Ricardo Afonso | 2026-08-20 |
-| Exchange Adapters                 | Ricardo Afonso | 2026-08-20 |
-| Signal Engines                    | Ricardo Afonso | 2026-08-20 |
-| Notification Pipeline             | Ricardo Afonso | 2026-08-20 |
-| User Interface (CLI + TUI)        | Ricardo Afonso | 2026-08-20 |
-| LLM Supervisor Layer              | Ricardo Afonso | 2026-08-20 |
-| Deployment Topology (VPS + CI/CD) | Ricardo Afonso | 2026-08-20 |
-| Failure & Recovery                | Ricardo Afonso | 2026-08-20 |
+| Code Organization (Hexagonal)     | Maintainer     | 2026-08-20 |
+| Data Flow                         | Maintainer     | 2026-08-20 |
+| Persistence & Schema              | Maintainer     | 2026-08-20 |
+| Exchange Adapters                 | Maintainer     | 2026-08-20 |
+| Signal Engines                    | Maintainer     | 2026-08-20 |
+| Notification Pipeline             | Maintainer     | 2026-08-20 |
+| User Interface (CLI + TUI)        | Maintainer     | 2026-08-20 |
+| LLM Supervisor Layer              | Maintainer     | 2026-08-20 |
+| Deployment Topology (VPS + CI/CD) | Maintainer     | 2026-08-20 |
+| Failure & Recovery                | Maintainer     | 2026-08-20 |
 
 ## What would change this decision
 

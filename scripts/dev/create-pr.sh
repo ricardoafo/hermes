@@ -37,7 +37,7 @@
 #   HERMES_SELF_TEST=1 bash scripts/dev/create-pr.sh
 #
 # Passthrough allowlist: --head, --base, --reviewer. --draft is refused:
-# a PR opens only when it is ready to merge (Rick's rule, 2026-10-03).
+# a PR opens only when it is ready to merge (the maintainer's rule, 2026-10-03).
 # DoR flags: --skip-openspec-check "reason" (bypass openspec gate, audit-logged)
 # Anything else → exit 2 (usage error, unknown flag).
 #

@@ -1,7 +1,7 @@
 # PR flow hardening — auto-index, auto-update, bot identity discipline
 
 **Date**: 2026-08-21
-**Author**: claude on behalf of Ricardo
+**Author**: Maintainer
 **Related**: dev-workflow.md, AGENTS.md, ADR-006, ADR-009
 **Superseded (in part)**: the `pr-auto-update.yml` decision (and the
 `require_last_push_approval` workaround it implemented) is superseded
@@ -33,8 +33,8 @@ friction:
    `feat/fix/refactor/perf requires CHANGELOG` gate even though
    CI infrastructure fixes don't affect user-visible runtime behavior.
 4. **Git commit author = operator** — global git config identifies
-   commits as Ricardo, so `require_last_push_approval` blocked
-   Ricardo from approving bot-opened PRs (he was "the last pusher"
+   commits as the maintainer, so `require_last_push_approval` blocked
+   the maintainer from approving bot-opened PRs (they were "the last pusher"
    by author attribution).
 5. **Windows credential manager cached operator PAT** — regardless of
    active `gh` user, `git push` used cached PAT, GH recorded operator

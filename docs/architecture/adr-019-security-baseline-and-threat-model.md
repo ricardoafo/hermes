@@ -2,7 +2,7 @@
 
 **Date**: 2026-10-06
 **Status**: Accepted (merged in PR #787)
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 **Supersedes**: none. It builds on [ADR-010](adr-010-dependency-management-and-supply-chain.md) (supply chain),
 [ADR-014](adr-014-pre-registration-binds-real-capital.md) (real capital) and ADR-018 (CI/CD infrastructure, where the
 runner isolation decisions live).
@@ -21,7 +21,7 @@ Scorecard, SLSA, NIST SSDF, OWASP ASVS, the CIS benchmarks) treats that missing 
 (NIST SSDF PW.1).
 
 The review estimated the posture at about 6.5/10. The Scorecard CLI, run locally on 2026-10-06 over the 11 checks
-that work without the GitHub API, scored 6.6. Rick approved all eight follow-up fixes on 2026-10-06:
+that work without the GitHub API, scored 6.6. The maintainer approved all eight follow-up fixes on 2026-10-06:
 issues #769 to #776, with #770 closed as a duplicate of #768. The deep audit (#774) then filed #778 to #784. This ADR
 is fix D4 (#772) and carries fix D1, the exchange API key policy (#769).
 
@@ -104,9 +104,9 @@ Applies from the first key, testnet included.
 
 ### Neutral
 
-- No code changes here. The fixes land through their own issues, on the lines Rick already set: RC Security owns
+- No code changes here. The fixes land through their own issues, on the lines the maintainer already set: RC Security owns
   #768 and #679, the CI line owns #771, #773, #776, #778, #779 and #780 after the ADR-018 rollout, and #775 is the Code
-  Owner's VPS action. #781 waits for MVP2 and Rick (ADR-014).
+  Owner's VPS action. #781 waits for MVP2 and the maintainer (ADR-014).
 
 ## What would change this decision
 

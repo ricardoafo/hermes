@@ -3,7 +3,7 @@
 **Date**: 2026-08-20
 **Status**: Accepted
 **Accepted**: 2026-08-21
-**Deciders**: Ricardo Afonso (product owner), Claude (proposer)
+**Deciders**: Maintainer
 **Supersedes**: —
 **Superseded in part by**: [ADR-016](adr-016-tax-estimate-rules.md) (Decision item 1, rate scale only)
 
@@ -37,9 +37,8 @@ The relevant regulatory backdrop:
   base rows.
 - **Modelo 721** — informative declaration of virtual currencies held abroad;
   mandatory if aggregate foreign-held crypto exceeds €50,000 on 31 December.
-- **CDI España-Argentina** (BOE-A-1994-27310) — treaty allowing foreign-tax credit for
-  Argentine tax paid on Argentine-source income (relevant because the user's Binance
-  account is under Argentine KYC — see [ADR-004](./adr-004-exchange-decision.md)).
+- **Double-tax treaties (CDI)** — allow a foreign-tax credit when income is also taxed
+  in another country.
 - **DGT V0999-18, V1069-19, V0975-22** — earlier bindings confirming crypto-to-crypto
   swaps are taxable events even without fiat leg.
 
@@ -60,10 +59,8 @@ Hermes operates under the following tax posture:
 4. **Modelo 100 filed annually, Modelo 721 filed only when the €50,000 threshold is
    crossed.** The engine emits both drafts automatically at year-end; the user reviews
    and files.
-5. **CDI foreign-tax credit path is coded but expected inactive.** Argentine capital
-   gains tax on foreign-source income is 0% for individuals under current ARG law;
-   there is nothing to credit in the normal case. The path exists for the day that
-   changes.
+5. **A foreign-tax credit path is coded but expected inactive.** It applies only if a
+   gain is also taxed abroad under a double-tax treaty, which is not the normal case.
 6. **Rate-recharacterization guard is enforced at engine level.** Trade frequency,
    position count, and portfolio structure are monitored against thresholds that would
    invite AEAT recharacterization as *actividad económica*. Exceeding a threshold
@@ -170,14 +167,8 @@ code change.
   (e.g. the engine starts managing a friend's account), the ruling stops
   protecting us. This is the largest single risk — mitigated by the
   recharacterization guard and by ADR-001 (LLM never trades).
-- **Modelo 721 kicks in as capital grows.** At the projected €50k+ crypto AUM
-  in 2027-2028, the €50,000 threshold triggers and Modelo 721 must be filed
-  by 2027-03-31 for FY 2026 or 2028-03-31 for FY 2027, depending on the year
-  the threshold is first crossed on 31 December.
-- **Argentine-source income posture requires the Binance account to remain
-  ARG-KYC'd.** If Binance forces a residency update, the offshore-income
-  path collapses and we would need to switch primary to Kraken EU (already
-  hedged in ADR-004).
+- **Modelo 721 kicks in as capital grows.** Once foreign-held crypto exceeds
+  €50,000 on 31 December, Modelo 721 is due by 31 March of the following year.
 - **Rate scale is not stable.** Spain has been progressively raising
   savings-base rates (2020: 26% top; 2024: 28% top). Assume further
   upward pressure over the project lifetime.
@@ -192,9 +183,8 @@ code change.
   the calculator consumes oldest-first until quantity is satisfied and writes
   `lot_consumptions` rows recording exactly which lot lost how much and at
   what realized gain. All state is on disk; nothing is inferred.
-- **A pending user obligation exists: gestor consultation on Modelo 721 for
-  ARG-Binance situation.** Not blocking for the engine build, but should be
-  resolved before the first FY-end declaration.
+- **The figures are estimates.** Hermes produces them and submits nothing; a tax
+  adviser should review them before any filing.
 
 ## What would change this decision
 
@@ -209,9 +199,8 @@ code change.
   Solidaridad).** These are unrelated to income tax but might affect the
   reporting cadence and residency planning. The engine's role is limited to
   producing year-end balance snapshots on demand.
-- **Argentina imposes source tax on non-resident capital gains.** Currently 0%
-  for individuals. If ARG changes this, the CDI foreign-tax credit path
-  (currently coded but inactive) activates.
+- **Another country taxes the same gains.** The foreign-tax credit path (coded but
+  inactive) then applies.
 
 ## References
 
@@ -221,7 +210,7 @@ code change.
 - Ley 35/2006 IRPF, art. 37.2 — FIFO obligation on homogeneous elements
 - Modelo 100 instructions (AEAT) — savings-base rows for crypto
 - Modelo 721 instructions (AEAT) — foreign-held virtual currency declaration
-- CDI España-Argentina (BOE-A-1994-27310) — foreign-tax credit mechanism
+- Spain's double-tax treaties (CDI) — foreign-tax credit mechanism
 - DGT V0999-18, V1069-19, V0975-22 — crypto-to-crypto swap taxability
 
 ## Cross-references
@@ -230,11 +219,11 @@ code change.
   own-capital posture)
 - [ADR-003 section 03](./adr-003-solution-architecture/03-persistence-schema.md) —
   FIFO schema + worked example
-- [ADR-004 — Exchange decision (ARG-KYC posture + EUR pricing source)](./adr-004-exchange-decision.md)
+- [ADR-004 — Exchange decision (EUR pricing source)](./adr-004-exchange-decision.md)
 
 ## Pending
 
-- **Gestor consultation** — user to confirm CDI mechanics + Modelo 721 for the
-  ARG-Binance situation before first FY-end declaration. Not blocking engine build.
+- **Adviser review** — the year-end figures are checked by a tax adviser before
+  the first declaration. Not blocking the engine build.
 - **Recharacterization thresholds** — the values in `config/tax_guard.yaml` are
   initial estimates. First review after 90 days of shadow-mode data.
