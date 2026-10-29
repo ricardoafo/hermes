@@ -152,8 +152,11 @@ class EurPricer:
             fx = self._fx.get_for_date(Currency.EUR, quote, fill_date)
             pricing = EurPricing.from_fx_rate(fx, source=self._source)
         except (InfraError, ValueError) as exc:
-            _log.warning(
-                "eur_rate_lookup_failed",
+            # The daily pass prices a cached-only miss later, so it is routine;
+            # as a warning it would read like a provider outage (#996).
+            pending = isinstance(exc, _NotLookedUpError)
+            (_log.info if pending else _log.warning)(
+                "eur_rate_pending" if pending else "eur_rate_lookup_failed",
                 quote=quote.value,
                 fill_date=fill_date.isoformat(),
                 error=str(exc),
@@ -206,6 +209,10 @@ class EurPricer:
         self._failed_until[(quote, fill_date)] = self._monotonic() + FAILURE_RETRY_SEC
 
 
+class _NotLookedUpError(FxRateError):
+    """Raised by the cached-only view for a rate no lookup has cached yet."""
+
+
 class _NoProvider:
     """Provider of the cached-only view: every lookup is an outage."""
 
@@ -214,5 +221,5 @@ class _NoProvider:
         raise FxRateError("cached-only pricer has no provider")
 
     def get_for_date(self, from_currency: Currency, to_currency: Currency, on: date) -> FxRate:
-        """Fail like an outage so the trade stays pending."""
-        raise FxRateError("rate not looked up in this run")
+        """Fail so the trade stays pending until the daily pass prices it."""
+        raise _NotLookedUpError("rate not looked up in this run")
