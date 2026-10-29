@@ -105,6 +105,27 @@ def test_cached_only_view_prices_warmed_rates_and_never_calls_the_provider() -> 
     assert (warmed is not None and warmed.rate, cold, len(fx.calls)) == (Decimal("1.1721"), None, 1)
 
 
+def test_a_cached_only_miss_logs_pending_at_info_and_no_warning() -> None:
+    """Invariant (#996): a fill priced later by the daily pass is not reported as an FX outage."""
+    view = EurPricer(FakeFx(rates={_FRI: (Decimal("1.1721"), _FRI)})).cached_only()
+
+    with capture_logs() as logs:
+        pricing = view.price(Currency.USDT, _FRI, today=_FRI)
+
+    assert (pricing, [(e["event"], e["log_level"]) for e in logs]) == (
+        None,
+        [("eur_rate_pending", "info")],
+    )
+
+
+def test_a_provider_outage_still_logs_a_lookup_failure_warning() -> None:
+    """Invariant (#996): a real provider failure keeps its warning in the daily report."""
+    with capture_logs() as logs:
+        EurPricer(FakeFx(down=True)).price(Currency.USDT, _FRI, today=_MON)
+
+    assert [(e["event"], e["log_level"]) for e in logs] == [("eur_rate_lookup_failed", "warning")]
+
+
 def test_prior_day_rate_on_the_fill_day_is_not_final() -> None:
     """Invariant (A-2.3): a same-day lookup that resolves to an earlier date is not stored."""
     fx = FakeFx(rates={_MON: (Decimal("1.17"), _FRI)})
