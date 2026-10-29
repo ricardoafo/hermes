@@ -3,7 +3,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions         ● live · checked 14:00 · next 18:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions       ● live · checked 12m ago · next 18:00  ◑ CONTROL ROOM
   ┏━ POSITIONS  ──────────────────────────────────────────────── computed ┏━ DETAIL  ─────────────────────────── computed
     ⌕ type to filter…  state:open coin:ETH side:long                       ETH · 4h · long · open 1d 4h   ▲ +€1.54 net
    3 of 3                                                                  size 0.0350 ETH · now worth €80.12 · cost
@@ -46,7 +46,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions             ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions           ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
   ┏━ POSITIONS  ──────────────────────────────────────────────────────────────────────── computed ┏━ DETAIL  ─────────────────────────────────────────── computed
     ⌕ type to filter…  state:open coin:ETH side:long                                               ETH · 4h · long · open 1d 4h   ▲ +€1.54 net
    3 of 3                                                                                          size 0.0350 ETH · now worth €80.12 · cost €78.58
@@ -98,7 +98,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                             ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                           ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
   ┏━ POSITIONS  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── computed ┏━ DETAIL  ─────────────────────────────────────────────────────────────────────────── computed
     ⌕ type to filter…  state:open coin:ETH side:long                                                                                               ETH · 4h · long · open 1d 4h   ▲ +€1.54 net
    3 of 3                                                                                                                                          size 0.0350 ETH · now worth €80.12 · cost €78.58
@@ -165,7 +165,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA        ● live · checked 12m ago · next 18:00  ◑
   ┏━ POSITIONS  ──────────────────────────────────────────────────────── computed
     ⌕ type to filter…  state:open coin:ETH side:long
    3 of 3
@@ -196,7 +196,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions        ● live · checked 14:00 · next 18:00 14:12:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions      ● live · checked 12m ago · next 18:00 14:12:00  ◑ NEON
   ┏━ POSITIONS  ──────────────────────────────────────────────── computed ┏━ DETAIL  ─────────────────────────── computed
     ⌕ type to filter…  state:open coin:ETH side:long                       ETH · 4h · long · open 1d 4h   ▲ +€1.54 net
    3 of 3                                                                  size 0.0350 ETH · now worth €80.12 · cost
@@ -239,7 +239,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                     ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                   ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ NEON
   ┏━ POSITIONS  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── computed ┏━ DETAIL  ─────────────────────────────────────────────────────────────────────────── computed
     ⌕ type to filter…  state:open coin:ETH side:long                                                                                               ETH · 4h · long · open 1d 4h   ▲ +€1.54 net
    3 of 3                                                                                                                                          size 0.0350 ETH · now worth €80.12 · cost €78.58
@@ -306,7 +306,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA        ● live · checked 12m ago · next 18:00  ◑
   ┏━ POSITIONS  ──────────────────────────────────────────────────────── computed
     ⌕ type to filter…  state:open coin:ETH side:long
    3 of 3

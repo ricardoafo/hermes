@@ -104,7 +104,7 @@
 # name: test_blind_screen_matches_snapshot[empty-heartbeat]
   list([
     ' DEMO DATA · scenario empty',
-    '                                             ● live · checked 14:00 · next 18:00',
+    '                                           ● live · checked 12m ago · next 18:00',
   ])
 # ---
 # name: test_blind_screen_matches_snapshot[empty-market-watch]
@@ -117,7 +117,7 @@
 # name: test_blind_screen_matches_snapshot[empty-overview]
   list([
     ' DEMO DATA · scenario empty',
-    '                                             ● live · checked 14:00 · next 18:00',
+    '                                           ● live · checked 12m ago · next 18:00',
     'Portfolio · money hidden on this surface',
     '',
     'No open shadow positions.',
@@ -270,7 +270,7 @@
 # name: test_blind_screen_matches_snapshot[losing-year-heartbeat]
   list([
     ' DEMO DATA · scenario losing-year',
-    '                                             ● live · checked 14:00 · next 18:00',
+    '                                           ● live · checked 12m ago · next 18:00',
   ])
 # ---
 # name: test_blind_screen_matches_snapshot[losing-year-market-watch]
@@ -287,7 +287,7 @@
 # name: test_blind_screen_matches_snapshot[losing-year-overview]
   list([
     ' DEMO DATA · scenario losing-year',
-    '                                             ● live · checked 14:00 · next 18:00',
+    '                                           ● live · checked 12m ago · next 18:00',
     'Portfolio · money hidden on this surface',
     '',
     'coin   side   opened             entry    size     stop',
@@ -364,7 +364,7 @@
 # name: test_blind_screen_matches_snapshot[ok-two-positions-heartbeat]
   list([
     ' DEMO DATA · scenario ok-two-positions',
-    '                                             ● live · checked 14:00 · next 18:00',
+    '                                           ● live · checked 12m ago · next 18:00',
   ])
 # ---
 # name: test_blind_screen_matches_snapshot[ok-two-positions-market-watch]
@@ -381,7 +381,7 @@
 # name: test_blind_screen_matches_snapshot[ok-two-positions-overview]
   list([
     ' DEMO DATA · scenario ok-two-positions',
-    '                                             ● live · checked 14:00 · next 18:00',
+    '                                           ● live · checked 12m ago · next 18:00',
     'Portfolio · money hidden on this surface',
     '',
     'coin   side   opened             entry   size    stop',
@@ -460,7 +460,7 @@
 # name: test_blind_screen_matches_snapshot[tax-pending-heartbeat]
   list([
     ' DEMO DATA · scenario tax-pending',
-    '                                             ● live · checked 14:00 · next 18:00',
+    '                                           ● live · checked 12m ago · next 18:00',
   ])
 # ---
 # name: test_blind_screen_matches_snapshot[tax-pending-market-watch]
@@ -477,7 +477,7 @@
 # name: test_blind_screen_matches_snapshot[tax-pending-overview]
   list([
     ' DEMO DATA · scenario tax-pending',
-    '                                             ● live · checked 14:00 · next 18:00',
+    '                                           ● live · checked 12m ago · next 18:00',
     'Portfolio · money hidden on this surface',
     '',
     'coin   side   opened             entry   size    stop',
@@ -852,13 +852,13 @@
 # name: test_operator_screen_matches_snapshot[empty-heartbeat-120]
   list([
     ' DEMO DATA · scenario empty',
-    '                                                                                     ● live · checked 14:00 · next 18:00',
+    '                                                                                   ● live · checked 12m ago · next 18:00',
   ])
 # ---
 # name: test_operator_screen_matches_snapshot[empty-heartbeat-80]
   list([
     ' DEMO DATA · scenario empty',
-    '                                             ● live · checked 14:00 · next 18:00',
+    '                                           ● live · checked 12m ago · next 18:00',
   ])
 # ---
 # name: test_operator_screen_matches_snapshot[empty-market-watch-120]
@@ -878,7 +878,7 @@
 # name: test_operator_screen_matches_snapshot[empty-overview-120]
   list([
     ' DEMO DATA · scenario empty',
-    '                                                                                     ● live · checked 14:00 · next 18:00',
+    '                                                                                   ● live · checked 12m ago · next 18:00',
     '€1,000.00   · €0.00 0.00% today',
     'net · €0.00 today',
     '▄▄▄▄',
@@ -906,7 +906,7 @@
 # name: test_operator_screen_matches_snapshot[empty-overview-80]
   list([
     ' DEMO DATA · scenario empty',
-    '                                             ● live · checked 14:00 · next 18:00',
+    '                                           ● live · checked 12m ago · next 18:00',
     '€1,000.00   · €0.00 0.00% today',
     'net · €0.00 today',
     '▄▄▄▄',
@@ -1362,13 +1362,13 @@
 # name: test_operator_screen_matches_snapshot[losing-year-heartbeat-120]
   list([
     ' DEMO DATA · scenario losing-year',
-    '                                                                                     ● live · checked 14:00 · next 18:00',
+    '                                                                                   ● live · checked 12m ago · next 18:00',
   ])
 # ---
 # name: test_operator_screen_matches_snapshot[losing-year-heartbeat-80]
   list([
     ' DEMO DATA · scenario losing-year',
-    '                                             ● live · checked 14:00 · next 18:00',
+    '                                           ● live · checked 12m ago · next 18:00',
   ])
 # ---
 # name: test_operator_screen_matches_snapshot[losing-year-market-watch-120]
@@ -1396,7 +1396,7 @@
 # name: test_operator_screen_matches_snapshot[losing-year-overview-120]
   list([
     ' DEMO DATA · scenario losing-year',
-    '                                                                                     ● live · checked 14:00 · next 18:00',
+    '                                                                                   ● live · checked 12m ago · next 18:00',
     '€951.19   ▼ −€4.02 −0.42% today',
     'net ▼ −€3.26 today',
     '█▇▇▄▁',
@@ -1435,7 +1435,7 @@
 # name: test_operator_screen_matches_snapshot[losing-year-overview-80]
   list([
     ' DEMO DATA · scenario losing-year',
-    '                                             ● live · checked 14:00 · next 18:00',
+    '                                           ● live · checked 12m ago · next 18:00',
     '€951.19   ▼ −€4.02 −0.42% today',
     'net ▼ −€3.26 today',
     '█▇▇▄▁',
@@ -1652,13 +1652,13 @@
 # name: test_operator_screen_matches_snapshot[ok-two-positions-heartbeat-120]
   list([
     ' DEMO DATA · scenario ok-two-positions',
-    '                                                                                     ● live · checked 14:00 · next 18:00',
+    '                                                                                   ● live · checked 12m ago · next 18:00',
   ])
 # ---
 # name: test_operator_screen_matches_snapshot[ok-two-positions-heartbeat-80]
   list([
     ' DEMO DATA · scenario ok-two-positions',
-    '                                             ● live · checked 14:00 · next 18:00',
+    '                                           ● live · checked 12m ago · next 18:00',
   ])
 # ---
 # name: test_operator_screen_matches_snapshot[ok-two-positions-market-watch-120]
@@ -1686,7 +1686,7 @@
 # name: test_operator_screen_matches_snapshot[ok-two-positions-overview-120]
   list([
     ' DEMO DATA · scenario ok-two-positions',
-    '                                                                                     ● live · checked 14:00 · next 18:00',
+    '                                                                                   ● live · checked 12m ago · next 18:00',
     '€1,021.06   ▲ +€12.30 +1.22% today',
     'net ▲ +€10.66 today',
     '▁▂▁▄▆█',
@@ -1726,7 +1726,7 @@
 # name: test_operator_screen_matches_snapshot[ok-two-positions-overview-80]
   list([
     ' DEMO DATA · scenario ok-two-positions',
-    '                                             ● live · checked 14:00 · next 18:00',
+    '                                           ● live · checked 12m ago · next 18:00',
     '€1,021.06   ▲ +€12.30 +1.22% today',
     'net ▲ +€10.66 today',
     '▁▂▁▄▆█',
@@ -1950,13 +1950,13 @@
 # name: test_operator_screen_matches_snapshot[tax-pending-heartbeat-120]
   list([
     ' DEMO DATA · scenario tax-pending',
-    '                                                                                     ● live · checked 14:00 · next 18:00',
+    '                                                                                   ● live · checked 12m ago · next 18:00',
   ])
 # ---
 # name: test_operator_screen_matches_snapshot[tax-pending-heartbeat-80]
   list([
     ' DEMO DATA · scenario tax-pending',
-    '                                             ● live · checked 14:00 · next 18:00',
+    '                                           ● live · checked 12m ago · next 18:00',
   ])
 # ---
 # name: test_operator_screen_matches_snapshot[tax-pending-market-watch-120]
@@ -1984,7 +1984,7 @@
 # name: test_operator_screen_matches_snapshot[tax-pending-overview-120]
   list([
     ' DEMO DATA · scenario tax-pending',
-    '                                                                                     ● live · checked 14:00 · next 18:00',
+    '                                                                                   ● live · checked 12m ago · next 18:00',
     '€1,021.06   ▲ +€12.30 +1.22% today',
     'net ▲ +€11.40 today · before tax',
     '▁▂▁▄▆█',
@@ -2024,7 +2024,7 @@
 # name: test_operator_screen_matches_snapshot[tax-pending-overview-80]
   list([
     ' DEMO DATA · scenario tax-pending',
-    '                                             ● live · checked 14:00 · next 18:00',
+    '                                           ● live · checked 12m ago · next 18:00',
     '€1,021.06   ▲ +€12.30 +1.22% today',
     'net ▲ +€11.40 today · before tax',
     '▁▂▁▄▆█',

@@ -13,6 +13,7 @@ Reference: openspec/archive/console-read-model/change.md (D-6).
 """
 
 from collections.abc import Sequence
+from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 from typing import Final
@@ -29,6 +30,7 @@ __all__ = [
     "arrow",
     "big_digits",
     "cushion_level",
+    "elapsed_text",
     "fmt_atr",
     "fmt_atr_range",
     "fmt_change",
@@ -248,6 +250,27 @@ def fmt_atr(value: Decimal) -> str:
 def fmt_atr_range(value: Decimal) -> str:
     """Return the detail-view distance label: a number, times, average range (ATR)."""
     return f"{value.quantize(_TENTH, rounding=ROUND_HALF_UP)} {TIMES} average range (ATR)"
+
+
+def elapsed_text(span: timedelta) -> str:
+    """Return how long a span is: ``45s``, ``12m``, ``1h 02m`` or ``3d 4h``.
+
+    Seconds show only under a minute: the status row already ticks seconds in
+    its clock and countdown, and a longer age would crowd the feed chip. A
+    negative span reads ``0s``.
+
+    Args:
+        span: The time passed.
+    """
+    seconds = max(int(span.total_seconds()), 0)
+    minutes, secs = divmod(seconds, 60)
+    hours, mins = divmod(minutes, 60)
+    days, hrs = divmod(hours, 24)
+    if days:
+        return f"{days}d {hrs}h"
+    if hours:
+        return f"{hours}h {mins:02d}m"
+    return f"{minutes}m" if minutes else f"{secs}s"
 
 
 def sparkline(values: Sequence[Decimal], width: int) -> str:

@@ -3,7 +3,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario empty      ● live · checked 14:00 · next 18:00 in 3h 48m 00s  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario empty         ● live · checked 12m ago · next 18:00 14:12:00  ◑ CONTROL ROOM
   ┏━ PORTFOLIO  ────────────────────── computed  ┏━ POSITIONS  ──────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓┏━┓┏━┓ ┏━┓┏━┓                        ⠁ No open positions
    ╪═  ┃  ┃ ┃┃ ┃┃ ┃ ┃ ┃┃ ┃
@@ -36,7 +36,7 @@
   
   
   Shadow test · warm-up · not counting
-   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                      read-only
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit    next 3h 48m 00s · read-only
   ---
   colours: #070b14 #0c1424 #0f1b33 #1a2740 #1b3a6b #2c4f86 #3063a8 #3a2a66 #468ce6 #468de6 #468ee6 #47327a #478ce6 #478fe6 #4790e6 #4791e6 #488be7 #4892e6 #4894e7 #4895e7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a9ae7 #4a9ce7 #4a9de7 #4b8ae7 #4b9ee7 #4b9fe7 #4ba0e7 #4c94e8 #4ca1e8 #4ca3e8 #4ca4e8 #4d89e8 #4da5e8 #4da6e8 #4da7e8 #4da8e8 #4e88e8 #4eaae8 #4eabe8 #4eace8 #4fade8 #4faee8 #4fafe9 #5088e9 #50b1e9 #50b2e9 #50b3e9 #50b4e9 #5187e9 #51b5e9 #51b6e9 #51b7e9 #5286ea #52b9e9 #52bae9 #52bbe9 #539deb #53bce9 #53bdea #53beea #53c0ea #543a8f #5486ea #54c1ea #54c2ea #54c3ea #5585ea #55c4ea #55c5ea #55c7ea #5685eb #56c8ea #56c9ea #56caea #56cbeb #5784eb #57cceb #57ceeb #57cfeb #5884eb #58d0eb #58d1eb #59a5ed #5a83ec #5b82ec #5d82ed #5e81ed #5faeef #6081ed #6180ee #6242a3 #637fee #647fef #657eef #65b6f1 #667eef #677def #687df0 #68baf2 #697cf0 #6a7cf0 #6b7bf1 #6cbff4 #6d7bf1 #6e7af1 #6e7af2 #6f49b8 #7079f2 #7179f2 #72c7f6 #7378f3 #7477f3 #7577f4 #7676f4 #7677f4 #768eb2 #7776f4 #7875f4 #78d0f8 #7a75f5 #7b74f5 #7c51cc #7d73f6 #7e73f6 #7ed8fa #8072f7 #8171f7 #8371f7 #838ca1 #8470f8 #8570f8 #85e1fd #866ff8 #876ff9 #8959e0 #896ef9 #8a6ef9 #8a6efa #8a94a8 #8b6dfa #8be9ff #8c6dfa #8d6cfa #8e6cfb #906bfb #916afc #936afc #9469fc #9569fd #9661f5 #9668fd #9768fd #9967fe #9a66fe #9a9fa8 #9ba2ad #9c66ff #9d65ff #a16cff #a26efe #aa79ff #b386ff #bc93ff #c5a0ff #ceaeff #d7bbff #e0c8ff #e6be28 #e6ecf5
   
@@ -46,7 +46,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario empty                        ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario empty                      ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
   ┏━ PORTFOLIO  ──────────────────────────────────── computed  ┏━ POSITIONS  ────────────────────────────────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓┏━┓┏━┓ ┏━┓┏━┓                                      ⠁ No open positions
    ╪═  ┃  ┃ ┃┃ ┃┃ ┃ ┃ ┃┃ ┃
@@ -98,7 +98,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario empty                                                                                                        ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario empty                                                                                                      ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
   ┏━ PORTFOLIO  ──────────────────────────────────── computed  ┏━ POSITIONS  ────────────────────────────────────────────────────────────────────────────────── computed  ┏━ SIGNALS  ───────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓┏━┓┏━┓ ┏━┓┏━┓                                      ⠁ No open positions                                                                                        Heat grid · coming next · issue #714
    ╪═  ┃  ┃ ┃┃ ┃┃ ┃ ┃ ┃┃ ┃                                                                                                                                                ─────────────────────────────────────────────────────────────────────━┛
@@ -165,7 +165,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA        ● live · checked 12m ago · next 18:00  ◑
   ┏━ PORTFOLIO  ─────────────────────────────────────────────────────── computed
    €1,000.00   · €0.00 0.00% today
    net · €0.00 today
@@ -196,7 +196,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario empty     ● live · checked 14:00 · next 18:00 in 3h 48m 00s 14:12:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario empty            ● live · checked 12m ago · next 18:00 in 3h 48m 00s  ◑ NEON
   ┏━ PORTFOLIO  ────────────────────── computed  ┏━ POSITIONS  ──────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓┏━┓┏━┓ ┏━┓┏━┓                        ⠁ No open positions
    ╪═  ┃  ┃ ┃┃ ┃┃ ┃ ┃ ┃┃ ┃
@@ -239,7 +239,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario empty                                                                                                                ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario empty                                                                                                              ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ NEON
   ┏━ PORTFOLIO  ──────────────────────────────────── computed  ┏━ POSITIONS  ────────────────────────────────────────────────────────────────────────────────── computed  ┏━ SIGNALS  ───────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓┏━┓┏━┓ ┏━┓┏━┓                                      ⠁ No open positions                                                                                        Heat grid · coming next · issue #714
    ╪═  ┃  ┃ ┃┃ ┃┃ ┃ ┃ ┃┃ ┃                                                                                                                                                ─────────────────────────────────────────────────────────────────────━┛
@@ -306,7 +306,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA        ● live · checked 12m ago · next 18:00  ◑
   ┏━ PORTFOLIO  ─────────────────────────────────────────────────────── computed
    €1,000.00   · €0.00 0.00% today
    net · €0.00 today
@@ -337,7 +337,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions         ● live · checked 14:00 · next 18:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions       ● live · checked 12m ago · next 18:00  ◑ CONTROL ROOM
   ┏━ PORTFOLIO  ────────────────────── computed  ┏━ POSITIONS  ──────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓┏━╸ ┏━╸┏━┓                         coin  tf  trend         change          net  stop room  ● live
    ╪═  ┃  ┃ ┃┏━┛┗━┓ ┗━┓┃ ┃                        ▸ETH   4h  ▁▂▃▆▅█████  ▲ +3.13%     ▲ +€2.77  ████████ −4.4%
@@ -380,7 +380,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions     ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏         ●●●●○●●●  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions           ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
   ┏━ PORTFOLIO  ──────────────────────────────────── computed  ┏━ POSITIONS  ────────────────────────────────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓┏━╸ ┏━╸┏━┓                                       coin  tf  entry → now             trend         change          net  stop room  ● live
    ╪═  ┃  ┃ ┃┏━┛┗━┓ ┗━┓┃ ┃                                      ▸ETH   4h  €2,243 → €2,313         ▁▂▃▆▅█████  ▲ +3.13%     ▲ +€2.77  ████████ stop −4.4%
@@ -432,7 +432,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                            ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏         ●●●●○●●● 14:12:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                          ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏         ●●●●○●●● 14:12:00  ◑ CONTROL ROOM
   ┏━ PORTFOLIO  ──────────────────────────────────── computed  ┏━ POSITIONS  ────────────────────────────────────────────────────────────────────────────────── computed  ┏━ SIGNALS  ───────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓┏━╸ ┏━╸┏━┓                                       coin  tf  entry → now             trend         change          net  stop room  ● live                    Heat grid · coming next · issue #714
    ╪═  ┃  ┃ ┃┏━┛┗━┓ ┗━┓┃ ┃                                      ▸ETH   4h  €2,243 → €2,313         ▁▂▃▆▅█████  ▲ +3.13%     ▲ +€2.77  ████████ stop −4.4%                 ─────────────────────────────────────────────────────────────────────━┛
@@ -499,7 +499,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA        ● live · checked 12m ago · next 18:00  ◑
   ┏━ PORTFOLIO  ─────────────────────────────────────────────────────── computed
    ● live  €1,025.50 · today ▲ +€16.74 +1.66%
    booked as of 14:00
@@ -530,7 +530,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions        ● live · checked 14:00 · next 18:00 14:12:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions      ● live · checked 12m ago · next 18:00 14:12:00  ◑ NEON
   ┏━ PORTFOLIO  ────────────────────── computed  ┏━ POSITIONS  ──────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓┏━╸ ┏━╸┏━┓                         coin  tf  trend         change          net  stop room  ● live
    ╪═  ┃  ┃ ┃┏━┛┗━┓ ┗━┓┃ ┃                        ▸ETH   4h  ▁▂▃▆▅█████  ▲ +3.13%     ▲ +€2.77  ████████ −4.4%
@@ -573,7 +573,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                    ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏         ●●●●○●●● 14:12:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                  ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏         ●●●●○●●● 14:12:00  ◑ NEON
   ┏━ PORTFOLIO  ──────────────────────────────────── computed  ┏━ POSITIONS  ────────────────────────────────────────────────────────────────────────────────── computed  ┏━ SIGNALS  ───────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓┏━╸ ┏━╸┏━┓                                       coin  tf  entry → now             trend         change          net  stop room  ● live                    Heat grid · coming next · issue #714
    ╪═  ┃  ┃ ┃┏━┛┗━┓ ┗━┓┃ ┃                                      ▸ETH   4h  €2,243 → €2,313         ▁▂▃▆▅█████  ▲ +3.13%     ▲ +€2.77  ████████ stop −4.4%                 ─────────────────────────────────────────────────────────────────────━┛
@@ -640,7 +640,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA        ● live · checked 12m ago · next 18:00  ◑
   ┏━ PORTFOLIO  ─────────────────────────────────────────────────────── computed
    ● live  €1,025.50 · today ▲ +€16.74 +1.66%
    booked as of 14:00
@@ -671,7 +671,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions         ● live · checked 14:00 · next 18:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions       ● live · checked 12m ago · next 18:00  ◑ CONTROL ROOM
   ┏━ PORTFOLIO  ────────────────────── computed  ┏━ POSITIONS  ──────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓╺┓  ┏━┓┏━╸                         coin  tf  trend         change          net  stop room
    ╪═  ┃  ┃ ┃┏━┛ ┃  ┃ ┃┣━┓                        ▸ETH   4h  ▂▃▁▄█▆▆▆    ▲ +2.06%     ▲ +€1.54  ███████░ −3.4%
@@ -714,7 +714,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions             ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions           ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
   ┏━ PORTFOLIO  ──────────────────────────────────── computed  ┏━ POSITIONS  ────────────────────────────────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓╺┓  ┏━┓┏━╸                                       coin  tf  entry → now             trend         change          net  stop room
    ╪═  ┃  ┃ ┃┏━┛ ┃  ┃ ┃┣━┓                                      ▸ETH   4h  €2,243 → €2,289         ▂▃▁▄█▆▆▆    ▲ +2.06%     ▲ +€1.54  ███████░ stop −3.4%
@@ -766,7 +766,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                             ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                           ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
   ┏━ PORTFOLIO  ──────────────────────────────────── computed  ┏━ POSITIONS  ────────────────────────────────────────────────────────────────────────────────── computed  ┏━ SIGNALS  ───────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓╺┓  ┏━┓┏━╸                                       coin  tf  entry → now             trend         change          net  stop room                            Heat grid · coming next · issue #714
    ╪═  ┃  ┃ ┃┏━┛ ┃  ┃ ┃┣━┓                                      ▸ETH   4h  €2,243 → €2,289         ▂▃▁▄█▆▆▆    ▲ +2.06%     ▲ +€1.54  ███████░ stop −3.4%                 ─────────────────────────────────────────────────────────────────────━┛
@@ -833,7 +833,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA        ● live · checked 12m ago · next 18:00  ◑
   ┏━ PORTFOLIO  ─────────────────────────────────────────────────────── computed
    €1,021.06   ▲ +€12.30 +1.22% today
    net ▲ +€10.66 today
@@ -864,7 +864,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions        ● live · checked 14:00 · next 18:00 14:12:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions      ● live · checked 12m ago · next 18:00 14:12:00  ◑ NEON
   ┏━ PORTFOLIO  ────────────────────── computed  ┏━ POSITIONS  ──────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓╺┓  ┏━┓┏━╸                         coin  tf  trend         change          net  stop room
    ╪═  ┃  ┃ ┃┏━┛ ┃  ┃ ┃┣━┓                        ▸ETH   4h  ▂▃▁▄█▆▆▆    ▲ +2.06%     ▲ +€1.54  ███████░ −3.4%
@@ -907,7 +907,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                     ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                   ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ NEON
   ┏━ PORTFOLIO  ──────────────────────────────────── computed  ┏━ POSITIONS  ────────────────────────────────────────────────────────────────────────────────── computed  ┏━ SIGNALS  ───────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓╺┓  ┏━┓┏━╸                                       coin  tf  entry → now             trend         change          net  stop room                            Heat grid · coming next · issue #714
    ╪═  ┃  ┃ ┃┏━┛ ┃  ┃ ┃┣━┓                                      ▸ETH   4h  €2,243 → €2,289         ▂▃▁▄█▆▆▆    ▲ +2.06%     ▲ +€1.54  ███████░ stop −3.4%                 ─────────────────────────────────────────────────────────────────────━┛
@@ -974,7 +974,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA        ● live · checked 12m ago · next 18:00  ◑
   ┏━ PORTFOLIO  ─────────────────────────────────────────────────────── computed
    €1,021.06   ▲ +€12.30 +1.22% today
    net ▲ +€10.66 today
@@ -1005,7 +1005,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions         ● live · checked 14:00 · next 18:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions       ● live · checked 12m ago · next 18:00  ◑ CONTROL ROOM
   ┏━ SHADOW TEST  ───────────────────────────────────────────────────────────────────────────────────────────── computed
    ╺┓ ╺━┓       ┏━┓┏━┓
     ┃ ┏━┛   ╱   ┗━┫┃ ┃
@@ -1048,7 +1048,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions             ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions           ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
   ┏━ SHADOW TEST  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── computed
    ╺┓ ╺━┓       ┏━┓┏━┓
     ┃ ┏━┛   ╱   ┗━┫┃ ┃
@@ -1100,7 +1100,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                             ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                           ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
   ┏━ SHADOW TEST  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── computed
    ╺┓ ╺━┓       ┏━┓┏━┓
     ┃ ┏━┛   ╱   ┗━┫┃ ┃
@@ -1167,7 +1167,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA        ● live · checked 12m ago · next 18:00  ◑
   ┏━ SHADOW TEST  ───────────────────────────────────────────────────── computed
    day 12 / 90
    ██████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
@@ -1198,7 +1198,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions        ● live · checked 14:00 · next 18:00 14:12:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions      ● live · checked 12m ago · next 18:00 14:12:00  ◑ NEON
   ┏━ SHADOW TEST  ───────────────────────────────────────────────────────────────────────────────────────────── computed
    ╺┓ ╺━┓       ┏━┓┏━┓
     ┃ ┏━┛   ╱   ┗━┫┃ ┃
@@ -1241,7 +1241,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                     ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                   ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ NEON
   ┏━ SHADOW TEST  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── computed
    ╺┓ ╺━┓       ┏━┓┏━┓
     ┃ ┏━┛   ╱   ┗━┫┃ ┃
@@ -1308,7 +1308,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA        ● live · checked 12m ago · next 18:00  ◑
   ┏━ SHADOW TEST  ───────────────────────────────────────────────────── computed
    day 12 / 90
    ██████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
@@ -1339,7 +1339,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario empty      ● live · checked 14:00 · next 18:00 in 3h 48m 00s  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario empty         ● live · checked 12m ago · next 18:00 14:12:00  ◑ CONTROL ROOM
   ┏━ SHADOW TEST  ───────────────────────────────────────────────────────────────────────────────────────────── computed
    WARM-UP · NOT COUNTING
    7 warm-up days since the seed on 27 Sep · none of them count (ADR-021 §3)
@@ -1372,7 +1372,7 @@
   
    pre-registration v1 §5 · as hermes serve trades · read-only
   Shadow test · warm-up · not counting
-   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                      read-only
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit    next 3h 48m 00s · read-only
   ---
   colours: #000000 #070b14 #0c1424 #1a2740 #23535e #468ce6 #468de6 #468ee6 #478ce6 #478fe6 #4790e6 #4791e6 #488be7 #4892e6 #4894e7 #4895e7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a9ae7 #4a9ce7 #4a9de7 #4b8ae7 #4b9ee7 #4b9fe7 #4ba0e7 #4ca1e8 #4ca3e8 #4ca4e8 #4d89e8 #4da5e8 #4da6e8 #4da7e8 #4da8e8 #4e88e8 #4eaae8 #4eabe8 #4eace8 #4fade8 #4faee8 #4fafe9 #4fb0e9 #5088e9 #50b1e9 #50b2e9 #50b3e9 #50b4e9 #5187e9 #51b5e9 #51b6e9 #51b7e9 #5286ea #52b9e9 #52bae9 #52bbe9 #53bce9 #53bdea #53beea #53c0ea #5486ea #54c0ea #54c1ea #54c2ea #54c3ea #5585ea #55c4ea #55c5ea #55c6ea #55c7ea #56c8ea #56c9ea #56caea #56caeb #56cbeb #5784eb #57cceb #57ceeb #57cfeb #5884eb #58d0eb #58d1eb #5a83ec #5b82ec #5b83ec #5c82ec #5d82ed #5e81ed #6081ed #6180ee #637fee #647fef #657eef #677def #687df0 #6a7cf0 #6b7bf1 #6d7bf1 #6e7af2 #7079f2 #7179f2 #7278f2 #7378f3 #7477f3 #7478f3 #7677f4 #768eb2 #7776f4 #7875f4 #7a75f5 #7b74f5 #7c74f5 #7c74f6 #7d73f6 #7e73f6 #8072f7 #8171f7 #8371f7 #838ca1 #8470f8 #866ff8 #876ff9 #896ef9 #8a6efa #8a94a8 #8b6dfa #8c6cfa #8d6cfa #8e6cfb #906bfb #916afc #926afc #936afc #9469fc #9569fd #9668fd #9768fd #9967fe #9a66fe #9a9fa8 #9c66ff #9d65ff #a26efe #e6be28 #e6ecf5
   
@@ -1382,7 +1382,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario empty                        ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario empty                      ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
   ┏━ SHADOW TEST  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── computed
    WARM-UP · NOT COUNTING
    7 warm-up days since the seed on 27 Sep · none of them count (ADR-021 §3)
@@ -1434,7 +1434,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario empty                                                                                                        ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario empty                                                                                                      ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
   ┏━ SHADOW TEST  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── computed
    WARM-UP · NOT COUNTING
    7 warm-up days since the seed on 27 Sep · none of them count (ADR-021 §3)
@@ -1501,7 +1501,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA        ● live · checked 12m ago · next 18:00  ◑
   ┏━ SHADOW TEST  ───────────────────────────────────────────────────── computed
    WARM-UP · NOT COUNTING
    7 warm-up days since the seed on 27 Sep · none of them count (ADR-021 §3)
@@ -1532,7 +1532,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario empty     ● live · checked 14:00 · next 18:00 in 3h 48m 00s 14:12:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario empty            ● live · checked 12m ago · next 18:00 in 3h 48m 00s  ◑ NEON
   ┏━ SHADOW TEST  ───────────────────────────────────────────────────────────────────────────────────────────── computed
    WARM-UP · NOT COUNTING
    7 warm-up days since the seed on 27 Sep · none of them count (ADR-021 §3)
@@ -1575,7 +1575,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario empty                                                                                                                ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario empty                                                                                                              ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ NEON
   ┏━ SHADOW TEST  ───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────── computed
    WARM-UP · NOT COUNTING
    7 warm-up days since the seed on 27 Sep · none of them count (ADR-021 §3)
@@ -1642,7 +1642,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA        ● live · checked 12m ago · next 18:00  ◑
   ┏━ SHADOW TEST  ───────────────────────────────────────────────────── computed
    WARM-UP · NOT COUNTING
    7 warm-up days since the seed on 27 Sep · none of them count (ADR-021 §3)
@@ -2007,7 +2007,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA release 1.0.0-shadow.2     ● live · checked 14:00 · next 18:00 14:12:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA release 1.0.0-shadow.2            ● live · checked 12m ago · next 18:00  ◑ CONTROL ROOM
   ▌ new version deployed · press R to restart
   ┏━ PORTFOLIO  ────────────────────── computed  ┏━ POSITIONS  ──────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓╺┓  ┏━┓┏━╸                         coin  tf  trend         change          net  stop room
@@ -2050,7 +2050,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions release 1.0.0-shadow.2            ● live · checked 14:00 · next 18:00 in 3h 48m 00s  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions release 1.0.0-shadow.2          ● live · checked 12m ago · next 18:00 in 3h 48m 00s  ◑ CONTROL ROOM
   ▌ new version deployed · press R to restart
   ┏━ PORTFOLIO  ──────────────────────────────────── computed  ┏━ POSITIONS  ────────────────────────────────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓╺┓  ┏━┓┏━╸                                       coin  tf  entry → now             trend         change          net  stop room
@@ -2102,7 +2102,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions release 1.0.0-shadow.2                                                                      ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions release 1.0.0-shadow.2                                                                    ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ CONTROL ROOM
   ▌ new version deployed · press R to restart
   ┏━ PORTFOLIO  ──────────────────────────────────── computed  ┏━ POSITIONS  ────────────────────────────────────────────────────────────────────────────────── computed  ┏━ SIGNALS  ───────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓╺┓  ┏━┓┏━╸                                       coin  tf  entry → now             trend         change          net  stop room                            Heat grid · coming next · issue #714
@@ -2169,7 +2169,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA release 1.0.0-shadow.2● live · checked 14:00  ◑
+  SHADOW · mainnet off  DEMO DATA release 1.0.0-shadow.2  ● live · checked 12m  ◑
   ▌ new version deployed · press R to restart
   ┏━ PORTFOLIO  ─────────────────────────────────────────────────────── computed
    €1,021.06   ▲ +€12.30 +1.22% today
@@ -2200,7 +2200,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA release 1.0.0-shadow.2        ● live · checked 14:00 · next 18:00 in 3h 48m 00s  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA release 1.0.0-shadow.2      ● live · checked 12m ago · next 18:00 in 3h 48m 00s  ◑ NEON
   ▌ new version deployed · press R to restart
   ┏━ PORTFOLIO  ────────────────────── computed  ┏━ POSITIONS  ──────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓╺┓  ┏━┓┏━╸                         coin  tf  trend         change          net  stop room
@@ -2243,7 +2243,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions release 1.0.0-shadow.2                                                                              ● live · checked 14:00 · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ NEON
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions release 1.0.0-shadow.2                                                                            ● live · checked 12m ago · next 18:00 in 3h 48m 00s ▕░░░░░░░░░░▏ 14:12:00  ◑ NEON
   ▌ new version deployed · press R to restart
   ┏━ PORTFOLIO  ──────────────────────────────────── computed  ┏━ POSITIONS  ────────────────────────────────────────────────────────────────────────────────── computed  ┏━ SIGNALS  ───────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓╺┓  ┏━┓┏━╸                                       coin  tf  entry → now             trend         change          net  stop room                            Heat grid · coming next · issue #714
@@ -2310,7 +2310,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA release 1.0.0-shadow.2● live · checked 14:00  ◑
+  SHADOW · mainnet off  DEMO DATA release 1.0.0-shadow.2  ● live · checked 12m  ◑
   ▌ new version deployed · press R to restart
   ┏━ PORTFOLIO  ─────────────────────────────────────────────────────── computed
    €1,021.06   ▲ +€12.30 +1.22% today
@@ -2341,7 +2341,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions     ● live · checked 14:00 · next 18:00 due  ◑ AUTO · NIGHT
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions        ● live · checked 9h 30m ago · next 18:00 23:30:00  ◑
   ┏━ PORTFOLIO  ────────────────────── computed  ┏━ POSITIONS  ──────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓┏━╸ ┏━╸┏━┓                         coin  tf  trend         change          net  stop room  ● live
    ╪═  ┃  ┃ ┃┏━┛┗━┓ ┗━┓┃ ┃                        ▸ETH   4h  ▁▂▃▆▅█████  ▲ +3.13%     ▲ +€2.77  ████████ −4.4%
@@ -2374,7 +2374,7 @@
   
   
   Shadow test · day 12 of 90  ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
-   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                      read-only
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit           next due · read-only
   ---
   colours: #04070d #080e19 #0b1426 #0d1422 #121c2e #1b3a6b #1f3961 #27518e #2f5e9a #2f5f9a #305e9a #30609a #30619a #30629b #30639b #3063a8 #315d9a #31649b #31659b #31669b #31679b #31689b #325d9b #32689b #32699c #326a9c #326b9c #326c9c #335d9b #33649c #336c9c #336d9c #336e9c #336f9c #33709d #345c9b #345c9c #3469b1 #34719d #34729d #34739d #34749d #355c9c #35759d #35769d #35779e #35789e #365b9c #36799e #367a9e #367b9e #367c9e #375b9c #377d9e #377e9f #377f9f #37809f #385a9d #386175 #386275 #386a9e #38819f #38829f #38839f #38849f #395a9d #396375 #3985a0 #3986a0 #3987a0 #3988a0 #3a2a66 #3a599d #3a5a9d #3a6475 #3a6576 #3a89a0 #3a8aa0 #3a8ba0 #3a8ca1 #3a8da1 #3b599e #3b6676 #3b8da1 #3b8ea1 #3b8fa1 #3c599e #3c6777 #3c70a0 #3d589e #3d6877 #3e589f #3e6977 #3e6a77 #3f579f #3f6b78 #40579f #4076a2 #4080d4 #4157a0 #4256a0 #4356a0 #4455a1 #447ca4 #4555a1 #4655a1 #468ce6 #47327a #4754a2 #4854a2 #4953a2 #4981a6 #4a53a2 #4a53a3 #4b52a3 #4c52a3 #4d52a3 #4d87a8 #4e51a4 #4f51a4 #5050a4 #5050a5 #5099ea #5150a5 #5186ca #518daa #5250a5 #534fa5 #543a8f #544fa6 #554ea6 #5593ac #564ea6 #574da7 #584da7 #594da7 #5a4ca8 #5a99ae #5b4ca8 #5c4ba8 #5d4ba9 #5e4aa9 #5e4ba9 #5e9fb0 #5f4aa9 #604aa9 #604aaa #606675 #6149aa #6242a3 #6249aa #6348aa #6448ab #64b4f1 #6548ab #6647ab #6747ac #6846ac #68baf2 #6946ac #6a45ad #6b45ad #6f49b8 #75859e #77cef8 #787e8a #7883a0 #79808e #7c51cc #8959e0 #8be9ff #9098ab #9274c8 #9661f5 #a16cff #aa79ff #b386ff #b4bccb #bc93ff #c5a0ff #ce6812 #ceaeff #d7bbff #e0c8ff #e6be28 #e6ecf5
   
@@ -2384,7 +2384,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                      ● live · checked 14:00 · next 18:00 due ▕██████████▏         ●●●●○●●● 23:30:00  ◑ AUTO · NIGHT
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                 ● live · checked 9h 30m ago · next 18:00 due ▕██████████▏         ●●●●○●●● 23:30:00  ◑ AUTO · NIGHT
   ┏━ PORTFOLIO  ──────────────────────────────────── computed  ┏━ POSITIONS  ────────────────────────────────────────────────────────────────────────────────── computed  ┏━ SIGNALS  ───────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓┏━╸ ┏━╸┏━┓                                       coin  tf  entry → now             trend         change          net  stop room  ● live                    Heat grid · coming next · issue #714
    ╪═  ┃  ┃ ┃┏━┛┗━┓ ┗━┓┃ ┃                                      ▸ETH   4h  €2,243 → €2,313         ▁▂▃▆▅█████  ▲ +3.13%     ▲ +€2.77  ████████ stop −4.4%                 ─────────────────────────────────────────────────────────────────────━┛
@@ -2451,7 +2451,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA     ● live · checked 9h 30m ago · next 18:00  ◑
   ┏━ PORTFOLIO  ─────────────────────────────────────────────────────── computed
    ● live  €1,025.50 · today ▲ +€16.74 +1.66%
    booked as of 14:00
@@ -2482,7 +2482,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions     ● live · checked 14:00 · next 18:00 due  ◑ AUTO · NIGHT
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions        ● live · checked 9h 30m ago · next 18:00 23:30:00  ◑
   ┏━ PORTFOLIO  ────────────────────── computed  ┏━ POSITIONS  ──────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓╺┓  ┏━┓┏━╸                         coin  tf  trend         change          net  stop room
    ╪═  ┃  ┃ ┃┏━┛ ┃  ┃ ┃┣━┓                        ▸ETH   4h  ▂▃▁▄█▆▆▆    ▲ +2.06%     ▲ +€1.54  ███████░ −3.4%
@@ -2515,7 +2515,7 @@
   
   
   Shadow test · day 12 of 90  ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
-   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                      read-only
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit           next due · read-only
   ---
   colours: #04070d #080e19 #0b1426 #0d1422 #121c2e #1b3a6b #1f3961 #27518e #2f5e9a #2f5f9a #305e9a #30609a #30619a #30629b #30639b #3063a8 #315d9a #31649b #31659b #31669b #31679b #31689b #325d9b #32689b #32699c #326a9c #326b9c #326c9c #335d9b #33649c #336c9c #336d9c #336e9c #336f9c #33709d #345c9b #345c9c #3469b1 #34719d #34729d #34739d #34749d #355c9c #35759d #35769d #35779e #35789e #365b9c #36799e #367a9e #367b9e #367c9e #375b9c #377d9e #377e9f #377f9f #37809f #385a9d #386175 #386275 #386a9e #38819f #38829f #38839f #38849f #395a9d #396375 #3985a0 #3986a0 #3987a0 #3988a0 #3a2a66 #3a599d #3a5a9d #3a6475 #3a6576 #3a89a0 #3a8aa0 #3a8ba0 #3a8ca1 #3a8da1 #3b599e #3b6676 #3b8da1 #3b8ea1 #3b8fa1 #3c599e #3c6777 #3c70a0 #3d589e #3d6877 #3e589f #3e6977 #3e6a77 #3f579f #3f6b78 #40579f #4076a2 #4080d4 #4157a0 #4256a0 #4356a0 #4455a1 #447ca4 #4555a1 #4655a1 #468ce6 #47327a #4754a2 #4854a2 #4953a2 #4981a6 #4a53a2 #4a53a3 #4b52a3 #4c52a3 #4d52a3 #4d87a8 #4e51a4 #4f51a4 #5050a4 #5050a5 #5099ea #5150a5 #5186ca #518daa #5250a5 #534fa5 #543a8f #544fa6 #554ea6 #5593ac #564ea6 #574da7 #584da7 #594da7 #5a4ca8 #5a99ae #5b4ca8 #5c4ba8 #5d4ba9 #5e4aa9 #5e4ba9 #5e9fb0 #5f4aa9 #604aa9 #604aaa #606675 #6149aa #6242a3 #6249aa #6348aa #6448ab #64b4f1 #6548ab #6647ab #6747ac #6846ac #68baf2 #6946ac #6a45ad #6b45ad #6f49b8 #75859e #77cef8 #787e8a #7883a0 #79808e #7c51cc #8959e0 #8be9ff #9098ab #9274c8 #9661f5 #a16cff #aa79ff #b386ff #b4bccb #bc93ff #c5a0ff #ce6812 #ceaeff #d7bbff #e0c8ff #e6be28 #e6ecf5
   
@@ -2525,7 +2525,7 @@
   '''
   
     1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
-  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                       ● live · checked 14:00 · next 18:00 due ▕██████████▏ 23:30:00  ◑ AUTO · NIGHT
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                  ● live · checked 9h 30m ago · next 18:00 due ▕██████████▏ 23:30:00  ◑ AUTO · NIGHT
   ┏━ PORTFOLIO  ──────────────────────────────────── computed  ┏━ POSITIONS  ────────────────────────────────────────────────────────────────────────────────── computed  ┏━ SIGNALS  ───────────────────────────────────────────────── computed
    ╭─╮╺┓  ┏━┓╺━┓╺┓  ┏━┓┏━╸                                       coin  tf  entry → now             trend         change          net  stop room                            Heat grid · coming next · issue #714
    ╪═  ┃  ┃ ┃┏━┛ ┃  ┃ ┃┣━┓                                      ▸ETH   4h  €2,243 → €2,289         ▂▃▁▄█▆▆▆    ▲ +2.06%     ▲ +€1.54  ███████░ stop −3.4%                 ─────────────────────────────────────────────────────────────────────━┛
@@ -2592,7 +2592,7 @@
   '''
   
     1   2   3   4   5   6   7   8   9
-  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+  SHADOW · mainnet off  DEMO DATA     ● live · checked 9h 30m ago · next 18:00  ◑
   ┏━ PORTFOLIO  ─────────────────────────────────────────────────────── computed
    €1,021.06   ▲ +€12.30 +1.22% today
    net ▲ +€10.66 today
