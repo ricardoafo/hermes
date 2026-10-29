@@ -29,8 +29,6 @@ persistent shift stays one episode and gives one alert.
 Reference: issue #362; ADR-005 Category B; ADR-012 D-04.
 """
 
-from __future__ import annotations
-
 import math
 import statistics
 from dataclasses import dataclass, field

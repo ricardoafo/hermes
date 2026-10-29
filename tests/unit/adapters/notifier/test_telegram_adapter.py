@@ -12,8 +12,6 @@ The mocked wire is the Bot API seam; its real counterpart is
 Reference: docs/decisions/2026-08-23-slack-alongside-telegram.md.
 """
 
-from __future__ import annotations
-
 import json
 from datetime import UTC, datetime
 from decimal import Decimal

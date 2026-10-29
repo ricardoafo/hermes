@@ -4,8 +4,6 @@ Runs the command on a synthetic ledger written through the production path.
 Exit codes: 0 complete, 1 ledger failure, 2 usage, 3 config, 4 incomplete.
 """
 
-from __future__ import annotations
-
 import io
 import shutil
 import sqlite3

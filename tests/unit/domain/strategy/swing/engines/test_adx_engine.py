@@ -10,8 +10,6 @@ Reference: spec-5-swing-strategy-adapter change.md.
 pre-registration-v1.md §5.1 (ADX(14) ≥ 25, 4h).
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from hermes.domain.market_data.bar import Bar

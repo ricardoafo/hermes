@@ -9,8 +9,6 @@ reads that ledger file read-only.
 Reference: openspec/archive/ledger-read-model/change.md (A-5.2).
 """
 
-from __future__ import annotations
-
 import io
 import json
 import sqlite3

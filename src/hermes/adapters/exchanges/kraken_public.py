@@ -47,8 +47,6 @@ Reference: docs/decisions/2026-08-24-kraken-public-adapter.md,
 https://docs.kraken.com/rest/#tag/Market-Data.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime

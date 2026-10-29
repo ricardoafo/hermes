@@ -5,8 +5,6 @@ Every item keeps its heading, text and citations in the desk's order, and a
 brief that only passed as the digest is marked as one.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 
 from hermes.application.console.views import BriefSection, ConsoleBrief

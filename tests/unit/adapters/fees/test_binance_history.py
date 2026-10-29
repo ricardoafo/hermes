@@ -1,7 +1,5 @@
 """Tests for the Binance fee-history CSV loader."""
 
-from __future__ import annotations
-
 from datetime import date
 
 from hermes.adapters.fees.binance_history import load_binance_fee_history

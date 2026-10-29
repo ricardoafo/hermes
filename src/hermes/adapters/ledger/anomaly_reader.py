@@ -9,8 +9,6 @@ rehydrated into the :class:`AnomalyDetected` that was appended.
 Reference: GitHub issue #136 (record-only anomaly intake).
 """
 
-from __future__ import annotations
-
 import json
 import sqlite3
 from datetime import UTC, datetime

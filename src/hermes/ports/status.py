@@ -8,8 +8,6 @@ never takes the serve process's locks, so the console can run next to a live
 Reference: openspec/archive/370-hermes-status/change.md.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal

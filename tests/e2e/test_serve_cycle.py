@@ -25,8 +25,6 @@ Invariants protected here (issue #408, ADR-007 Tier 3):
   price and no position opens (#1158).
 """
 
-from __future__ import annotations
-
 import asyncio
 import dataclasses
 import io

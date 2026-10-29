@@ -32,8 +32,6 @@ Reference: ``docs/decisions/2026-08-23-slack-alongside-telegram.md``;
     (docstring names the invariant, one behavior claim per test).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from pathlib import Path
 

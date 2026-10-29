@@ -31,8 +31,6 @@ Reference: pre-registration-v1.md §1, §4, §7, §9, §10; ADR-014;
 openspec/archive/355-certification-gates/change.md.
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 from collections.abc import Mapping, Sequence

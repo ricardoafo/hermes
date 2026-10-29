@@ -9,8 +9,6 @@ Reference: ADR-003 §02 (data flow), code-conventions.md §10 (event schema
 versioning) and §3 (immutability — frozen dataclass).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import ClassVar

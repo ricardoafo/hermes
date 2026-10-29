@@ -10,8 +10,6 @@ contract ``eur-values-are-measurement-only``).
 Reference: ADR-002 §3, ADR-016 items 3 and 5, change ``trade-eur-values`` R-2.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 
 from hermes.application.ledger.eur_pricer import EurPricer

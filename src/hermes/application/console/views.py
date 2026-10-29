@@ -10,8 +10,6 @@ Reference: openspec/archive/console-read-model/change.md (D-1, D-7);
 ADR-003 §07.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal

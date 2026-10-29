@@ -17,8 +17,6 @@ Property tests (Hypothesis):
 Reference: openspec/archive/spec-4a-clock-port/change.md D-4, D-5.
 """
 
-from __future__ import annotations
-
 import threading
 from datetime import UTC, datetime, timedelta, timezone
 

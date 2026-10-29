@@ -13,8 +13,6 @@ Invariants:
 - the start capital is the seed's EUR value, or pending with the USDT amount.
 """
 
-from __future__ import annotations
-
 from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal

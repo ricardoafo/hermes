@@ -10,8 +10,6 @@ Reference: ADR-003 §02 (circuit breakers pair with anomaly emission),
     code-conventions.md §10 (event schema versioning) and §3 (frozen).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 from typing import ClassVar

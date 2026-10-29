@@ -12,8 +12,6 @@ See code-conventions.md §10 for the full upcaster pattern.
 Reference: code-conventions.md §10 — Event schema versioning + upcaster chain.
 """
 
-from __future__ import annotations
-
 import dataclasses
 import hashlib
 import json

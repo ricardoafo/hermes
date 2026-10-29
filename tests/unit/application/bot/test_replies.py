@@ -13,8 +13,6 @@ Invariants protected here:
 - anything else gets the one-line help.
 """
 
-from __future__ import annotations
-
 import re
 from collections.abc import Sequence
 from datetime import timedelta

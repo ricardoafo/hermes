@@ -8,8 +8,6 @@ Tests:
 Reference: openspec/archive/spec-4a-clock-port/change.md A-2.1, A-2.2.
 """
 
-from __future__ import annotations
-
 from datetime import timedelta
 
 from hypothesis import given, settings

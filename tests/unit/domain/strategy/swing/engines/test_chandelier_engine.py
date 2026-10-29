@@ -10,8 +10,6 @@ Reference: spec-5-swing-strategy-adapter change.md D-4.
 pre-registration-v1.md §5.2 (Chandelier 22, 3.0).
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from hermes.domain.market_data.bar import Bar

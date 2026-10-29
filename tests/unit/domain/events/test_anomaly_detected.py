@@ -8,8 +8,6 @@ Verifies:
 Reference: code-conventions.md §10 + §3.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 
 import pytest

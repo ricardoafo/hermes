@@ -11,8 +11,6 @@ Invariants (822-portfolio-backtest change.md D-4):
   without a variance are refused.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 

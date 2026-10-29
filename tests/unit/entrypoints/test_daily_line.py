@@ -10,8 +10,6 @@ Invariants protected here:
 - no P&L word ever appears.
 """
 
-from __future__ import annotations
-
 import io
 import json
 import re

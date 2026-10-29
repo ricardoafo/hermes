@@ -8,8 +8,6 @@ its two size figures, and the stop column is plain price plus distance.
 # The console prints the typographic minus (U+2212) and times sign on purpose.
 # ruff: noqa: RUF001
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 import pytest

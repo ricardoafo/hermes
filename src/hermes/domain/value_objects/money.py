@@ -9,8 +9,6 @@ Reference: code-conventions.md §1 (Value Object), §2 (hybrid Result/exceptions
 §4 (Factory methods), §6 (Decimal for ledger values).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 

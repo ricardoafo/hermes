@@ -14,8 +14,6 @@ Invariants protected here:
 journalctl is replaced by a fake process: no real journal in unit tests.
 """
 
-from __future__ import annotations
-
 import io
 import json
 import re

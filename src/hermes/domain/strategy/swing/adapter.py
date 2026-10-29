@@ -49,8 +49,6 @@ Reference: pre-registration-v1.md §5 (all subsections).
 spec-5-swing-strategy-adapter change.md D-1 through D-4.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta

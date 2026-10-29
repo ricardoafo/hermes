@@ -10,8 +10,6 @@ Covers:
 - L2 methods raise NotImplementedError.
 """
 
-from __future__ import annotations
-
 import csv
 import io
 import zipfile

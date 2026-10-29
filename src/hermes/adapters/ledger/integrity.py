@@ -8,8 +8,6 @@ SQLite ``mode=ro`` URI so even a bug here could not modify the ledger.
 Reference: openspec/archive/538-ledger-verify/change.md.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from collections.abc import Iterable
 from dataclasses import dataclass

@@ -18,8 +18,6 @@ Reference: docs/guides/ai-authored-tests.md,
 docs/decisions/2026-08-23-binance-testnet-klines.md.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 

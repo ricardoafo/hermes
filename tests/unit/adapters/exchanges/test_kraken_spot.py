@@ -6,8 +6,6 @@ spot testnet, so there is no live contract test: a signed call would touch a
 real account.
 """
 
-from __future__ import annotations
-
 import dataclasses
 import json
 from collections.abc import Callable, Iterator

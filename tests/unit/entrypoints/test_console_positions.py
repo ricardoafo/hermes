@@ -10,8 +10,6 @@ Invariants:
 - ``--json`` prints parseable JSON with money under ``pnl``.
 """
 
-from __future__ import annotations
-
 import io
 import json
 

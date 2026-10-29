@@ -15,8 +15,6 @@ commands, so two PRs that each add a command never edit the same file (#457).
 Reference: issue #457; openspec/archive/457-cli-command-registry.
 """
 
-from __future__ import annotations
-
 import importlib
 import pkgutil
 from collections.abc import Callable, Iterable

@@ -1,7 +1,5 @@
 """``hermes serve``: run the shadow bar loop until SIGTERM or SIGINT."""
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import os

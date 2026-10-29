@@ -18,8 +18,6 @@ Invariants:
   the count only.
 """
 
-from __future__ import annotations
-
 import dataclasses
 import sqlite3
 from collections.abc import Iterator

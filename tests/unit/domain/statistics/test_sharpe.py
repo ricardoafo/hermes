@@ -1,7 +1,5 @@
 """Unit tests for Sharpe, moments, PSR and the Deflated Sharpe Ratio (pre-registration §8.1)."""
 
-from __future__ import annotations
-
 import math
 
 import pytest

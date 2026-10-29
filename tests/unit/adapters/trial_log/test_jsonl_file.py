@@ -11,8 +11,6 @@ Invariants under test (openspec/archive/357-trial-log/change.md D-2, R-2):
   else is refused (issue #891).
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 import threading

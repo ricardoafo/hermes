@@ -9,8 +9,6 @@ Each builder returns the market and the instant serve boots at. Boot is one day
 before the move that matters, after the 200 daily bars EMA(200) needs.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal

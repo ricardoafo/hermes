@@ -6,8 +6,6 @@ unreadable or malformed file reads as "nothing picked", so the console always
 opens; the file is rewritten whole on every save.
 """
 
-from __future__ import annotations
-
 import tomllib
 from dataclasses import dataclass
 from enum import StrEnum

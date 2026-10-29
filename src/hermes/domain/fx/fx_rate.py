@@ -16,8 +16,6 @@ Reference: code-conventions.md §1 (Value Object), §6 (Decimal for ledger value
 docs/decisions/2026-08-23-fx-rate-source-frankfurter.md.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal

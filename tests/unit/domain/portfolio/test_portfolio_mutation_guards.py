@@ -7,8 +7,6 @@ snapshot's, a SELL that leaves cash at exactly zero, a time zone that reports
 no offset, and the immutability of the records. Each test below pins one.
 """
 
-from __future__ import annotations
-
 from dataclasses import replace
 from datetime import datetime, timedelta, tzinfo
 from decimal import Decimal

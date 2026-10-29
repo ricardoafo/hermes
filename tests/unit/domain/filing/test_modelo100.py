@@ -3,8 +3,6 @@
 Reference: ADR-016 items 2, 3 and 8; IRPF art. 35 and 33.5.f.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 

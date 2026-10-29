@@ -9,8 +9,6 @@ clock (simulated), and the Telegram channel (a recorder). No order path exists
 in serve, so nothing can trade (ADR-003 §00 I-08).
 """
 
-from __future__ import annotations
-
 import asyncio
 import contextlib
 import dataclasses

@@ -15,8 +15,6 @@ Usage:
 Read-only. Needs ``gh`` authenticated with read access to Actions.
 """
 
-from __future__ import annotations
-
 import argparse
 import contextlib
 import json

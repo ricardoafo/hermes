@@ -18,8 +18,6 @@ The live shape is checked by ``tests/contract/test_binance_public_depth.py``.
 Reference: openspec/archive/353-fill-kernel-in-serve/change.md D-1, R-6.
 """
 
-from __future__ import annotations
-
 import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal

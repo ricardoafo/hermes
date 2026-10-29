@@ -8,8 +8,6 @@ or a keyword-only signature. The statistics decide the certification verdict
 which strategy reaches real capital.
 """
 
-from __future__ import annotations
-
 import math
 from collections.abc import Callable, Sequence
 from statistics import NormalDist

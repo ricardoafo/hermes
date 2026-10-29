@@ -8,8 +8,6 @@ Invariants under test:
   never inherits an earlier position's stop.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta

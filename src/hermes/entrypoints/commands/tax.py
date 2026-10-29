@@ -1,7 +1,5 @@
 """``hermes tax``: see :mod:`hermes.entrypoints.tax`."""
 
-from __future__ import annotations
-
 from hermes.entrypoints import tax as _impl
 from hermes.entrypoints.commands import Command
 

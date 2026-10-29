@@ -21,8 +21,6 @@ The scenario suite (issue #689) builds on this module; these tests only prove
 the fake itself is faithful.
 """
 
-from __future__ import annotations
-
 import asyncio
 import json
 from datetime import UTC, date, datetime, timedelta

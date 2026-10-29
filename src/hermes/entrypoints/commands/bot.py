@@ -1,7 +1,5 @@
 """``hermes bot``: the read-only Telegram bot; see :mod:`hermes.entrypoints.bot`."""
 
-from __future__ import annotations
-
 from hermes.entrypoints import bot as _impl
 from hermes.entrypoints.commands import Command
 

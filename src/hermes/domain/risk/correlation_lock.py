@@ -14,8 +14,6 @@ Reference: pre-registration-v1.md §5.5; SA-9 RO-01;
 openspec/archive/822-portfolio-backtest D-2.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 from itertools import combinations
 

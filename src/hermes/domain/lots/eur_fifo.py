@@ -18,8 +18,6 @@ sale's proceeds and fee, so totals add up exactly. A trade without EUR values
 Reference: ADR-016 item 3, IRPF art. 35, change ``trade-eur-values`` D-5, D-6.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime

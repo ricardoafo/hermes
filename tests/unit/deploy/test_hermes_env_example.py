@@ -7,8 +7,6 @@ exit 3 at start (issue #306).
 Reference: openspec/archive/306-serve-systemd-boot/change.md.
 """
 
-from __future__ import annotations
-
 import pytest
 from dotenv import dotenv_values
 

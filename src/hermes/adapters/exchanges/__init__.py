@@ -10,8 +10,6 @@ configuration wiring but not intended for direct call from application
 code.
 """
 
-from __future__ import annotations
-
 from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.exchanges.binance_klines import (
     BinanceKlinesAdapter,

@@ -14,8 +14,6 @@ Reference: SA-8 §4.1 S-01 (a test clock the caller advances),
 openspec/archive/spec-4a-clock-port/change.md D-4 (monotonicity policy).
 """
 
-from __future__ import annotations
-
 import threading
 from datetime import UTC, datetime, timedelta
 

@@ -1,7 +1,5 @@
 """``hermes parity``: see :mod:`hermes.entrypoints.parity`."""
 
-from __future__ import annotations
-
 from hermes.entrypoints import parity as _impl
 from hermes.entrypoints.commands import Command
 

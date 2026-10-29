@@ -17,8 +17,6 @@ Invariants protected here (change ``309-serve-bar-loop``):
   stops the loop; SIGTERM while idle closes every resource and exits 0.
 """
 
-from __future__ import annotations
-
 import asyncio
 import dataclasses
 import json

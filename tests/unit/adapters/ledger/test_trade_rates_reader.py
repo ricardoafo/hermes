@@ -4,8 +4,6 @@ The ledger is written through ``TradeRecorder``, so the lookup is checked
 against the rates production stores on each trade.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from collections.abc import Iterator
 from datetime import date

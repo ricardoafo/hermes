@@ -18,8 +18,6 @@ across a wide range of inputs.
 Reference: spec-1-domain-aggregates (D-2, D-3), ADR-003 §00.
 """
 
-from __future__ import annotations
-
 import importlib
 import inspect
 import pkgutil

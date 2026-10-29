@@ -12,8 +12,6 @@ over archive files, so it does not depend on the storage format.
 Reference: pre-registration-v1.md §4, openspec/archive/356-data-manifest/change.md D-1, D-2.
 """
 
-from __future__ import annotations
-
 import hashlib
 import re
 from collections.abc import Iterable, Mapping

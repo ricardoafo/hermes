@@ -14,8 +14,6 @@ The dispatcher is real, over the in-memory fakes of ``test_tools.py``; the
 stdio loop is covered by ``tests/unit/entrypoints/test_supervisor.py``.
 """
 
-from __future__ import annotations
-
 import json
 
 import pytest

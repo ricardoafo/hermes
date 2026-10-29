@@ -1,7 +1,5 @@
 """Tests for the Renta Web campaign layouts config (change 568-tax-pack D-6)."""
 
-from __future__ import annotations
-
 from datetime import date
 from pathlib import Path
 

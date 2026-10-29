@@ -11,8 +11,6 @@ Invariants (backtest-driver-mvp1-phase2 change.md D-2, R-2, R-4):
 - Replaying the returned trades rebuilds the same portfolio.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal

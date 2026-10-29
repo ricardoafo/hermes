@@ -14,8 +14,6 @@ answer, and :attr:`FakeExchange.spot` matches signed orders against that book
 (:mod:`tests.support.fake_market.spot`).
 """
 
-from __future__ import annotations
-
 import asyncio
 import bisect
 import json

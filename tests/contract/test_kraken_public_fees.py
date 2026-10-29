@@ -14,8 +14,6 @@ built without ``allow_mainnet``. Excluded from the default run by
 Reference: docs/decisions/2026-08-23-contract-test-tier.md.
 """
 
-from __future__ import annotations
-
 import os
 
 import pytest

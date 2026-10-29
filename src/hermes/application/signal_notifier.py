@@ -20,8 +20,6 @@ Reference: 309-serve-bar-loop change.md D-3, D-4, D-5;
     ``docs/decisions/2026-10-03-signal-notification-routing.md``.
 """
 
-from __future__ import annotations
-
 from collections.abc import Collection
 from dataclasses import dataclass
 

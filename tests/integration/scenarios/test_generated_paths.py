@@ -23,8 +23,6 @@ Rerun one seed by its test id, which ends in ``[hater-7]`` or ``[walk-7]``,
 with the same ``HERMES_SCENARIO_SEEDS`` when the seed is outside 0 to 9.
 """
 
-from __future__ import annotations
-
 import os
 from collections.abc import Callable
 from pathlib import Path

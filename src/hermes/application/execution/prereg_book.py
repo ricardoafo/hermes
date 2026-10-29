@@ -26,8 +26,6 @@ openspec/archive/353-fill-kernel-in-serve/change.md D-2, D-4;
 openspec/archive/v2-strategy-config/change.md D-1.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum

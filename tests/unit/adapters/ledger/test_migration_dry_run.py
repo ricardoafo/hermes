@@ -8,8 +8,6 @@ Invariants under test:
 - A destructive rebuild that keeps its rows shows equal counts.
 """
 
-from __future__ import annotations
-
 import gc
 import sqlite3
 from pathlib import Path

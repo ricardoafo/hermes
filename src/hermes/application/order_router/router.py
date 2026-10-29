@@ -28,8 +28,6 @@ root wires dependencies at startup.
 Reference: spec-3-order-router change.md, pre-registration-v1.md §5.4 and §10.
 """
 
-from __future__ import annotations
-
 import re
 from dataclasses import dataclass
 from datetime import datetime

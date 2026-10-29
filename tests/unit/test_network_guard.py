@@ -6,8 +6,6 @@ which is reserved for documentation, so even a broken guard sends nothing
 anywhere real.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from tests.support.paths import REPO_ROOT

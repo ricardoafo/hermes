@@ -5,8 +5,6 @@ Telegram replies; False for pushed Telegram, Slack, reports, MCP tools, the
 supervisor desk, the challenger lab and the ADR-012 loops. No override.
 """
 
-from __future__ import annotations
-
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st

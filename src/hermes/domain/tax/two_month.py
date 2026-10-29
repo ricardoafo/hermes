@@ -10,8 +10,6 @@ A buy whose lot the sale itself consumed is not a repurchase and never flags.
 Reference: ADR-016 decision 8, change ``tax-estimates`` D-4.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime

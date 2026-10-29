@@ -12,8 +12,6 @@ spec-5-swing-strategy-adapter change.md D-2, R-7.
 pre-registration-v1.md §5.3 (market entry), §5.4 (sizing hint).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal

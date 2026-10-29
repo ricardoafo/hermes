@@ -11,8 +11,6 @@ On failure the caller posts the deterministic digest instead (D-08).
 Reference: openspec/archive/365-supervisor-desk-briefings/change.md; issues #365, #496.
 """
 
-from __future__ import annotations
-
 import json
 import re
 from collections.abc import Collection

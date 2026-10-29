@@ -8,8 +8,6 @@ Reference: code-conventions.md §5 (Ports as Protocols),
 openspec/archive/357-trial-log/change.md.
 """
 
-from __future__ import annotations
-
 from typing import Protocol, runtime_checkable
 
 from hermes.domain.calibration.trial_record import TrialRecord

@@ -11,8 +11,6 @@ Invariants protected here:
 - the ledger file is opened read-only and never created.
 """
 
-from __future__ import annotations
-
 import io
 import json
 from datetime import timedelta

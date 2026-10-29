@@ -14,8 +14,6 @@ Reference: ADR-003 §03 (TAX_LOTS table + FIFO example), ADR-002 (tax posture),
 code-conventions.md §1 (Value Object), §3 (immutability), §6 (Decimal).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, replace
 from datetime import datetime
 from decimal import Decimal

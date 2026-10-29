@@ -1,7 +1,5 @@
 """Unit tests for the JSON certification store (#355 D-7)."""
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from pathlib import Path
 

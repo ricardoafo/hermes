@@ -9,8 +9,6 @@ late opener lock a different inode than the current holder.
 Reference: issue #855.
 """
 
-from __future__ import annotations
-
 import contextlib
 import os
 import sys

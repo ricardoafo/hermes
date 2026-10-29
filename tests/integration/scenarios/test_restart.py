@@ -11,8 +11,6 @@ warm-up, and RO-03 reads the slippage of the last 24 hours of fills back from
 the ledger (issue #857).
 """
 
-from __future__ import annotations
-
 import json
 import sqlite3
 from collections.abc import Callable

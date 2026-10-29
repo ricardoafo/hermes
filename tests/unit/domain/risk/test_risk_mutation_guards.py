@@ -7,8 +7,6 @@ zero peak, the full severity order, and the immutability of the state and
 decision records. Each test below pins one of them.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 import pytest

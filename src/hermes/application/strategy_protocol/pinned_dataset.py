@@ -10,8 +10,6 @@ Reference: pre-registration-v1.md §4 and §7, ADR-014,
 openspec/archive/356-data-manifest/change.md D-3, D-4.
 """
 
-from __future__ import annotations
-
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime

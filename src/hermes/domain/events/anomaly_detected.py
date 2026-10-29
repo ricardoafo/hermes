@@ -9,8 +9,6 @@ Reference: ADR-003 §02 (circuit breakers), code-conventions.md §10 and §12
 (engine pause pairs with anomaly emission).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import ClassVar, Final
