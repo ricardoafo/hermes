@@ -11,7 +11,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { BISECT_CONFLICT_GATE, runBatch, gitOps } = require('./batch.cjs');
+const { BISECT_CONFLICT_GATE, gateEnv, runBatch, gitOps } = require('./batch.cjs');
 const { BATCH_CONFLICT_REASON } = require('./decisions.cjs');
 
 /**
@@ -173,10 +173,59 @@ test('runBatch: no candidates -> nothing gated, nothing to merge', async () => {
 
 test('gitOps: exposes every operation runBatch needs', () => {
   const ops = gitOps({
-    cwd: '.', base: 'x', gatesScript: 'g.sh', failFile: 'f', ciConclusion: async () => null,
+    cwd: '.', base: 'x', gatesScript: 'g.sh', failFile: 'f', token: 't',
+    ciConclusion: async () => null,
   });
   assert.deepEqual(
     Object.keys(ops).sort(),
     ['ciConclusion', 'containsBase', 'fetchHead', 'gate', 'merge', 'reset', 'tree'],
   );
+});
+
+test('gitOps: fetches a pull request head with the token on the command line only', () => {
+  const { execFileSync } = require('node:child_process');
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const path = require('node:path');
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'gitops-'));
+  // A git hook runs this suite with GIT_DIR and friends set to the real
+  // repository; they would point every git call below, and gitOps' own,
+  // at it. Clear them for the test and put them back after.
+  const saved = Object.entries(process.env).filter(([name]) => name.startsWith('GIT_'));
+  for (const [name] of saved) delete process.env[name];
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+  const origin = path.join(tmp, 'origin');
+  const work = path.join(tmp, 'work');
+  try {
+    fs.mkdirSync(origin);
+    git(origin, 'init', '--quiet');
+    git(origin, '-c', 'user.name=t', '-c', 'user.email=t@invalid', 'commit', '--quiet', '--allow-empty', '-m', 'pr');
+    const head = git(origin, 'rev-parse', 'HEAD');
+    git(origin, 'update-ref', 'refs/pull/7/head', head);
+    git(tmp, 'clone', '--quiet', origin, work);
+    const ops = gitOps({
+      cwd: work, base: head, gatesScript: 'g.sh', failFile: 'f', token: 'ghs_secret',
+      ciConclusion: async () => null,
+    });
+
+    assert.equal(ops.fetchHead(7), head);
+    assert.doesNotMatch(git(work, 'config', '--list', '--show-origin'), /extraheader|ghs_secret/i);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+    Object.assign(process.env, Object.fromEntries(saved));
+  }
+});
+
+test('gateEnv: drops every token the step carries and keeps the rest', () => {
+  const env = gateEnv({
+    'INPUT_GITHUB-TOKEN': 'ghs_x',
+    ACTIONS_RUNTIME_TOKEN: 'r',
+    ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'i',
+    GITHUB_TOKEN: 'g',
+    gh_token: 'lower',
+    PATH: '/usr/bin',
+    HOME: '/home/runner',
+    UV_CACHE_DIR: '/cache',
+  });
+  assert.deepEqual(env, { PATH: '/usr/bin', HOME: '/home/runner', UV_CACHE_DIR: '/cache' });
 });

@@ -10,10 +10,15 @@
 # wakes, so does the runner. No manual intervention per session.
 #
 # Job lifecycle: --ephemeral flag makes the runner process ONE job then
-# exit cleanly. Docker's restart policy respawns the container, which
-# fetches a fresh registration token (via PAT) and re-registers. Result:
-# every job runs in a fresh container with clean state, while the
-# outward-facing runner is always available.
+# exit cleanly. Docker's restart policy restarts the SAME container,
+# which fetches a fresh registration token (via PAT) and re-registers.
+# The entrypoint wipes the workspace and ~/.ssh on every start; the
+# rest of the container's writable layer carries over between jobs.
+#
+# Isolation between pools: the CI pool (label hermes) runs pull request
+# code, so it gets no Docker socket, no sudo (Dockerfile `ci` target)
+# and its own cache volumes. The ops runner, which holds the deploy and
+# merge credentials, uses the `ops` image and shares no volume with it.
 #
 # Scaling: `docker compose up -d --scale runner=N` runs N runners in
 # parallel (each fetches its own token). Or add another stack with
@@ -25,6 +30,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      target: ci
       args:
         RUNNER_VERSION: '2.338.0'
     image: gh-runner:latest
@@ -68,11 +74,8 @@ services:
     mem_limit: 3g
     cpus: 4
     volumes:
-      # Host docker socket → runner can spawn sibling containers when a
-      # workflow step uses container-based actions. NOTE: security-
-      # sensitive — runner effectively has root on the host via docker.
-      # Acceptable for solo-dev + private repo + trusted PRs only.
-      - /var/run/docker.sock:/var/run/docker.sock
+      # No host Docker socket: it is root on the host, and this pool
+      # runs pull request code. No workflow uses container actions.
 
       # Pinned klines for the Train decision replay on engine PRs
       # (ADR-025). Read-only: a PR job reads them and cannot change
@@ -121,14 +124,22 @@ services:
       # cleanup means it's fresh per job anyway.
 
   # ─────────────────────────────────────────────────────────────
-  # OPS runner — merge queue and CD only (label hermes-ops).
-  # One replica, so merges and deploys never wait behind PR CI on
-  # the shared pool. Routed by the repo variable OPS_RUNNER_LABEL
-  # (merge-queue.yml and cd.yml fall back to RUNNER_LABEL when it is
-  # unset). Same image, caches and limits as the CI runners.
+  # OPS runner — merge queue, CD and the VPS workflows (label
+  # hermes-ops). One replica, so merges and deploys never wait behind
+  # PR CI on the shared pool. Routed by the repo variable
+  # OPS_RUNNER_LABEL (the workflows fall back to RUNNER_LABEL when it
+  # is unset). The `ops` image, with sudo for the Tailscale action,
+  # and caches of its own: a cache the CI pool can write would run
+  # pull request code in the next deploy.
   # ─────────────────────────────────────────────────────────────
   ops-runner:
-    image: gh-runner:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: ops
+      args:
+        RUNNER_VERSION: '2.338.0'
+    image: gh-runner:ops
     restart: unless-stopped
     environment:
       RUNNER_REPOSITORY: ${RUNNER_REPOSITORY:-ricardoafo/hermes}
@@ -138,9 +149,9 @@ services:
     mem_limit: 4g
     cpus: 4
     volumes:
-      - uv-cache:/home/runner/.cache/uv
-      - npm-cache:/home/runner/.cache/npm
-      - pip-cache:/home/runner/.cache/pip
+      - ops-uv-cache:/home/runner/.cache/uv
+      - ops-npm-cache:/home/runner/.cache/npm
+      - ops-pip-cache:/home/runner/.cache/pip
 
   # ─────────────────────────────────────────────────────────────
   # AI review runners (label hermes-review). The review job spends
@@ -148,7 +159,8 @@ services:
   # up to 3 of the 4 CI runners and PR tests queued behind it. Two
   # small replicas keep reviews off the CI pool. Routed by the repo
   # variable REVIEW_RUNNER_LABEL (ai-review.yml falls back to
-  # RUNNER_LABEL when it is unset).
+  # RUNNER_LABEL when it is unset). Caches of their own, so nothing
+  # the CI pool writes reaches the job that holds the review token.
   # ─────────────────────────────────────────────────────────────
   review-runner:
     image: gh-runner:latest
@@ -162,9 +174,9 @@ services:
     mem_limit: 1536m
     cpus: 1
     volumes:
-      - uv-cache:/home/runner/.cache/uv
-      - npm-cache:/home/runner/.cache/npm
-      - bun-cache:/home/runner/.cache/bun
+      - review-uv-cache:/home/runner/.cache/uv
+      - review-npm-cache:/home/runner/.cache/npm
+      - review-bun-cache:/home/runner/.cache/bun
 
   # ─────────────────────────────────────────────────────────────
   # BACKTEST runner — backtest.yml only (label hermes-backtest),
@@ -197,12 +209,12 @@ services:
   # ─────────────────────────────────────────────────────────────
   # Dependabot runner (label dependabot) with its own Docker daemon.
   # GitHub runs Dependabot updates on a self-hosted runner only when
-  # the runner user can run Docker. The CI runners reach the host
-  # socket, which the runner user cannot use and which would be
-  # root-equivalent on the host if it could. This runner instead
-  # talks to a Docker-in-Docker sidecar on a private network: the
-  # sidecar is privileged inside Docker Desktop's VM, not on the host,
-  # and Dependabot's containers live and die inside it.
+  # the runner user can run Docker. No runner mounts the host socket,
+  # which would be root-equivalent on the host. This runner instead
+  # talks to a Docker-in-Docker sidecar on a private network, and
+  # Dependabot's containers live and die inside it. On a Linux host
+  # such as server-01 the sidecar's `privileged` applies to the host
+  # itself (under Docker Desktop it applied only to Desktop's VM).
   # ─────────────────────────────────────────────────────────────
   dependabot-runner:
     image: gh-runner:latest
@@ -244,5 +256,11 @@ volumes:
   ruff-cache:
   hypothesis-db:
   bun-cache:
+  ops-uv-cache:
+  ops-npm-cache:
+  ops-pip-cache:
+  review-uv-cache:
+  review-npm-cache:
+  review-bun-cache:
   backtest-uv-cache:
   dependabot-docker:

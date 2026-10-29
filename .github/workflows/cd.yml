@@ -587,6 +587,11 @@ jobs:
         if: inputs.dry_run == true
         run: echo "::notice::dry_run=true — built the bundle, skipped tailnet + scp + install + smoke."
 
+      # The runner container outlives the job, so the key must not.
+      - name: Remove the SSH keyfile
+        if: always()
+        run: rm -f ~/.ssh/vps_id
+
   # ─────────────────────────────────────────────────────────────────
   # CONFIRM — deploy-gate aggregator
   # ─────────────────────────────────────────────────────────────────
