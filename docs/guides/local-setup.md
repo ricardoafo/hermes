@@ -6,7 +6,7 @@
 for local dev work.
 **Description**: Clone → install → run tests → open your first PR. One-time setup steps you do once per clone, then never again.
 
-This guide is opinionated on purpose. Hermes handles real capital and the
+This guide is opinionated on purpose. Hermes keeps a financial ledger and the
 per-clone setup enforces discipline that CI depends on. Skip a step, hit a
 recurring trap. The traps documented here have all bitten us at least once
 in the past; each step below is a scar.
@@ -42,33 +42,35 @@ ADR-010.
 
 ## Git config (one-time, per clone)
 
-Two settings you MUST apply on every fresh clone. Both prevent recurring
-traps that have cost dev-time in the past.
+One setting you MUST apply on every fresh clone. It prevents a recurring
+trap that has cost dev-time in the past.
 
 ```bash
-# 1. Auto-set upstream on first push of a new branch.
+# Auto-set upstream on first push of a new branch.
 # Without this, `git push` on a new branch fails with an obscure
 # "set-upstream" hint, and if you don't notice the hint, subsequent
 # `git checkout main + git branch -D` deletes the local branch WITH
 # UNPUSHED COMMITS. Reflog can recover, but only if you notice.
 git config --global push.autoSetupRemote true
-
-# 2. Bot identity — this repo requires commits from the `ai-bot`
-# (see AGENTS.md rule 13). The literal `user.name` / `user.email`
-# values below are the underlying, operator-owned GitHub account for
-# the bot — the `ai-bot` alias used in prose maps to this identity.
-# If your global config sets a different user.name, the local override
-# wins. Set once per clone.
-git config --local user.name "rafo-claude-bot"
-git config --local user.email "279133050+rafo-claude-bot@users.noreply.github.com"
 ```
 
-Verify (the local `user.name` should print the operator-owned bot
-account name — the project-facing alias is `ai-bot`):
+Commit under your own name and email, as with any other project. Signed
+commits are welcome but not required.
+
+Verify:
 
 ```bash
-git config --local --get user.name       # operator-owned bot account
 git config --global --get push.autoSetupRemote  # true
+```
+
+### Maintainer's AI agents only
+
+The maintainer's AI agents commit as the bot account (AGENTS.md rule 13). In
+their clones, and nowhere else, set:
+
+```bash
+git config --local user.name "rafo-claude-bot"
+git config --local user.email "279133050+rafo-claude-bot@users.noreply.github.com"
 ```
 
 ## Pre-commit hooks (one-time, per clone)
@@ -433,11 +435,11 @@ them impossible for future clones.
   If you then delete the local branch, you lose the commits. Reflog
   recovery works but isn't automatic. → Fixed by `git config --global
   push.autoSetupRemote true`.
-- **Wrong git author on commits**: `require_last_push_approval` on the
-  branch protection ruleset blocks merges if any commit isn't authored
-  by the `ai-bot` (the operator-owned bot account). The bot's global
-  config might not be set. → Fixed by `git config --local
-  user.name/user.email` per clone.
+- **Wrong git author on an agent's commits** (maintainer's agents only):
+  `require_last_push_approval` blocks the merge when an agent pushes as
+  the maintainer instead of the `ai-bot`. → Fixed by the local
+  `user.name/user.email` in "Maintainer's AI agents only" above. The
+  doctor's git identity WARN is expected for everyone else.
 - **Push without pre-push hook**: bypasses the CI mirror. Ships broken
   code to CI, wastes round-trips. → Fixed by `pre-commit install
   --hook-type pre-push`.

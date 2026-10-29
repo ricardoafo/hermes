@@ -376,12 +376,13 @@ hermes_run logs --level warning --since 5m
 The `cd.yml` and `vps-bootstrap.yml` workflows reference these secrets.
 Provision them under Repo Settings → Environments → `prod`:
 
-| Secret              | Purpose                                                                           |
-| ------------------- | --------------------------------------------------------------------------------- |
-| `TAILSCALE_AUTHKEY` | Tagged (`tag:ci-runner`) auth key the runner uses to join the tailnet             |
-| `VPS_SSH_KEY`       | Private SSH key for the deploy user (ed25519)                                     |
-| `VPS_SSH_HOST`      | Tailscale hostname (`hermes-01`) — port 22 is CLOSED to public internet           |
-| `VPS_SSH_USER`      | Deploy user. `root` today; the scripts need root (least privilege is a follow-up) |
+| Secret               | Purpose                                                                           |
+| -------------------- | --------------------------------------------------------------------------------- |
+| `TS_OAUTH_CLIENT_ID` | Tailscale OAuth client the job uses to join the tailnet as `tag:ci-runner`        |
+| `TS_OAUTH_SECRET`    | Secret of that OAuth client                                                       |
+| `VPS_SSH_KEY`        | Private SSH key for the deploy user (ed25519)                                     |
+| `VPS_SSH_HOST`       | Tailscale hostname (`hermes-01`) — port 22 is CLOSED to public internet           |
+| `VPS_SSH_USER`       | Deploy user. `root` today; the scripts need root (least privilege is a follow-up) |
 
 Environment branch restriction: `main` only — no fork-PR workflows can
 resolve these. No secret or variable named `HERMES_ALLOW_MAINNET` may be
