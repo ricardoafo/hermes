@@ -1,7 +1,5 @@
 """Unit tests for computing a window's §9 metrics (pre-registration §8, §9; #354)."""
 
-from __future__ import annotations
-
 from hermes.application.calibration.window_metrics import (
     PerformanceRecord,
     TrialStats,

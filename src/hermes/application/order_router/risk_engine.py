@@ -11,8 +11,6 @@ cap lives in :class:`~hermes.application.order_router.sizing.SizingCalculator`.
 Reference: spec-3-order-router change.md D-3.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 from hermes.domain.risk.state import MarketSnapshot, PortfolioState

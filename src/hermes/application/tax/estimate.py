@@ -24,8 +24,6 @@ Measurement only (decision 9): trading code never imports this package.
 Reference: ADR-016, change ``tax-estimates``.
 """
 
-from __future__ import annotations
-
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field

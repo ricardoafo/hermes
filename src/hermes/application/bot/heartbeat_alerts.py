@@ -15,8 +15,6 @@ the first down message still rings. Pushed messages never carry money.
 Reference: openspec/archive/379-telegram-bot/change.md (D-3).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, tzinfo
 from typing import Final

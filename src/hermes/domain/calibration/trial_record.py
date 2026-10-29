@@ -10,8 +10,6 @@ Sharpe variance the DSR needs.
 Reference: pre-registration-v1.md §8.1, openspec/archive/357-trial-log/change.md.
 """
 
-from __future__ import annotations
-
 import re
 import statistics
 from collections.abc import Iterable, Mapping

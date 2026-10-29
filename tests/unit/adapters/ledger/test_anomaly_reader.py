@@ -9,8 +9,6 @@ Invariants under test:
 - the reader waits out a writer's lock for the ledger's shared busy timeout (#1176).
 """
 
-from __future__ import annotations
-
 import hashlib
 import sqlite3
 from datetime import UTC, datetime, timedelta

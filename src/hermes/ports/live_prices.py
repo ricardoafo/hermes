@@ -14,8 +14,6 @@ from importing this module.
 Reference: openspec/archive/713-live-ticker/change.md (D-1, D-6).
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterator
 from datetime import datetime
 from typing import Protocol, runtime_checkable

@@ -8,8 +8,6 @@ Invariants protected here:
   redirected stderr is honoured and stdout stays free of ERROR lines.
 """
 
-from __future__ import annotations
-
 import io
 import sys
 

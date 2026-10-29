@@ -11,8 +11,6 @@ Pure: no I/O, no clock.
 Reference: openspec/archive/358-parity-check/change.md D-1.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime

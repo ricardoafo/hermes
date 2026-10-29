@@ -11,8 +11,6 @@ which change between AEAT campaigns (change D-4).
 Reference: openspec/archive/36-modelo-100-721/change.md.
 """
 
-from __future__ import annotations
-
 import csv
 import io
 from collections.abc import Sequence

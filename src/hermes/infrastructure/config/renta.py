@@ -3,8 +3,6 @@
 Reference: openspec/archive/568-tax-pack/change.md D-6.
 """
 
-from __future__ import annotations
-
 from datetime import date
 from pathlib import Path
 

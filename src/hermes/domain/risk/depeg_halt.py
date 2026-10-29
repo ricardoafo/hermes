@@ -11,8 +11,6 @@ Threshold (binding — pre-reg §5.5): deviation ≥ 0.030 → HALT.
 Reference: SA-9 §5.5 RO-06; spec-8-risk-overlay change.md.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from hermes.domain.risk.state import MarketSnapshot, PortfolioState

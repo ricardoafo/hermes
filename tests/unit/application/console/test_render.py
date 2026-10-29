@@ -17,8 +17,6 @@ Each test protects one rule of the approved console UX:
 # The console prints the typographic minus (U+2212) and times sign on purpose.
 # ruff: noqa: RUF001
 
-from __future__ import annotations
-
 from dataclasses import replace
 
 import pytest

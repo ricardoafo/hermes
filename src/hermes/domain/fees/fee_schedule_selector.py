@@ -28,8 +28,6 @@ Reference:
     - docs/experiments/swing-mvp1/pre-registration-v1.md §6.1
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import date, datetime

@@ -12,8 +12,6 @@ Reference:
     - docs/experiments/swing-mvp1/pre-registration-v1.md §6.1
 """
 
-from __future__ import annotations
-
 import csv
 from datetime import date
 from pathlib import Path

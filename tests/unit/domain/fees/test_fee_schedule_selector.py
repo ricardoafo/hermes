@@ -10,8 +10,6 @@ Verifies the pre-registration v1 §6.1 fee model:
 The property test asserts idempotency within a tier's effective window.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 

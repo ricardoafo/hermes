@@ -1,7 +1,5 @@
 """``hermes archive-check``: see :mod:`hermes.entrypoints.archive_check`."""
 
-from __future__ import annotations
-
 from hermes.entrypoints import archive_check as _impl
 from hermes.entrypoints.commands import Command
 

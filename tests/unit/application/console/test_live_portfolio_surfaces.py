@@ -18,8 +18,6 @@ Invariants:
 - ``hermes money --json`` and the bot's ``/money`` carry the same pending state.
 """
 
-from __future__ import annotations
-
 from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal

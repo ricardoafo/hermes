@@ -17,8 +17,6 @@ Exit codes: 0 all streams match, 1 at least one mismatch (alerts sent),
 2 usage, 3 config, ledger or archive failure.
 """
 
-from __future__ import annotations
-
 import argparse
 import os
 from collections.abc import Mapping

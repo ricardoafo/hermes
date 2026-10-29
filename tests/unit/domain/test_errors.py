@@ -8,8 +8,6 @@ Verifies that:
 Reference: R-2 (A-2.3) — hierarchy shape, checked by what each handler catches.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from hermes.domain.errors import (

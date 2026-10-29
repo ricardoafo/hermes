@@ -1,7 +1,5 @@
 """Console commands are declared by their own module, not by a shared list (#525)."""
 
-from __future__ import annotations
-
 import io
 from pathlib import Path
 

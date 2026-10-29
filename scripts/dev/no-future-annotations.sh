@@ -3,9 +3,9 @@
 #
 # Python 3.14 evaluates annotations lazily (PEP 649), so the import does
 # nothing and only marks code as written for an older Python. This guard
-# rejects any ADDED line that imports it in a .py file. Lines already on
-# main are not checked; a repo-wide removal and ruff ban follow once the
-# open PRs have merged.
+# rejects any ADDED line that imports it in a .py file. Ruff's TID251 ban
+# (pyproject.toml) rejects the same import in every file; this guard stays
+# as the staged-lines check in pre-commit and the merge-base check in CI.
 #
 # Called by:
 #   - .pre-commit-config.yaml `no-future-annotations` hook (staged mode)

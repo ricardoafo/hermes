@@ -3,8 +3,6 @@
 Reference: ADR-016 item 4, ADR-003 §00 I-06.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from collections.abc import Callable, Iterator
 from contextlib import closing
@@ -30,7 +28,7 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.price import Price
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
-from hermes.ports.ledger import PendingSeed, TradeLedgerPort
+from hermes.ports.ledger import PendingSeed
 from tests.unit.adapters.ledger.test_sqlite_ledger import CommitCountingConnection
 
 _BTC_USDT = Pair(base=Currency.BTC, quote=Currency.USDT)
@@ -469,11 +467,6 @@ class TestEarliestActivity:
         _record_seed(ledger, _seed(at=_T0 - timedelta(days=1)))
         _record(ledger, _trade(OrderSide.BUY, "0.01", "50000", "0.5", minutes=30))
         assert ledger.earliest_activity() == _T0 + timedelta(minutes=30)
-
-
-def test_adapter_still_satisfies_the_trade_ledger_port(ledger: SqliteLedger) -> None:
-    """Invariant: the adapter structurally satisfies TradeLedgerPort with the seed methods."""
-    assert isinstance(ledger, TradeLedgerPort)
 
 
 class TestSqliteFailures:

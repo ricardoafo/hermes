@@ -16,8 +16,6 @@ anomalies are recorded and notified only, and nothing pauses trading on them.
 Exit codes: 0 success (also when there is none), 2 usage, 3 no ledger or unreadable.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import re

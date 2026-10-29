@@ -32,8 +32,6 @@ version, engine change on a PATCH bump, 1.0.0 without --real-capital,
 mismatched version files, malformed fragment, missing changelog).
 """
 
-from __future__ import annotations
-
 import argparse
 import importlib.util
 import re

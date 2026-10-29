@@ -10,8 +10,6 @@ they gate ADAPTER wiring, not domain logic. See
 three-tier credential story (dotenv → GH Secrets → systemd EnvironmentFile).
 """
 
-from __future__ import annotations
-
 from typing import Final, Literal
 
 from pydantic import BaseModel, ConfigDict, model_validator

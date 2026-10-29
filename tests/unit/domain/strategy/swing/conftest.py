@@ -4,8 +4,6 @@ Provides ``make_bar`` and ``make_bars`` so every test file can construct
 minimal, precise bar sequences without boilerplate.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal

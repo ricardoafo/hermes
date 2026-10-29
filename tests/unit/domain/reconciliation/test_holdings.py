@@ -8,8 +8,6 @@ Invariants protected here:
 - assets zero on both sides are left out, missing assets read zero.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal, localcontext
 

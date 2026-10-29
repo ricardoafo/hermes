@@ -37,8 +37,6 @@ Reference: 2026-08-23-slack-alongside-telegram.md; ADR-003 §04 (env
     tiering); code-conventions.md §1 (no ambient state).
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import os

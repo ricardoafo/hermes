@@ -9,8 +9,6 @@ Invariants:
 Every test writes under pytest's tmp_path, never the real home folder.
 """
 
-from __future__ import annotations
-
 from pathlib import Path
 
 import pytest

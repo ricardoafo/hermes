@@ -6,8 +6,6 @@ Read-only, like :mod:`hermes.ports.filing`. The concrete implementation is
 Reference: openspec/archive/568-tax-pack/change.md.
 """
 
-from __future__ import annotations
-
 from typing import Protocol, runtime_checkable
 
 from hermes.domain.filing.trail import TradeRate

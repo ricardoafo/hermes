@@ -1,7 +1,5 @@
 """The 2025/2026 savings scale as config/tax_scales.yaml states it, for tests."""
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from hermes.domain.tax.scale import SavingsBand, SavingsScale

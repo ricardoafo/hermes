@@ -1,7 +1,5 @@
 """Unit tests for the circular block bootstrap CI on Sharpe (pre-registration §8.2)."""
 
-from __future__ import annotations
-
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st

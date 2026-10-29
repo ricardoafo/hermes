@@ -6,8 +6,6 @@ failure here means an adapter could be wired in the wrong runtime tier
 without raising, a real-capital risk for mainnet-scoped adapters.
 """
 
-from __future__ import annotations
-
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st

@@ -17,8 +17,6 @@ takes (``1.234,56``).
 Reference: openspec/archive/568-tax-pack/change.md.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from datetime import datetime
 from decimal import ROUND_HALF_UP, Decimal

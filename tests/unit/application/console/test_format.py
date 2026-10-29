@@ -8,8 +8,6 @@ stop bars keep their width and character set.
 # The console prints the typographic minus (U+2212) and times sign on purpose.
 # ruff: noqa: RUF001
 
-from __future__ import annotations
-
 import re
 from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal

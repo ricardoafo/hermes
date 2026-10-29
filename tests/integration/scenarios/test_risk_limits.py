@@ -4,8 +4,6 @@ A refused entry leaves no trade. Serve logs which rule refused it; the
 ``serve.fill.declined`` line is the only record (issue #690 item 3).
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 import pytest

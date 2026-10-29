@@ -4,8 +4,6 @@ Uses the scripted reader; the same seam against a real ledger file is covered
 in ``tests/unit/entrypoints/test_tax_pack.py``.
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 from dataclasses import dataclass, field

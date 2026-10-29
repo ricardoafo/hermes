@@ -16,8 +16,6 @@ Every candle is a pure function of ``(symbol, interval, open_time)``, so two
 runs over different fault schedules can be compared bar for bar.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta

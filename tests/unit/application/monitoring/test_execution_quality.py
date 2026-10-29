@@ -4,8 +4,6 @@ The serve wiring is covered end to end in
 ``tests/integration/entrypoints/test_serve_execution_quality.py``.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any

@@ -1,7 +1,5 @@
 """Unit tests for shadow-parity metrics M-09 and M-10, computed blind (#360)."""
 
-from __future__ import annotations
-
 import logging
 
 import pytest

@@ -9,8 +9,6 @@ because the status row's countdown already says it. Every app here uses
 synthetic demo data, a frozen clock and no network.
 """
 
-from __future__ import annotations
-
 import asyncio
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime

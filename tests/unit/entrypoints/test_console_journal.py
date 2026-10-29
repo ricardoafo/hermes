@@ -5,8 +5,6 @@ log lines and returns ``None`` on a machine without journalctl, so the TUI can
 say where to look instead of failing. journalctl is replaced by a fake reader.
 """
 
-from __future__ import annotations
-
 import pytest
 
 from hermes.adapters.systemd_journal import JournalUnavailableError

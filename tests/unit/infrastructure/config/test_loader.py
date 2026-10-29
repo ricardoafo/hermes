@@ -8,8 +8,6 @@ failure here means the process could start with wrong or corrupted config,
 a real-capital risk (ADR-003 §00 invariant I-05).
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 from pathlib import Path
 from textwrap import dedent

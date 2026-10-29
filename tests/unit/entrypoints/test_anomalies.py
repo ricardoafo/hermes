@@ -12,8 +12,6 @@ Invariants protected here:
 - the command is registered and reachable through ``hermes``.
 """
 
-from __future__ import annotations
-
 import io
 import json
 import sqlite3

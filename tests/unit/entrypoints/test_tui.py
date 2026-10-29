@@ -14,8 +14,6 @@ operator feedback of 2026-10-03):
 
 # The console prints the typographic minus (U+2212) and times sign on purpose.
 
-from __future__ import annotations
-
 import ast
 import asyncio
 import io

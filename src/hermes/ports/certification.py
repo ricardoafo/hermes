@@ -6,8 +6,6 @@ per strategy. Implementations live in :mod:`hermes.adapters.certification`.
 Reference: openspec/archive/355-certification-gates/change.md D-7.
 """
 
-from __future__ import annotations
-
 from typing import Protocol, runtime_checkable
 
 from hermes.domain.calibration.certification import CertificationRecord

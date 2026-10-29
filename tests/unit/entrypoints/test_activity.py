@@ -11,8 +11,6 @@ Invariants protected here:
 - the top-level CLI passes a leading ``--demo`` through to the command.
 """
 
-from __future__ import annotations
-
 import io
 import json
 import sqlite3

@@ -13,8 +13,6 @@ Invariants protected here:
 Reference: docs/decisions/2026-10-04-notification-templates-v2.md.
 """
 
-from __future__ import annotations
-
 from types import MappingProxyType
 
 import pytest

@@ -15,8 +15,6 @@
 Reference: openspec/archive/374-hermes-activity/change.md.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable, Sequence
 from datetime import date, datetime, timedelta, tzinfo
 from decimal import Decimal

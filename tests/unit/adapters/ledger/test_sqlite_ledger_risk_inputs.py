@@ -11,8 +11,6 @@ Invariants under test:
 - The reads honour ``start <= t < end``, filter by pair and sort oldest first.
 """
 
-from __future__ import annotations
-
 import shutil
 import sqlite3
 from collections.abc import Iterator

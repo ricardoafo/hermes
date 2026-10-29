@@ -9,8 +9,6 @@ Invariants:
 - the brief describes the scenario: its open positions and its watched streams.
 """
 
-from __future__ import annotations
-
 from dataclasses import replace
 from decimal import Decimal
 

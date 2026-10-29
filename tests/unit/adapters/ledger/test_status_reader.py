@@ -15,8 +15,6 @@ Invariants protected here:
 - ``bar_check_seconds`` is recorded_at minus the bar close, oldest first (#717).
 """
 
-from __future__ import annotations
-
 import sqlite3
 from datetime import timedelta
 from decimal import Decimal

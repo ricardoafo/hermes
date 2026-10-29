@@ -12,8 +12,6 @@ EUR key at all (change ``ledger-read-model`` D-4).
 Reference: openspec/archive/console-positions/change.md (D-2).
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from datetime import datetime
 from decimal import Decimal

@@ -7,8 +7,6 @@ without its mid), never a naive time, and never a non-positive fill.
 Reference: openspec/archive/353-fill-kernel-in-serve/change.md D-4.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any

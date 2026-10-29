@@ -6,8 +6,6 @@ Shared by the lists that point at their proofs: the pre-registration rule list
 must fail those lists instead of leaving an entry pointing at nothing.
 """
 
-from __future__ import annotations
-
 import importlib
 
 from tests.support.paths import REPO_ROOT

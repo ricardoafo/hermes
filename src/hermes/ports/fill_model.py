@@ -32,8 +32,6 @@ Reference: spec-2a-fill-model-port/change.md (D-1, D-2), ADR-003 §00
 invariant I-08 (real-money guard at composition root, not in the port).
 """
 
-from __future__ import annotations
-
 from datetime import datetime
 from typing import Protocol, runtime_checkable
 

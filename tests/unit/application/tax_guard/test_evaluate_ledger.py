@@ -9,8 +9,6 @@ Invariants under test:
   window do not count.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal

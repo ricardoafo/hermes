@@ -15,8 +15,6 @@ Everything else in the script is covered by the operator acceptance run
 (openspec/archive/179-cd-first-real-deploy/change.md, R-5).
 """
 
-from __future__ import annotations
-
 import os
 import re
 import stat

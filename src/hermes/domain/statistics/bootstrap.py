@@ -9,8 +9,6 @@ H1 needs the 95% lower bound above 0);
 openspec/archive/354-certification-statistics D-3.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from dataclasses import dataclass
 

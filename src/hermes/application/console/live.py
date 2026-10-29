@@ -26,8 +26,6 @@ it either.
 Reference: openspec/archive/713-live-ticker/change.md (D-2 to D-6).
 """
 
-from __future__ import annotations
-
 from collections import deque
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass

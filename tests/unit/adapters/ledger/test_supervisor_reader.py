@@ -10,8 +10,6 @@ Invariants protected here:
 - an unreadable payload is a ``LedgerError``, not a crash.
 """
 
-from __future__ import annotations
-
 import dataclasses
 import sqlite3
 from datetime import datetime, timedelta

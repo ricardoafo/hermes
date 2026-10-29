@@ -4,8 +4,6 @@ Invariant under test: a mark's bar close time is timezone-aware, so stored
 marks sort and compare correctly against UTC bar times.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 

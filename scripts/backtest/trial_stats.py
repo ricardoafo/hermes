@@ -16,8 +16,6 @@ Exit codes:
     1 - the trial log is broken or unreadable
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys

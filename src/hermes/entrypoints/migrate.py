@@ -15,8 +15,6 @@ Exit codes: 0 done, 1 migration failed (rolled back, snapshot kept), 2 usage,
 3 ledger or snapshot problem.
 """
 
-from __future__ import annotations
-
 import argparse
 import sqlite3
 from pathlib import Path

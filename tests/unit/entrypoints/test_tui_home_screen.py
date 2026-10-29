@@ -21,8 +21,6 @@ Invariants:
   80x24, 120x36, 160x45 and 240x60, motion off and a frozen clock.
 """
 
-from __future__ import annotations
-
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace

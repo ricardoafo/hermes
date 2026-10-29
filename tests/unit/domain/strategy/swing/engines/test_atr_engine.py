@@ -10,8 +10,6 @@ Reference: spec-5-swing-strategy-adapter change.md.
 pre-registration-v1.md §5.4 (ATR(14) sizing hint), §5.2 (ATR(22) Chandelier).
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from hermes.domain.strategy.swing.engines.atr import AtrEngine, _true_range

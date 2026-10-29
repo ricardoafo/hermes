@@ -9,8 +9,6 @@ Invariants:
   layers from importing the live-price modules, directly or indirectly.
 """
 
-from __future__ import annotations
-
 import json
 import subprocess
 import sys

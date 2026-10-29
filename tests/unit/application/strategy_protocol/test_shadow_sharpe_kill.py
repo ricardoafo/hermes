@@ -1,7 +1,5 @@
 """Unit tests for the shadow-phase Sharpe kill (pre-registration §10, #422)."""
 
-from __future__ import annotations
-
 import math
 from datetime import date, timedelta
 from pathlib import Path

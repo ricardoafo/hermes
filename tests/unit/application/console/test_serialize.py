@@ -9,8 +9,6 @@ Invariants:
 - a UTC context changes only the timestamps' offset.
 """
 
-from __future__ import annotations
-
 import json
 from datetime import UTC
 from decimal import Decimal

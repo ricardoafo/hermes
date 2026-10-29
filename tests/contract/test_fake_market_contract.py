@@ -13,8 +13,6 @@ Excluded from the default run by ``-m 'not contract'``; run with
 ``uv run pytest -m contract tests/contract/test_fake_market_contract.py``.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 
 import httpx

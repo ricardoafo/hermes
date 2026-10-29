@@ -6,8 +6,6 @@ bell is off unless ``HERMES_CONSOLE_BEEP=on``; it rings once per change of
 state, never on every poll. Both read the heartbeat only.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping
 from datetime import tzinfo
 from typing import Final
