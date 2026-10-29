@@ -53,7 +53,9 @@ permissions:
 jobs:
   review:
     name: AI review
-    if: ${{ !github.event.pull_request.draft }}
+    # Not on forks: a fork's run has no reviewer token, and its PR text
+    # and diff are untrusted input for the model.
+    if: ${{ !github.event.pull_request.draft && github.event.pull_request.head.repo.full_name == github.repository }}
     # Its own small runners: a review mostly waits on the model and must
     # not hold a CI runner while PR tests queue (#631).
     runs-on: ${{ vars.REVIEW_RUNNER_LABEL && fromJSON(vars.REVIEW_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]') }}

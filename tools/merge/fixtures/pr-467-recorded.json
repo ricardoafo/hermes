@@ -31,7 +31,8 @@
         "login": "ricardoafo"
       },
       "state": "APPROVED",
-      "submitted_at": "2026-10-03T21:53:16Z"
+      "submitted_at": "2026-10-03T21:53:16Z",
+      "author_association": "OWNER"
     }
   ],
   "files": [

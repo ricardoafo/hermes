@@ -27,7 +27,7 @@ _NEXT_VERSION_PATH = REPO_ROOT / "scripts" / "deploy" / "next_version.py"
 _DRY_RUN_GUARD = "inputs.dry_run != true"
 _DRY_RUN_NOTICE_GUARD = "inputs.dry_run == true"
 # Steps that may run in a dry run: installing the ssh client touches only the runner.
-_ALWAYS_RUN_DEPLOY_STEPS = {"Ensure openssh-client is installed"}
+_ALWAYS_RUN_DEPLOY_STEPS = {"Ensure openssh-client is installed", "Remove the SSH keyfile"}
 
 
 def _workflow() -> dict[str, Any]:
@@ -601,3 +601,32 @@ def test_bundle_ships_the_schema_guard() -> None:
     bundle_text = _bundle_text()
 
     assert "scripts/deploy/schema_guard.py" in bundle_text
+
+
+def test_every_job_that_writes_the_ssh_key_removes_it_last() -> None:
+    """The runner container outlives the job, so the deploy key goes even when a step fails."""
+    for name in ("cd", "vps-bootstrap", "vps-diagnose"):
+        path = _CD_PATH.parent / f"{name}.yml"
+        workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for job_name, job in workflow["jobs"].items():
+            steps = job.get("steps", [])
+            if not any("~/.ssh/vps_id" in str(step.get("run", "")) for step in steps):
+                continue
+            last = steps[-1]
+            assert (last.get("name"), last.get("if"), last.get("run")) == (
+                "Remove the SSH keyfile",
+                "always()",
+                "rm -f ~/.ssh/vps_id",
+            ), f"{name}.yml job {job_name}"
+
+
+def test_every_job_that_holds_the_ssh_key_runs_on_the_ops_runner() -> None:
+    """The CI pool runs pull request code, so no job that holds the deploy key runs there."""
+    for name in ("cd", "vps-bootstrap", "vps-diagnose"):
+        workflow = yaml.safe_load((_CD_PATH.parent / f"{name}.yml").read_text(encoding="utf-8"))
+        for job_name, job in workflow["jobs"].items():
+            if "VPS_SSH_KEY" not in str(job):
+                continue
+            assert str(job["runs-on"]).startswith("${{ vars.OPS_RUNNER_LABEL"), (
+                f"{name}.yml job {job_name}"
+            )

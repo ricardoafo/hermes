@@ -171,11 +171,15 @@ async function runBatch({ base, candidates, ops, log = () => {} }) {
  * workspace holds the PRs' versions of every file, including these.
  *
  * @param {{ cwd: string, base: string, gatesScript: string, failFile: string,
- *           ciConclusion: (head: string) => Promise<string|null> }} input
+ *           token: string, ciConclusion: (head: string) => Promise<string|null> }} input
  * @returns {BatchOps}
  */
-function gitOps({ cwd, base, gatesScript, failFile, ciConclusion }) {
+function gitOps({ cwd, base, gatesScript, failFile, token, ciConclusion }) {
   const git = (args) => spawnSync('git', args, { cwd, encoding: 'utf8' });
+  // The job checks out with persist-credentials off, so no file the gates
+  // can read holds the token. Each fetch gets it on the command line.
+  const header = `AUTHORIZATION: basic ${Buffer.from(`x-access-token:${token}`).toString('base64')}`;
+  const authed = (args) => git(['-c', `http.https://github.com/.extraheader=${header}`, ...args]);
   const must = (args) => {
     const r = git(args);
     if (r.status !== 0) {
@@ -193,7 +197,7 @@ function gitOps({ cwd, base, gatesScript, failFile, ciConclusion }) {
       must(['clean', '-fd', '--quiet']);
     },
     fetchHead(n) {
-      const r = git(['fetch', '--no-tags', '--force', 'origin', `refs/pull/${n}/head:${ref(n)}`]);
+      const r = authed(['fetch', '--no-tags', '--force', 'origin', `refs/pull/${n}/head:${ref(n)}`]);
       return r.status === 0 ? must(['rev-parse', ref(n)]) : null;
     },
     merge(n) {
@@ -215,7 +219,11 @@ function gitOps({ cwd, base, gatesScript, failFile, ciConclusion }) {
     },
     gate() {
       fs.writeFileSync(failFile, '');
-      const r = spawnSync('bash', [gatesScript, failFile, base], { cwd, stdio: 'inherit' });
+      const r = spawnSync('bash', [gatesScript, failFile, base], {
+        cwd,
+        stdio: 'inherit',
+        env: gateEnv(process.env),
+      });
       if (r.status === 0) {
         return { passed: true, gate: null };
       }
@@ -226,4 +234,18 @@ function gitOps({ cwd, base, gatesScript, failFile, ciConclusion }) {
   };
 }
 
-module.exports = { BISECT_CONFLICT_GATE, runBatch, gitOps };
+/**
+ * The environment the gates run in: this process's, minus every token.
+ *
+ * github-script hands its token to the step as `INPUT_GITHUB-TOKEN`, and
+ * the runner adds its own `ACTIONS_*_TOKEN`s. The gates run the batch's
+ * code and need none of them.
+ *
+ * @param {Record<string, string|undefined>} env
+ * @returns {Record<string, string|undefined>}
+ */
+function gateEnv(env) {
+  return Object.fromEntries(Object.entries(env).filter(([name]) => !/TOKEN/i.test(name)));
+}
+
+module.exports = { BISECT_CONFLICT_GATE, gateEnv, runBatch, gitOps };
