@@ -11,21 +11,19 @@ Invariants under test:
   migrations last without renaming anything.
 """
 
-from __future__ import annotations
-
 import importlib.util
 import sys
 from pathlib import Path
 
 import pytest
 
-_ROOT = Path(__file__).resolve().parents[3]
+from tests.support.paths import REPO_ROOT
 
 
 def _load():
     """Import the script module (not a package)."""
     spec = importlib.util.spec_from_file_location(
-        "migration_sql_check", _ROOT / "scripts" / "dev" / "migration-sql-check.py"
+        "migration_sql_check", REPO_ROOT / "scripts" / "dev" / "migration-sql-check.py"
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -35,7 +33,9 @@ def _load():
 
 
 CHECK = _load()
-_SHIPPED = sorted((_ROOT / "src" / "hermes" / "adapters" / "ledger" / "migrations").glob("*.sql"))
+_SHIPPED = sorted(
+    (REPO_ROOT / "src" / "hermes" / "adapters" / "ledger" / "migrations").glob("*.sql")
+)
 
 
 def test_every_shipped_migration_passes() -> None:

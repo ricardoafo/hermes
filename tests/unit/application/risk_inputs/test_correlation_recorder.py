@@ -12,8 +12,6 @@ Invariants under test:
 - Fewer stored days give fewer returns, and the row says how many.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -26,7 +24,8 @@ from hermes.application.risk_inputs.correlation_recorder import CorrelationRecor
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.bar_schedule import close_time_of
 from hermes.domain.market_data.kline import KlineInterval
-from hermes.domain.portfolio.correlation import aligned_daily_returns, pearson
+from hermes.domain.portfolio.correlation import aligned_daily_returns
+from hermes.domain.statistics.correlation import pearson
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 

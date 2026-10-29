@@ -11,10 +11,8 @@ second position and is not the signed rule.
 Threshold (binding — pre-reg §5.5): correlation strictly above 0.80.
 
 Reference: pre-registration-v1.md §5.5; SA-9 RO-01;
-openspec/changes/822-portfolio-backtest D-2.
+openspec/archive/822-portfolio-backtest D-2.
 """
-
-from __future__ import annotations
 
 from collections.abc import Mapping
 from itertools import combinations

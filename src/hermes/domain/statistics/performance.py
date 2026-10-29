@@ -4,11 +4,9 @@ Drawdowns are fractions of the running peak (0.12 = 12%). The ulcer index uses
 percentage points, matching the §9 threshold of 10. Recovery is counted in
 equity points, so a daily curve gives days.
 
-Reference: pre-registration-v1.md §9; openspec/changes/354-certification-statistics
+Reference: pre-registration-v1.md §9; openspec/archive/354-certification-statistics
 D-4, D-6.
 """
-
-from __future__ import annotations
 
 import math
 from collections.abc import Sequence

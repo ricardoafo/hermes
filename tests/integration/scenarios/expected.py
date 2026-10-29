@@ -5,8 +5,6 @@ each formula is copied from ``docs/experiments/swing-mvp1/pre-registration-v1.md
 or ``config/``, so a scenario fails when the code drifts from the document.
 """
 
-from __future__ import annotations
-
 from decimal import ROUND_DOWN, Decimal, localcontext
 
 from tests.support.fake_market import wire

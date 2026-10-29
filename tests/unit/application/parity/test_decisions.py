@@ -1,6 +1,6 @@
 """Tests for the parity decision comparison and its alert.
 
-Invariants protected here (openspec/changes/358-parity-check/change.md):
+Invariants protected here (openspec/archive/358-parity-check/change.md):
 
 - two decision sets with the same keys and outcomes are in parity;
 - a signal on one side only, or the same signal executed on one side and not
@@ -8,8 +8,6 @@ Invariants protected here (openspec/changes/358-parity-check/change.md):
 - a differing decline reason alone is not a mismatch;
 - the alert names bars and decisions and carries no price, equity or P&L.
 """
-
-from __future__ import annotations
 
 from datetime import UTC, date, datetime
 

@@ -12,10 +12,8 @@ tests extract from the script text and run under bash with a stub ``chown``,
   its content and mtime and only has its owner and mode repaired.
 
 Everything else in the script is covered by the operator acceptance run
-(openspec/changes/179-cd-first-real-deploy/change.md, R-5).
+(openspec/archive/179-cd-first-real-deploy/change.md, R-5).
 """
-
-from __future__ import annotations
 
 import os
 import re

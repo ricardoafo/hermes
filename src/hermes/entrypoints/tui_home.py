@@ -8,8 +8,6 @@ and draws no figure when the surface may not show P&L (``pnl_visible``). The
 colours come from the data token sheet: up blue, down orange, warning amber.
 """
 
-from __future__ import annotations
-
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime

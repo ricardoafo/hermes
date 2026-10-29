@@ -4,10 +4,10 @@ Year-end valuation order: operator override, then last bar close in USDT at
 the ECB rate of 31 December, else missing.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+
+import pytest
 
 from hermes.application.filing.service import Custodian, FilingPack, YearEndPrice, build_filing_pack
 from hermes.application.ledger.eur_pricer import EurPricer
@@ -22,6 +22,7 @@ from hermes.domain.lots.selection import InsufficientInventory
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.quantity import Quantity
 from tests.unit.application.filing.fake_reader import FakeFilingReader
 from tests.unit.application.ledger.fake_fx import FakeFx
 
@@ -47,9 +48,10 @@ def _pack(
     overrides: dict[Currency, Decimal] | None = None,
     previous: PreviousDeclaration | None = None,
     today: date = _AFTER,
+    year: int = 2026,
 ) -> FilingPack:
     return build_filing_pack(
-        2026,
+        year,
         reader,
         EurPricer(fx if fx is not None else _fx()),
         rules=_RULES,
@@ -146,6 +148,59 @@ def test_modelo100_reads_the_tax_year_and_repurchase_margin() -> None:
     assert [(f.sell_ref, f.purchase_refs) for f in pack.modelo100.flags] == [("9", ("10",))]
 
 
+@pytest.mark.parametrize(
+    ("year", "expected"),
+    [
+        (
+            2026,
+            (datetime(2025, 10, 31, 23, 0, tzinfo=UTC), datetime(2027, 2, 28, 23, 0, tzinfo=UTC)),
+        ),
+        (
+            2025,
+            (datetime(2024, 10, 31, 23, 0, tzinfo=UTC), datetime(2026, 2, 28, 23, 0, tzinfo=UTC)),
+        ),
+    ],
+)
+def test_purchases_are_read_from_madrid_midnight_two_months_either_side_of_the_year(
+    year: int, expected: tuple[datetime, datetime]
+) -> None:
+    """Invariant: the purchase read covers every repurchase window of the year, no more (#1171).
+
+    Worked by hand for 2026: the earliest window opens on 1 Nov 2025 (Madrid,
+    CET), 23:00 UTC on 31 Oct; the latest closes at the end of 28 Feb 2027, so
+    the read runs to Madrid midnight on 1 Mar 2027, 23:00 UTC on 28 Feb. 2025
+    is the same a year earlier; an odd year catches ``year + 1`` arithmetic
+    that only works for even years.
+    """
+    reader = FakeFilingReader()
+    _pack(reader, year=year)
+    assert reader.purchase_queries == [expected]
+
+
+def test_a_buy_late_on_the_last_window_day_after_new_years_eve_flags_the_sale() -> None:
+    """Invariant: a loss sale at 23:30 Madrid on 31 Dec flags a buy at 23:59 Madrid on 28 Feb.
+
+    The window of a 31 Dec sale ends on 28 Feb (clamped), whatever the hour.
+    """
+    loss = DisposalPiece(
+        sell_ref="9",
+        asset=Currency.BTC,
+        received=Currency.USDT,
+        disposed_at=datetime(2026, 12, 31, 22, 30, tzinfo=UTC),
+        buy_ref="1",
+        acquired_at=_MAY,
+        qty=Decimal("1"),
+        proceeds_eur=Decimal("100"),
+        cost_eur=Decimal("200"),
+        fee_eur=Decimal("1"),
+    )
+    rebuy = PurchaseRecord(
+        ref="10", asset=Currency.BTC, acquired_at=datetime(2027, 2, 28, 22, 59, tzinfo=UTC)
+    )
+    pack = _pack(FakeFilingReader(pieces=[loss], buys=[rebuy]))
+    assert [(f.sell_ref, f.purchase_refs) for f in pack.modelo100.flags] == [("9", ("10",))]
+
+
 def test_previous_declaration_reaches_the_721_decision() -> None:
     """Invariant: a coin declared last year and sold since makes the 721 due."""
     previous = PreviousDeclaration(year=2025, values_eur={Currency.ETH: Decimal("60000")})
@@ -169,4 +224,7 @@ def test_inconsistent_trades_are_a_failure() -> None:
         today=_AFTER,
         shadow=True,
     )
-    assert isinstance(result.failure(), InsufficientInventory)
+    assert result.failure() == InsufficientInventory(
+        requested=Quantity(amount=Decimal("1"), asset=Currency.BTC),
+        available=Quantity(amount=Decimal("0"), asset=Currency.BTC),
+    )

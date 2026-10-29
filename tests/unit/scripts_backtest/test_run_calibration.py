@@ -6,14 +6,11 @@ The full end-to-end async run is smoke-tested manually via
 because it depends on the ~30 MB Binance Vision klines archive.
 """
 
-from __future__ import annotations
-
 import importlib.util
 import inspect
 import sys
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 
@@ -21,16 +18,18 @@ from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.strategy.signal import SignalKind, SignalSide, StrategySignal
 from hermes.domain.strategy.swing import adapter as swing_adapter
+from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
+from tests.support.paths import REPO_ROOT
 
 _STRATEGY_ID = StrategyId("swing-mvp1-phase1-btcusdt")
 
 
 def _import_driver():
     """Import the driver module (not a proper package — same-dir import)."""
-    root = Path(__file__).resolve().parents[3]
+    root = REPO_ROOT
     module_path = root / "scripts" / "backtest" / "run_calibration.py"
     assert module_path.exists(), f"missing driver: {module_path}"
     spec = importlib.util.spec_from_file_location("run_calibration_driver", module_path)
@@ -195,7 +194,17 @@ def test_strategy_parameters_cover_every_keyword_and_build_the_adapter() -> None
     params = DRIVER._strategy_parameters()
     assert set(params) >= {"donchian_period", "adx_period", "ema_period", "time_stop_days"}
     assert all(value is not inspect.Parameter.empty for value in params.values())
-    DRIVER.SwingStrategyAdapter(**params)
+    SwingStrategyAdapter(**params)
+
+
+def test_strategy_parameters_are_the_adapters_own_keyword_defaults() -> None:
+    """The trial records the defaults the adapter would run with, not a copy that can drift."""
+    expected = {
+        name: parameter.default
+        for name, parameter in inspect.signature(SwingStrategyAdapter.__init__).parameters.items()
+        if parameter.kind is inspect.Parameter.KEYWORD_ONLY
+    }
+    assert DRIVER._strategy_parameters() == expected
 
 
 def test_git_state_returns_a_full_commit_sha() -> None:

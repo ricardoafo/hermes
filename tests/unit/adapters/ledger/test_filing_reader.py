@@ -4,8 +4,6 @@ The ledger is written through ``TradeRecorder`` and ``SqliteLedger``, so the
 reader is checked against the FIFO projection production stores.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -19,7 +17,6 @@ from hermes.domain.errors import LedgerError
 from hermes.domain.filing.modelo100 import DisposalPiece, PurchaseRecord
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.value_objects.currency import Currency
-from hermes.ports.filing import FilingLedgerReaderPort
 from tests.unit.adapters.ledger.filing_ledger import (
     BTC_USDT,
     BUY1_AT,
@@ -39,11 +36,6 @@ def reader(tmp_path: Path) -> Iterator[LedgerFilingReader]:
     standard_ledger(db)
     with LedgerFilingReader.open(db) as opened:
         yield opened
-
-
-def test_reader_satisfies_the_port(reader: LedgerFilingReader) -> None:
-    """Invariant: the adapter can be injected wherever the port is expected."""
-    assert isinstance(reader, FilingLedgerReaderPort)
 
 
 def test_disposal_pieces_carry_the_stored_fifo_values(reader: LedgerFilingReader) -> None:

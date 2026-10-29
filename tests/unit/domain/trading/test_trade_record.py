@@ -3,8 +3,7 @@
 Reference: ADR-002 §3, ADR-016 item 3.
 """
 
-from __future__ import annotations
-
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -105,6 +104,17 @@ class TestTradeRecord:
         record = TradeRecord.from_fill(_fill(OrderSide.SELL), correlation_id="c-2", eur=None)
         assert record.lot_id is None
         assert record.strategy_id == StrategyId("swing")
+
+    @pytest.mark.parametrize("estimated", [True, False])
+    def test_record_keeps_the_fills_estimated_fee_mark(self, *, estimated: bool) -> None:
+        """Invariant: the record says the fee is an estimate exactly when the fill does (#1014)."""
+        fill = replace(_fill(OrderSide.BUY), fee_estimated=estimated)
+        record = TradeRecord.from_fill(fill, correlation_id="c-9", eur=None)
+        assert record.fee_estimated is estimated
+
+    def test_a_fill_is_exact_unless_marked(self) -> None:
+        """Invariant: a fill built without the mark has an exact fee, so no caller changes."""
+        assert _fill(OrderSide.BUY).fee_estimated is False
 
     def test_status_is_pending_without_eur_values(self) -> None:
         """Invariant: a record with no EUR values is stored pending."""

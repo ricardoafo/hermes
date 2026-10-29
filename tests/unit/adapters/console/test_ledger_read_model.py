@@ -11,10 +11,8 @@ Invariants:
 The home views (portfolio, activity, shadow test) are covered in
 ``test_ledger_read_model_home.py``.
 
-Reference: openspec/changes/ledger-read-model/change.md (R-1 to R-3, D-8).
+Reference: openspec/archive/ledger-read-model/change.md (R-1 to R-3, D-8).
 """
-
-from __future__ import annotations
 
 import sqlite3
 from datetime import UTC, datetime, timedelta

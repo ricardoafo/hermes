@@ -15,20 +15,17 @@ Lookahead safety:
     The stop only uses bars up to and including the current signal bar.
     Callers pass the full bar buffer up to the current bar; no peeking.
 
-Invariant:
-    The trailing stop MUST always be below the current bar's close (for a
-    long position).  If somehow it exceeds the close (extreme volatility
-    spike), the engine clamps it to ``close - 1 tick`` to avoid a
-    semantically invalid signal.  In practice this should not happen with
-    the pre-reg parameters.
+No clamp:
+    The level is not clamped under the close (issue #1157). A bar that opens
+    at or under the stop in force exits the position: the backtest fills it
+    from the open, and the shadow sells at the bar's close under the
+    2026-10-18 §11 deviation in the lab notebook.
 
 Domain purity: no I/O, no async, stdlib + Decimal only.
 
 Reference: pre-registration-v1.md §5.2.
 spec-5-swing-strategy-adapter change.md D-4.
 """
-
-from __future__ import annotations
 
 from collections.abc import Sequence
 from decimal import Decimal

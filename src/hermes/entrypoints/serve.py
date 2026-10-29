@@ -20,6 +20,11 @@ What one process does:
   Binance depth snapshot (or the pre-registration §6.2 book when none is
   fresh), and the fill is recorded as a ``TradeExecuted`` v2 trade with its
   execution-quality row (change ``353-fill-kernel-in-serve``).
+- Each executed fill's fee, slippage and latency feed EWMA + CUSUM control
+  charts (#362, #1181), primed at start-up from the ledger's past fills. The
+  first fill of a breach episode is a ``WARNING`` anomaly in the ledger and an
+  alert; it is never read to decide, size, kill or gate a trade, and a monitor
+  error is logged without stopping the fill.
 - The bar loop warms up one :class:`SwingStrategyAdapter` per pair, seeding
   bars up to a persisted cursor without evaluating them, restoring each
   pair's open position from the ledger, then evaluates every later bar as if
@@ -29,6 +34,10 @@ What one process does:
   minutes, and each completed 1D bar records the 30-day pair correlations
   (#835). These RO-01 / RO-02 inputs are recorded only: no rule reads them,
   and a failed sample or correlation is logged and skipped.
+- Each daily close also runs the ADR-002 Decision 6 recharacterization guard
+  over the ledger's trades of the last 90 days (#1181). A breach is recorded
+  and alerted only: nothing pauses or gates entries on it, which is the Code
+  Owner's decision (#136). A failed evaluation is logged and skipped.
 - Delivery rule (#854): each signal is pushed to each routed channel once,
   in practice at least once with dedupe. The push is recorded in the ledger
   (``SignalNotified``) after it is sent, so a crash before the record pushes
@@ -56,17 +65,16 @@ AND :attr:`~hermes.infrastructure.config.HermesConfig.env` being ``"prod"``
 I-08.
 """
 
-from __future__ import annotations
-
 import asyncio
 import contextlib
 import dataclasses
 import os
 import signal
 import sqlite3
+from collections import Counter
 from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from functools import partial
 from pathlib import Path
@@ -76,12 +84,19 @@ from typing import Final
 import structlog
 from returns.result import Failure
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig
+from hermes.adapters.clock.remote import (
+    TEST_CLOCK_URL_ENV,
+    RemoteClock,
+    remote_clock_from_env,
+)
 from hermes.adapters.clock.wall import WallClock
+from hermes.adapters.exchanges.kraken_public import KrakenPublicAdapter
+from hermes.adapters.exchanges.kraken_public import KrakenPublicConfig as KrakenWireConfig
 from hermes.adapters.fees.binance_history import load_binance_fee_history
 from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
 from hermes.adapters.fx.frankfurter import FrankfurterAdapter
 from hermes.adapters.fx.frankfurter import FrankfurterConfig as FrankfurterWireConfig
-from hermes.adapters.fx.rate_limiter import RateLimitConfig
 from hermes.adapters.ledger.anomaly_reader import latest_anomaly
 from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.migration_runner import unknown_applied_migrations
@@ -103,17 +118,31 @@ from hermes.application.execution.kernel import Declined, Executed, FillKernel, 
 from hermes.application.execution.position_sync import sync_after_signal
 from hermes.application.execution.prereg_book import ExitPricing
 from hermes.application.execution.shadow import (
+    LIVE_BOOK_WINDOW,
     AlreadyFilled,
     ShadowExecution,
     ShadowExecutor,
     ShadowOutcome,
+    live_risk_engine,
     shadow_risk_engine,
 )
 from hermes.application.ledger.eur_backfill import backfill_pending_eur, pending_rate_keys
 from hermes.application.ledger.eur_pricer import EurPricer, LookupBudget
 from hermes.application.ledger.trade_recorder import TradeRecorder
+from hermes.application.live_risk_inputs import LedgerLiveRiskInputs, StablePriceWatch
 from hermes.application.messages.eur_rate import EurRateLookup
 from hermes.application.monitoring.clock_skew import clock_is_off, clock_skew_change
+from hermes.application.monitoring.execution_quality import (
+    ExecutionQualityMonitor,
+    observation_of,
+)
+from hermes.application.monitoring.missed_bar_budget import (
+    BUDGET_SOURCE,
+    MissedBarBudget,
+    budget_crossed_report,
+    missed_bar_allowance,
+)
+from hermes.application.monitoring.restart_report import RESTART_SOURCE, restart_report
 from hermes.application.notification_router import EventClass, RouterConfig, route
 from hermes.application.order_router.sizing import SizingPolicy
 from hermes.application.portfolio.tracker import PortfolioTracker
@@ -128,12 +157,14 @@ from hermes.application.strategy_protocol.shadow_checks import (
     day_end,
     run_shadow_checks,
 )
+from hermes.application.tax_guard.window import TAX_GUARD_SOURCE, evaluate_ledger
 from hermes.domain.errors import HermesError, InfraError, LedgerError
 from hermes.domain.events.anomaly_detected import (
     CLOCK_SKEW_SOURCE,
     AnomalyDetected,
     AnomalySeverity,
 )
+from hermes.domain.events.bar_missed import BarMissed, reached_late
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.event_bus import EventBus, EventDispatchError
@@ -161,20 +192,24 @@ from hermes.domain.portfolio.snapshot import PortfolioSnapshot
 from hermes.domain.strategy.signal import OpenPosition, SignalKind, StrategySignal
 from hermes.domain.strategy.stop_mark import StopMark
 from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
+from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
+from hermes.domain.value_objects.time import MADRID
 from hermes.entrypoints._release import read_release
 from hermes.infrastructure import sentry_integration
-from hermes.infrastructure.config.models import FrankfurterConfig
+from hermes.infrastructure.config.models import FrankfurterConfig, MarketDataConfig
 from hermes.infrastructure.config.root import HermesConfig
 from hermes.infrastructure.file_lock import FileLock
 from hermes.infrastructure.logging import bind_correlation_id, new_correlation_id
+from hermes.infrastructure.project_root import load_pre_registration
 from hermes.ports.bar_feed import ClosedBarFeedPort
 from hermes.ports.certification import CertificationStoreError, CertificationStorePort
 from hermes.ports.clock import ClockPort
 from hermes.ports.fx import FxRateProviderPort
 from hermes.ports.orderbook_snapshot import OrderbookSnapshotPort
+from hermes.ports.stop_history import StopHistoryPort
 from hermes.ports.strategy import StrategyPort
 
 __all__ = [
@@ -197,6 +232,7 @@ __all__ = [
     "report_failure",
     "run",
     "serve_lock_path",
+    "with_only_enabled",
 ]
 
 _log = structlog.get_logger(__name__)
@@ -236,6 +272,12 @@ EXPERIMENT_DIR: Final = Path("docs/experiments/swing-mvp1")
 # ``hermes fx backfill``.
 BOOT_EUR_MAX_FX_CALLS: Final = 20
 BOOT_EUR_BUDGET_SEC: Final = 60.0
+
+# Why 17:00 Madrid: the ECB publishes its reference rates around 16:00 CET, so
+# a pass at 17:00 finds that day's rate. Live fills read the rate cache only
+# (issue #996); this daily pass prices whatever they left pending.
+DAILY_EUR_PASS_AT: Final = time(17, 0)
+"""Madrid wall time of the daily pass that prices pending EUR values."""
 
 _ONE_MS: Final = timedelta(milliseconds=1)
 _EPOCH: Final = datetime(1970, 1, 1, tzinfo=UTC)
@@ -282,6 +324,25 @@ def parameter_fingerprint_for(config: HermesConfig) -> str:
     )
 
 
+def with_only_enabled(config: HermesConfig, name: str) -> HermesConfig:
+    """Return ``config`` with ``name`` as the one enabled roster entry (#1076).
+
+    Each shadow in the lab runs as its own serve on its own ledger, all from
+    one release's config, so the instance names its strategy instead of the
+    file choosing it. Every later check reads the enabled entry as before.
+
+    Raises:
+        StartupError: The roster has no entry called ``name``.
+    """
+    entries = config.strategies.strategies
+    if not any(s.name == name for s in entries):
+        raise StartupError(f"strategies.yaml has no {name!r} entry")
+    roster = [s.model_copy(update={"enabled": s.name == name}) for s in entries]
+    return config.model_copy(
+        update={"strategies": config.strategies.model_copy(update={"strategies": roster})}
+    )
+
+
 def experiment_files(experiment_root: Path) -> tuple[Path, Path]:
     """Return the pre-registration and fee-history paths under ``experiment_root``.
 
@@ -304,9 +365,7 @@ def pre_registration_for(config_dir: Path) -> PreRegistration:
         ValueError: The file is not the v1 pre-registration.
     """
     root = config_dir.resolve().parent
-    if experiment_files(root)[0].is_file():
-        return PreRegistration(project_root=root)
-    return PreRegistration()
+    return load_pre_registration(root if experiment_files(root)[0].is_file() else None)
 
 
 def _holding_opened_at(
@@ -405,9 +464,16 @@ class Composition:
             start-up pricing of pending values.
         spread_sample_seconds: Step of the spread sampler that records the
             RO-02 input (#835); no rule reads the samples.
+        execution_quality: Control charts on each fill's fee, slippage and
+            latency (#362, #1181). Primed from the ledger's past fills when
+            the bar loop starts; a breach is recorded and alerted, never read
+            to trade.
         serve_lock: The ledger's serve lock, held from build until
             :func:`run` releases it after closing SQLite; ``None`` for a
             composition built by hand in a test.
+        stable_price_watch: Polls the USDT price the depeg rules read with
+            real money (#1158); ``None`` in shadow.
+        kraken_adapter: The adapter the watch reads; closed by :func:`run`.
     """
 
     config: HermesConfig
@@ -431,7 +497,10 @@ class Composition:
     fx_adapter: FrankfurterAdapter | None
     eur_pricer: EurPricer
     spread_sample_seconds: float = SPREAD_SAMPLE_SECONDS
+    execution_quality: ExecutionQualityMonitor = field(default_factory=ExecutionQualityMonitor)
     serve_lock: FileLock | None = None
+    stable_price_watch: StablePriceWatch | None = None
+    kraken_adapter: KrakenPublicAdapter | None = None
 
 
 def _eur_rate_lookup(pricer: EurPricer) -> EurRateLookup:
@@ -595,6 +664,28 @@ def seed_capital_once(
     return True
 
 
+def _refuse_another_strategys_ledger(ledger: SqliteLedger, strategy_id: StrategyId) -> None:
+    """Refuse a ledger whose capital belongs to another strategy only (#1076).
+
+    ADR-021 gives each shadow its own ledger. A second shadow pointed at the
+    first one's file would seed its capital beside it and share its rows, so a
+    ledger already seeded for other strategies and not for this one is
+    refused. A ledger that already holds this strategy's seed keeps working.
+
+    Raises:
+        StartupError: The ledger is seeded for other strategies and not this one.
+        LedgerError: The seeds cannot be read.
+    """
+    seeded = ledger.seeded_strategies()
+    if not seeded or strategy_id in seeded:
+        return
+    owners = ", ".join(s.value for s in seeded)
+    raise StartupError(
+        f"this ledger holds the capital of {owners}, not {strategy_id.value}: each shadow "
+        "keeps its own ledger, so point --db at its own file, or start one with --new-ledger"
+    )
+
+
 def _rebuild_tracker(
     ledger: SqliteLedger, seed: PortfolioSnapshot, strategy_id: StrategyId
 ) -> PortfolioTracker:
@@ -631,6 +722,7 @@ def build_composition(
     orderbooks: OrderbookSnapshotPort | None = None,
     fx: FxRateProviderPort | None = None,
     new_ledger: bool = False,
+    stable_watch: StablePriceWatch | None = None,
 ) -> Composition:
     """Wire every adapter the shadow loop needs and return the container.
 
@@ -659,6 +751,9 @@ def build_composition(
             a missing ledger is refused (#876): a wrong ``--db`` or an
             unmounted disk would otherwise start a fresh, flat ledger and
             drop the open positions without a word.
+        stable_watch: USDT price watch override for tests, used only with
+            ``allow_mainnet`` (#1158). Defaults to a watch polling Kraken's
+            public USDT/USD book.
 
     Returns:
         A fully wired :class:`Composition` ready to hand to :func:`run`.
@@ -701,6 +796,7 @@ def build_composition(
             experiment_root=experiment_root,
             orderbooks=orderbooks,
             fx=fx,
+            stable_watch=stable_watch,
         )
     except BaseException:
         lock.release()
@@ -718,6 +814,7 @@ def _wire_composition(
     experiment_root: Path | None = None,
     orderbooks: OrderbookSnapshotPort | None = None,
     fx: FxRateProviderPort | None = None,
+    stable_watch: StablePriceWatch | None = None,
 ) -> Composition:
     """Wire the composition once the serve lock is held; see :func:`build_composition`."""
     db_target = db_path if db_path is not None else DEFAULT_DB_PATH
@@ -738,6 +835,7 @@ def _wire_composition(
             clock=clock,
             orderbooks=orderbooks,
             fx=fx,
+            stable_watch=stable_watch,
             ledger_path=db_target,
         )
     except BaseException:
@@ -756,12 +854,17 @@ def _wire_on_ledger(
     clock: ClockPort | None,
     orderbooks: OrderbookSnapshotPort | None,
     fx: FxRateProviderPort | None,
+    stable_watch: StablePriceWatch | None,
     ledger_path: Path,
 ) -> Composition:
     """Wire everything that needs the open ledger; the caller closes it on failure."""
     ledger = _open_ledger(connection, ledger_path)
 
-    wall: ClockPort = clock if clock is not None else WallClock()
+    test_clock = remote_clock_from_env(env_snapshot) if clock is None else None
+    wall: ClockPort = clock if clock is not None else test_clock or WallClock()
+    if test_clock is not None:
+        # The loader allowed it only in dev or qa, on loopback (#972).
+        _log.warning("serve.clock.test_clock", source=TEST_CLOCK_URL_ENV)
     event_bus = EventBus()
     event_bus.subscribe(SignalEmitted, ledger.append_event)
     event_bus.subscribe(BarProcessed, ledger.append_event)
@@ -773,6 +876,7 @@ def _wire_on_ledger(
     capital = Money(amount=roster.capital_budget, currency=roster.quote)
     seed = PortfolioSnapshot.seed(strategy_id, capital)
     try:
+        _refuse_another_strategys_ledger(ledger, strategy_id)
         seed_capital_once(ledger, strategy_id, capital, now=wall.now())
         recorded_seed = ledger.capital_seed(strategy_id)
     except LedgerError as exc:
@@ -788,77 +892,144 @@ def _wire_on_ledger(
             "or start a new ledger for the new capital"
         )
     tracker = _rebuild_tracker(ledger, seed, strategy_id)
-    fill_model = OrderbookWalkFillModel()
-    books = (
-        orderbooks
-        if orderbooks is not None
-        else BinanceDepthSnapshotAdapter.create(config.market_data, wall)
-    )
-    fx_adapter: FrankfurterAdapter | None = None
-    rates = fx
-    if rates is None:
-        fx_adapter = _frankfurter(config.frankfurter)
-        rates = fx_adapter
-    eur_pricer = EurPricer(rates)
-    try:
-        executor = ShadowExecutor(
-            kernel=_build_kernel(
-                fill_model, tracker, strategy_id, pre_registration, roster.sizing_policy()
-            ),
-            fill_model=fill_model,
-            books=books,
-            recorder=TradeRecorder(ledger, eur_pricer),
+    # A start that fails after a client is built closes it here; on success the
+    # composition owns them and _release closes them (#1176). The depth and kline
+    # adapters' AsyncClients cannot be closed from this sync path, but they have
+    # sent no request yet, so they hold no connection to leak.
+    with contextlib.ExitStack() as owned:
+        fill_model = OrderbookWalkFillModel()
+        books = (
+            orderbooks
+            if orderbooks is not None
+            else BinanceDepthSnapshotAdapter.create(config.market_data, wall)
+        )
+        fx_adapter: FrankfurterAdapter | None = None
+        rates = fx
+        if rates is None:
+            fx_adapter = _frankfurter(config.frankfurter)
+            owned.callback(fx_adapter.close)
+            rates = fx_adapter
+        eur_pricer = EurPricer(rates)
+        stable_watch, kraken = _stable_price_watch(config, wall, stable_watch, owned)
+        live_inputs = (
+            None
+            if stable_watch is None
+            else LedgerLiveRiskInputs(
+                spreads=ledger, marks=ledger, strategy_id=strategy_id, stable=stable_watch
+            )
+        )
+        try:
+            executor = ShadowExecutor(
+                kernel=_build_kernel(
+                    fill_model,
+                    tracker,
+                    strategy_id,
+                    pre_registration,
+                    roster.sizing_policy(),
+                    live=live_inputs is not None,
+                ),
+                fill_model=fill_model,
+                books=books,
+                recorder=TradeRecorder(ledger, eur_pricer.cached_only()),
+                ledger=ledger,
+                clock=wall,
+                fees_at=_fees_at(fee_rows),
+                strategy_id=strategy_id,
+                model=roster.execution_model(),
+                not_before=None if recorded_seed is None else recorded_seed.seeded_at,
+                live_inputs=live_inputs,
+            )
+            held = _held_shadow_kill(ledger, strategy_id)
+        except LedgerError as exc:
+            raise StartupError(f"cannot read the fill-quality or halt rows: {exc.msg}") from exc
+        if held:
+            executor.hold_kill(held)
+        pairs = config.market_data.parsed_pairs()
+        kind = roster.strategy_kind()
+        strategies: dict[Pair, StrategyPort] = {pair: kind.create() for pair in pairs}
+
+        telegram, slack = _notifiers(env_snapshot, eur_pricer, owned)
+
+        composition = Composition(
+            config=config,
+            event_bus=event_bus,
             ledger=ledger,
             clock=wall,
-            fees_at=_fees_at(fee_rows),
+            feed=feed if feed is not None else _live_feed(config.market_data, wall, test_clock),
+            strategies=strategies,
             strategy_id=strategy_id,
-            model=roster.execution_model(),
-            not_before=None if recorded_seed is None else recorded_seed.seeded_at,
+            tracker=tracker,
+            signal_notifier=SignalNotifier(RouterConfig(telegram=telegram, slack=slack)),
+            alert_channels=RouterConfig(telegram=telegram, slack=slack),
+            kill_triggers=pre_registration.kill_triggers(),
+            pairs=pairs,
+            intervals=tuple(config.market_data.intervals),
+            telegram=telegram,
+            slack=slack,
+            sqlite_connection=connection,
+            executor=executor,
+            orderbooks=books,
+            fx_adapter=fx_adapter,
+            eur_pricer=eur_pricer,
+            stable_price_watch=stable_watch,
+            kraken_adapter=kraken,
         )
-        held = _held_shadow_kill(ledger, strategy_id)
-    except LedgerError as exc:
-        raise StartupError(f"cannot read the fill-quality or halt rows: {exc.msg}") from exc
-    if held:
-        executor.hold_kill(held)
-    pairs = config.market_data.parsed_pairs()
-    strategies: dict[Pair, StrategyPort] = {pair: SwingStrategyAdapter() for pair in pairs}
+        owned.pop_all()
+        return composition
 
-    telegram_config = _telegram_config(env_snapshot)
-    slack_config = _slack_config(env_snapshot)
+
+def _stable_price_watch(
+    config: HermesConfig,
+    wall: ClockPort,
+    override: StablePriceWatch | None,
+    owned: contextlib.ExitStack,
+) -> tuple[StablePriceWatch | None, KrakenPublicAdapter | None]:
+    """Build the USDT price watch the depeg rules read with real money (#1158).
+
+    Shadow builds none: RO-05 and RO-06 then skip, as in the backtest (#514).
+    """
+    if not config.allow_mainnet:
+        return None, None
+    if override is not None:
+        return override, None
+    kraken = KrakenPublicAdapter.create(
+        KrakenWireConfig(
+            base_url=config.kraken_public.base_url,
+            rate_limit=RateLimitConfig(
+                max_weight=config.kraken_public.requests_per_second, window_seconds=1
+            ),
+            timeout_sec=config.kraken_public.timeout_sec,
+        )
+    )
+    owned.callback(kraken.close)
+    return StablePriceWatch(fetch=lambda: kraken.get_usd_price(Currency.USDT), clock=wall), kraken
+
+
+def _live_feed(
+    config: MarketDataConfig, wall: ClockPort, test_clock: RemoteClock | None
+) -> BinanceLiveKlinesAdapter:
+    """Build the live klines feed; on a test clock it also sleeps on that clock (#972)."""
+    if test_clock is None:
+        return BinanceLiveKlinesAdapter.create(config, wall)
+    return BinanceLiveKlinesAdapter.create(config, wall, sleep=test_clock.sleep)
+
+
+def _notifiers(
+    env_snapshot: Mapping[str, str], eur_pricer: EurPricer, owned: contextlib.ExitStack
+) -> tuple[TelegramAdapter | None, SlackAdapter | None]:
+    """Build the configured Telegram and Slack adapters, each closed by ``owned``."""
     eur_rate = _eur_rate_lookup(eur_pricer)
-    telegram = (
-        TelegramAdapter.create(telegram_config, eur_rate=eur_rate)
-        if telegram_config is not None
-        else None
-    )
-    slack = (
-        SlackAdapter.create(slack_config, eur_rate=eur_rate) if slack_config is not None else None
-    )
-
-    return Composition(
-        config=config,
-        event_bus=event_bus,
-        ledger=ledger,
-        clock=wall,
-        feed=feed
-        if feed is not None
-        else BinanceLiveKlinesAdapter.create(config.market_data, wall),
-        strategies=strategies,
-        strategy_id=strategy_id,
-        tracker=tracker,
-        signal_notifier=SignalNotifier(RouterConfig(telegram=telegram, slack=slack)),
-        alert_channels=RouterConfig(telegram=telegram, slack=slack),
-        kill_triggers=pre_registration.kill_triggers(),
-        pairs=pairs,
-        intervals=tuple(config.market_data.intervals),
-        telegram=telegram,
-        slack=slack,
-        sqlite_connection=connection,
-        executor=executor,
-        orderbooks=books,
-        fx_adapter=fx_adapter,
-        eur_pricer=eur_pricer,
-    )
+    telegram_config = _telegram_config(env_snapshot)
+    telegram = None
+    if telegram_config is not None:
+        telegram = TelegramAdapter.create(telegram_config, eur_rate=eur_rate)
+        owned.callback(telegram.close)
+    slack_config = _slack_config(env_snapshot)
+    slack = None
+    if slack_config is not None:
+        slack = SlackAdapter.create(slack_config, eur_rate=eur_rate)
+        owned.callback(slack.close)
+    return telegram, slack
 
 
 def _load_experiment(
@@ -870,7 +1041,7 @@ def _load_experiment(
         StartupError: Either file is missing or unreadable.
     """
     try:
-        pre_registration = PreRegistration(project_root=experiment_root)
+        pre_registration = load_pre_registration(experiment_root)
         fee_path = pre_registration.pre_reg_path().parent / "fee-history.csv"
         return pre_registration, load_binance_fee_history(fee_path)
     except (OSError, ValueError, KeyError) as exc:
@@ -908,16 +1079,18 @@ def _build_kernel(
     strategy_id: StrategyId,
     pre_registration: PreRegistration,
     sizing: SizingPolicy,
+    *,
+    live: bool = False,
 ) -> FillKernel:
     """Build the fill kernel the backtest uses, with serve's risk rules (D-3).
 
     The one place serve configures the kernel. ``sizing`` is the enabled
     roster entry's ``StrategyConfig.sizing_policy()``, the same limits the
-    backtest sizes with.
+    backtest sizes with. ``live`` (real money) adds RO-02 (#1158).
     """
     return FillKernel(
         fill_model=fill_model,
-        risk_engine=shadow_risk_engine(),
+        risk_engine=live_risk_engine() if live else shadow_risk_engine(),
         kill_evaluator=KillTriggerEvaluator(pre_reg=pre_registration),
         tracker=tracker,
         strategy_id=strategy_id,
@@ -965,6 +1138,8 @@ async def run(composition: Composition, shutdown: asyncio.Event) -> int:
         async with asyncio.TaskGroup() as group:
             group.create_task(_bar_loop(composition, shutdown))
             group.create_task(_sample_spreads(composition, shutdown))
+            if composition.stable_price_watch is not None:
+                group.create_task(composition.stable_price_watch.run(shutdown))
     except* Exception as failures:
         code = 1
         for exc in failures.exceptions:
@@ -1048,6 +1223,41 @@ async def _price_pending_eur_capped(c: Composition, shutdown: asyncio.Event) -> 
     price_pending_eur_once(c, c.eur_pricer.cached_only())
 
 
+def seconds_until_next_eur_pass(now: datetime) -> float:
+    """Return the seconds from ``now`` to the next :data:`DAILY_EUR_PASS_AT` in Madrid.
+
+    Args:
+        now: A timezone-aware instant.
+
+    Returns:
+        Seconds to wait; a full day when ``now`` is exactly the pass time.
+    """
+    local = now.astimezone(MADRID)
+    target = datetime.combine(local.date(), DAILY_EUR_PASS_AT, tzinfo=MADRID)
+    if target <= local:
+        target = datetime.combine(
+            local.date() + timedelta(days=1), DAILY_EUR_PASS_AT, tzinfo=MADRID
+        )
+    # Why UTC: subtracting two aware datetimes in the same zone ignores the
+    # offset change, so across a DST switch the wait would be an hour off.
+    return (target.astimezone(UTC) - now.astimezone(UTC)).total_seconds()
+
+
+async def _price_pending_eur_daily(c: Composition, shutdown: asyncio.Event) -> None:
+    """Price pending EUR values at boot, then once a day after the ECB publishes.
+
+    Live fills read the rate cache only, so a fill whose rate is not cached
+    yet is stored pending; this pass, run off the event loop under the boot
+    budget, prices it (issue #996).
+    """
+    while not shutdown.is_set():
+        await _price_pending_eur_capped(c, shutdown)
+        with contextlib.suppress(TimeoutError):
+            await asyncio.wait_for(
+                shutdown.wait(), timeout=seconds_until_next_eur_pass(c.clock.now())
+            )
+
+
 def report_failure(exc: BaseException) -> None:
     """Log ``exc`` with its traceback and send it to Sentry.
 
@@ -1076,6 +1286,8 @@ async def _release(c: Composition) -> None:
         stack.callback(_close_quietly, c.sqlite_connection.close)
         if c.fx_adapter is not None:
             stack.callback(_close_quietly, c.fx_adapter.close)
+        if c.kraken_adapter is not None:
+            stack.callback(_close_quietly, c.kraken_adapter.close)
         if c.telegram is not None:
             stack.callback(_close_quietly, c.telegram.close)
         if c.slack is not None:
@@ -1095,12 +1307,13 @@ async def _bar_loop(c: Composition, shutdown: asyncio.Event) -> None:
     if shutdown.is_set():
         return
     loop = _BarLoop(c)
+    loop.prime_execution_quality()
     await loop.warm_up_and_catch_up(shutdown)
     if shutdown.is_set():
         return
     # After catch-up so its fills keep the live book; as a task so the live
     # stream is not held back; cancelled with the loop so shutdown is prompt.
-    pricing = asyncio.create_task(_price_pending_eur_capped(c, shutdown))
+    pricing = asyncio.create_task(_price_pending_eur_daily(c, shutdown))
     try:
         loop.log_next_due()
         stream = c.feed.stream_closed_bars(c.pairs, c.intervals).__aiter__()
@@ -1130,6 +1343,14 @@ async def _sample_spreads(c: Composition, shutdown: asyncio.Event) -> None:
 async def _anext(stream: AsyncIterator[Bar]) -> Bar:
     """Await the next bar; a thin coroutine so it can be a task."""
     return await anext(stream)
+
+
+def _last_stop(
+    history: StopHistoryPort, strategy_id: StrategyId, pair: Pair, entry_time: datetime
+) -> Decimal | None:
+    """Return the newest stop stored for the position opened at ``entry_time``, or ``None``."""
+    mark = history.latest_stop_mark(strategy_id, pair, entry_time)
+    return None if mark is None else mark.record.stop_price
 
 
 async def _next_or_stop(stream: AsyncIterator[Bar], shutdown: asyncio.Event) -> Bar | None:
@@ -1176,6 +1397,14 @@ class _BarLoop:
     clock_off: bool | None = None
     """Whether the last recorded clock-skew state is off; read from the ledger once."""
     checked_through: date | None = None
+    newest: dict[Pair, Bar] = field(default_factory=dict)
+    """Each pair's most recent closed bar: the price a missed exit fills at (#1078)."""
+    missed: Counter[Stream] = field(default_factory=Counter)
+    """Bars handled after their live window, per stream, since the last restart report."""
+    exits_checked: list[str] = field(default_factory=list)
+    """Outcome of each exit signal on a missed bar, since the last restart report."""
+    tax_checked_through: datetime | None = None
+    """Close time of the last daily bar the tax guard was evaluated for."""
 
     async def warm_up_and_catch_up(self, shutdown: asyncio.Event) -> None:
         """Seed history up to each cursor, then evaluate the bars after it."""
@@ -1186,7 +1415,10 @@ class _BarLoop:
                 count = c.config.market_data.warmup_bars(interval)
                 warm.extend(await c.feed.warm_up(pair, interval, count))
         warm = list(order_for_delivery(warm))
+        for bar in warm:
+            self._note_newest(bar)
         cursors = self._load_cursors(warm)
+        stopped_at = max(cursors.values(), default=_NEVER)
         for pair, strategy in c.strategies.items():
             seeded = [
                 b for b in warm if b.pair == pair and b.close_time <= cursors[(b.pair, b.interval)]
@@ -1209,6 +1441,81 @@ class _BarLoop:
                     await self.handle(bar)
         finally:
             self.catching_up = False
+        await self._report_restart(stopped_at)
+
+    def _note_newest(self, bar: Bar) -> None:
+        newest = self.newest.get(bar.pair)
+        if newest is None or bar.close_time > newest.close_time:
+            self.newest[bar.pair] = bar
+
+    async def _report_restart(self, stopped_at: datetime) -> None:
+        """Send one report when the catch-up met bars that closed while serve was down (#1078).
+
+        It names the downtime, the missed bars per pair and stream, and the
+        outcome of each exit checked on them; never a price or P&L (ADR-012
+        D-02). The row in the ledger is what ``hermes status`` can read back.
+        """
+        if not self.missed:
+            return
+        c = self.c
+        now = c.clock.now()
+        alert = AnomalyDetected(
+            occurred_at=now,
+            correlation_id=new_correlation_id(),
+            source=RESTART_SOURCE,
+            severity=AnomalySeverity.WARNING,
+            reason=restart_report(
+                stopped_at=stopped_at,
+                now=now,
+                missed=self.missed,
+                exits_checked=self.exits_checked,
+            )
+            + "\n"
+            + self._budget().summary(),
+        )
+        self.missed.clear()
+        self.exits_checked.clear()
+        c.ledger.append_event(alert)
+        _log.warning("serve.restart.missed_bars", reason=alert.reason)
+        await self._alert(alert, failed="serve.restart.alert_failed")
+        await self._alert_if_budget_crossed()
+
+    def _budget(self) -> MissedBarBudget:
+        c = self.c
+        streams = [interval for _ in c.pairs for interval in c.intervals]
+        return MissedBarBudget(
+            allowed=missed_bar_allowance(streams), missed=c.ledger.missed_bar_count()
+        )
+
+    async def _alert_if_budget_crossed(self) -> None:
+        """Send one alert the first time this ledger misses more bars than ADR-021 allows (#1117).
+
+        The ledger row is the record that it was sent, so a restart or a bar
+        re-handled after a crash never sends it twice.
+        """
+        c = self.c
+        budget = self._budget()
+        if not budget.crossed or c.ledger.has_anomaly_from(BUDGET_SOURCE):
+            return
+        alert = AnomalyDetected(
+            occurred_at=c.clock.now(),
+            correlation_id=new_correlation_id(),
+            source=BUDGET_SOURCE,
+            severity=AnomalySeverity.WARNING,
+            reason=budget_crossed_report(budget),
+        )
+        c.ledger.append_event(alert)
+        _log.warning("serve.missed_bar_budget.crossed", reason=alert.reason)
+        await self._alert(alert, failed="serve.missed_bar_budget.alert_failed")
+
+    async def _alert(self, alert: AnomalyDetected, *, failed: str) -> None:
+        """Send ``alert`` to every alert channel; one channel's failure never stops the loop."""
+        for adapter in route(EventClass.ANOMALY_DETECTED, self.c.alert_channels):
+            try:
+                await asyncio.to_thread(adapter.notify, alert)
+            except Exception as exc:  # one channel's bug must not stop the bar loop (#854)
+                _log.error(failed, exc_info=exc)
+                sentry_integration.capture(exc)
 
     def _load_cursors(self, warm: list[Bar]) -> dict[Stream, datetime]:
         """Return each stream's cursor; a first boot starts at its last warm-up bar."""
@@ -1259,11 +1566,10 @@ class _BarLoop:
         )
         if entry is None or entry.entry_price is None:
             return self._held_without_entry_signal(position, at_or_before=at_or_before)
-        stop = self.c.ledger.latest_stop_mark(self.c.strategy_id, pair, entry.occurred_at)
         return OpenPosition(
             entry_time=entry.occurred_at,
             entry_price=entry.entry_price,
-            last_stop=None if stop is None else stop.record.stop_price,
+            last_stop=_last_stop(self.c.ledger, self.c.strategy_id, pair, entry.occurred_at),
         )
 
     def _held_without_entry_signal(
@@ -1288,11 +1594,10 @@ class _BarLoop:
             pair=str(position.pair),
             entry_time=opened_at.isoformat(),
         )
-        stop = self.c.ledger.latest_stop_mark(self.c.strategy_id, position.pair, opened_at)
         return OpenPosition(
             entry_time=opened_at,
             entry_price=position.cost_basis / position.quantity,
-            last_stop=None if stop is None else stop.record.stop_price,
+            last_stop=_last_stop(self.c.ledger, self.c.strategy_id, position.pair, opened_at),
         )
 
     async def handle(self, bar: Bar) -> None:
@@ -1323,6 +1628,9 @@ class _BarLoop:
 
         c.tracker.mark(bar)
         c.executor.observe(bar)
+        self._note_newest(bar)
+        handled_at = c.clock.now()
+        late = reached_late(bar, now=handled_at, window=LIVE_BOOK_WINDOW)
         # Before the strategy: a kill found for the day just ended stops this bar's entry.
         await self._shadow_checks(bar)
         signal_ = c.strategies[bar.pair].on_bar(bar, c.tracker.state())
@@ -1339,15 +1647,14 @@ class _BarLoop:
                 c.event_bus.publish(event)
             # The signal row comes first, then the fill (D-5): a crash between
             # them re-evaluates the bar, and the executor sees no trade yet.
-            outcome = await self._execute(signal_, bar, correlation_id)
-            if signal_.kind is SignalKind.ENTRY and not isinstance(
-                outcome, Executed | AlreadyFilled
+            if (
+                late
+                and signal_.kind is SignalKind.ENTRY
+                and c.executor.prior_fill(signal_, bar.pair) is None
             ):
-                # An entry announcement for a trade that never happened would
-                # misreport the portfolio; the halt alert or the log says why (#708).
-                _log.info("serve.signal.unfilled_entry_not_notified", pair=str(bar.pair))
+                self._pass_over_entry(signal_, bar)
             else:
-                emitted = (event if is_new else self._stored_signal(event), is_new)
+                emitted = await self._fill(signal_, bar, (event, is_new), correlation_id, late=late)
         # Failed pushes of earlier bars go out first: this bar's signal has no
         # failed push yet, so it is never pushed twice in one bar (#854).
         await self._push_owed(bar.pair)
@@ -1358,6 +1665,7 @@ class _BarLoop:
         # so a processed bar always has its values on record.
         stored = c.ledger.record_live_bar(bar)
         self._record_correlations(bar)
+        await self._check_tax_guard(bar)
         # The console reads the portfolio from the ledger, not from this process (#387).
         c.ledger.record_portfolio_mark(
             PortfolioMark(
@@ -1377,7 +1685,17 @@ class _BarLoop:
                 stored_close=str(stored.close),
                 received_close=str(bar.close),
             )
+        if late:
+            # Counted by ADR-021's missed-bar budget, so written once per bar,
+            # just before the bar is marked processed.
+            c.ledger.append_event(
+                BarMissed.from_bar(bar, handled_at=handled_at, correlation_id=correlation_id)
+            )
+            self.missed[stream] += 1
         c.event_bus.publish(BarProcessed.from_bar(bar, correlation_id=correlation_id))
+        if late and not self.catching_up:
+            # A catch-up checks once, after its restart report.
+            await self._alert_if_budget_crossed()
         self.previous[stream] = bar.open_time
         # The ledger row alone leaves the journal silent between signals, so
         # an operator could not tell a quiet market from a stalled loop (#371).
@@ -1390,6 +1708,52 @@ class _BarLoop:
             signal="none" if signal_ is None else signal_.kind.value,
             next_due=self.next_due(stream).isoformat(),
             **_entry_check_fields(c.strategies[bar.pair]),
+        )
+
+    async def _fill(
+        self,
+        signal_: StrategySignal,
+        bar: Bar,
+        emitted: tuple[SignalEmitted, bool],
+        correlation_id: str,
+        *,
+        late: bool,
+    ) -> tuple[SignalEmitted, bool] | None:
+        """Execute the signal and return what to notify, or ``None`` for an unfilled entry.
+
+        An exit on a missed bar fills at the pair's newest bar, stamped now
+        (#1078); its outcome goes into the restart report.
+        """
+        event, is_new = emitted
+        outcome = await self._execute(
+            signal_, bar, correlation_id, price_bar=self.newest[bar.pair] if late else None
+        )
+        if late and signal_.kind is SignalKind.EXIT:
+            self.exits_checked.append(f"{bar.pair} {_outcome_word(outcome)}")
+        if signal_.kind is SignalKind.ENTRY and not isinstance(outcome, Executed | AlreadyFilled):
+            # An entry announcement for a trade that never happened would
+            # misreport the portfolio; the halt alert or the log says why (#708).
+            _log.info("serve.signal.unfilled_entry_not_notified", pair=str(bar.pair))
+            return None
+        return (event if is_new else self._stored_signal(event), is_new)
+
+    def _pass_over_entry(self, signal_: StrategySignal, bar: Bar) -> None:
+        """Leave an entry on a missed bar unfilled: its price is gone (#1078).
+
+        Not a halt: nothing failed, so no kill input moves. The strategy is
+        synced flat, so it waits for a fresh breakout as the backtest does
+        after an unfilled entry.
+        """
+        _log.info(
+            "serve.signal.missed_entry",
+            pair=str(bar.pair),
+            close_time=bar.close_time.isoformat(),
+        )
+        sync_after_signal(
+            self.c.strategies[bar.pair],
+            signal_,
+            filled=False,
+            held=partial(self._held_position, bar.pair, at_or_before=signal_.signal_time),
         )
 
     def _record_correlations(self, bar: Bar) -> None:
@@ -1418,6 +1782,50 @@ class _BarLoop:
                 count=written,
             )
 
+    async def _check_tax_guard(self, bar: Bar) -> None:
+        """Record and alert a recharacterization breach once per daily close (ADR-002 Decision 6).
+
+        The first 1D bar handled for a close time evaluates the rolling window
+        that ends at that close; another pair's 1D bar with the same close does
+        not. A breach is published on the bus, which records it (#136), then
+        alerted on every routed channel, once per daily close while it lasts.
+        Record and alert only: nothing pauses or gates entries on it (#1181).
+        A failed evaluation is logged and skipped, like the correlations, so it
+        never stops the loop.
+        """
+        if bar.interval is not KlineInterval.D1:
+            return
+        if self.tax_checked_through is not None and bar.close_time <= self.tax_checked_through:
+            return
+        self.tax_checked_through = bar.close_time
+        c = self.c
+        try:
+            latest = latest_anomaly(c.sqlite_connection, TAX_GUARD_SOURCE)
+            if latest is not None and latest.occurred_at >= bar.close_time:
+                # A restart between two pairs' bars of one day re-handles the
+                # second; the day's breach is already recorded and alerted.
+                return
+            alert = evaluate_ledger(
+                c.ledger,
+                c.config.tax_guard,
+                now=bar.close_time,
+                correlation_id=new_correlation_id(),
+            )
+        except Exception as exc:
+            _log.warning(
+                "serve.tax_guard.failed",
+                close_time=bar.close_time.isoformat(),
+                error=type(exc).__name__,
+                detail=str(exc),
+            )
+            return
+        if alert is None:
+            return
+        c.event_bus.publish(alert)
+        # The reason can carry a EUR fee figure, so the journal gets the close only.
+        _log.warning("serve.tax_guard.breached", close_time=bar.close_time.isoformat())
+        await self._alert(alert, failed="serve.tax_guard.alert_failed")
+
     def _record_stop(self, bar: Bar) -> None:
         """Store the stop the strategy evaluated on this bar, when it holds a position (#388).
 
@@ -1438,6 +1846,72 @@ class _BarLoop:
                 record=record,
             )
         )
+
+    def prime_execution_quality(self) -> None:
+        """Replay the ledger's past fills into the execution-quality charts (#1181).
+
+        Runs before warm-up, so a restart keeps the Phase-I baseline and any
+        open breach episode: it neither waits for a new baseline nor alerts an
+        episode again. Fills replay in ledger order, so two boots over one
+        ledger end in the same chart state. A failure is logged and serve goes
+        on with what was replayed before it; the charts then rebuild from live
+        fills.
+        """
+        c = self.c
+        try:
+            fees = {t.correlation_id: t.fee for t in c.ledger.trade_events(c.strategy_id)}
+            past = [
+                observation_of(quality, fees[quality.correlation_id])
+                for quality in c.ledger.fill_quality_events(c.strategy_id)
+                if quality.correlation_id in fees
+            ]
+            c.execution_quality.prime(past)
+        except Exception as exc:  # alert-only: a monitor bug must never stop serve
+            _log.warning(
+                "serve.execution_quality.failed",
+                step="prime",
+                error=type(exc).__name__,
+                detail=str(exc),
+            )
+            return
+        _log.info("serve.execution_quality.primed", fills=len(past))
+
+    async def _watch_execution_quality(self, result: ShadowExecution) -> None:
+        """Chart an executed fill's fee, slippage and latency; record and alert a new breach.
+
+        Alert only (#362 D-2): no decision, size, kill rule or drift gate reads
+        the charts or the breach. A monitor error is logged and the fill stands;
+        a failed ledger write of a breach fails like any other ledger write.
+        The journal gets the breach's source, never its bps or ms figures.
+        """
+        outcome = result.outcome
+        if not isinstance(outcome, Executed) or result.quality is None:
+            return
+        c = self.c
+        quality = result.quality
+        try:
+            breaches = c.execution_quality.observe(
+                observation_of(quality, outcome.fill.fee),
+                at=quality.occurred_at,
+                correlation_id=quality.correlation_id,
+            )
+        except Exception as exc:  # alert-only: a monitor bug must never cost a fill
+            _log.warning(
+                "serve.execution_quality.failed",
+                step="observe",
+                error=type(exc).__name__,
+                detail=str(exc),
+            )
+            return
+        for alert in breaches:
+            # The bus records it in the ledger; only _alert notifies a person.
+            c.event_bus.publish(alert)
+            _log.warning(
+                "serve.execution_quality.breach",
+                source=alert.source,
+                severity=alert.severity.value,
+            )
+            await self._alert(alert, failed="serve.execution_quality.alert_failed")
 
     def next_due(self, stream: Stream) -> datetime:
         """Return when the bar after the last handled one should arrive.
@@ -1528,22 +2002,24 @@ class _BarLoop:
         self.clock_off = alert.severity is AnomalySeverity.CRITICAL
         c.ledger.append_event(alert)
         _log.warning("serve.clock.skew_changed", severity=alert.severity.value, reason=alert.reason)
-        for adapter in route(EventClass.ANOMALY_DETECTED, c.alert_channels):
-            try:
-                await asyncio.to_thread(adapter.notify, alert)
-            except Exception as exc:  # one channel's bug must not stop the bar loop (#854)
-                _log.error("serve.clock.alert_failed", exc_info=exc)
-                sentry_integration.capture(exc)
+        await self._alert(alert, failed="serve.clock.alert_failed")
 
     async def _execute(
-        self, signal_: StrategySignal, bar: Bar, correlation_id: str
+        self,
+        signal_: StrategySignal,
+        bar: Bar,
+        correlation_id: str,
+        *,
+        price_bar: Bar | None = None,
     ) -> ShadowOutcome:
         """Simulate the signal's order, log the outcome (never its P&L, D-7), sync the strategy.
 
         Returns:
             The executor's outcome: filled, already filled, declined or halted.
         """
-        result = await self.c.executor.execute(signal_, bar, correlation_id=correlation_id)
+        result = await self.c.executor.execute(
+            signal_, bar, correlation_id=correlation_id, price_bar=price_bar
+        )
         _log_execution(bar.pair, signal_.kind, result)
         record = halt_record(
             result.outcome,
@@ -1562,6 +2038,7 @@ class _BarLoop:
             filled=isinstance(result.outcome, Executed | AlreadyFilled),
             held=partial(self._held_position, bar.pair, at_or_before=signal_.signal_time),
         )
+        await self._watch_execution_quality(result)
         return result.outcome
 
     async def _shadow_checks(self, bar: Bar) -> None:
@@ -1710,6 +2187,16 @@ def _entry_check_fields(strategy: StrategyPort) -> dict[str, str]:
 
 def _yes_no(held: bool) -> str:
     return "yes" if held else "no"
+
+
+def _outcome_word(outcome: ShadowOutcome) -> str:
+    if isinstance(outcome, Executed):
+        return "filled"
+    if isinstance(outcome, AlreadyFilled):
+        return "already filled"
+    if isinstance(outcome, Declined):
+        return f"declined ({outcome.rule})"
+    return "halted"
 
 
 def _log_execution(pair: Pair, kind: SignalKind, result: ShadowExecution) -> None:

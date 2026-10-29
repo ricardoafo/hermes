@@ -22,10 +22,8 @@ Exit codes: 0 done (or dry run passed), 1 a Ready rule failed or the service
 is running, 2 usage, 3 config, store or file error.
 
 Reference: docs/architecture/adr-021-strategy-lifecycle-ready-and-done.md §2,
-§3; issue #797; openspec/changes/797-shadow-day-zero/change.md.
+§3; issue #797; openspec/archive/797-shadow-day-zero/change.md.
 """
-
-from __future__ import annotations
 
 import argparse
 import os
@@ -36,13 +34,14 @@ import tempfile
 from collections.abc import Callable
 from contextlib import closing
 from datetime import UTC, datetime
-from importlib import metadata
 from pathlib import Path
 from typing import Final, TextIO
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
+from hermes.adapters.files import LocalFiles
 from hermes.adapters.ledger.connection import open_ledger
 from hermes.adapters.ledger.migration_runner import apply_migrations
+from hermes.adapters.ledger.row_counts import table_row_counts
 from hermes.application.strategy_protocol.day_zero import (
     MANUAL_RULES,
     DayZeroRecord,
@@ -51,15 +50,15 @@ from hermes.application.strategy_protocol.day_zero import (
     notebook_check,
     ready,
     roster_check,
-    sha256_file,
     sha256_tree,
 )
 from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.entrypoints import serve as serve_module
-from hermes.entrypoints._release import DEFAULT_RELEASE_LINK, read_release
+from hermes.entrypoints._cli import add_config_dir_arg, add_db_arg
+from hermes.entrypoints._release import DEFAULT_RELEASE_LINK, package_version, read_release
 from hermes.entrypoints._streams import resolve_err
 from hermes.infrastructure.config.errors import ConfigError
-from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
+from hermes.infrastructure.config.loader import load_config
 
 __all__ = ["CONFIRM_WORD", "main", "run"]
 
@@ -67,6 +66,7 @@ CONFIRM_WORD: Final = "START"
 _SERVICE: Final = "hermes.service"
 _READ_ONLY_FILE: Final = 0o444
 _READ_ONLY_DIR: Final = 0o555
+_FILES: Final = LocalFiles()
 
 _USAGE = (
     "Usage: hermes shadow-start <strategy_id> [--db PATH] [--config-dir DIR]\n"
@@ -130,7 +130,7 @@ def run(
         pre_reg_file = signed.pre_reg_path()
         experiment = pre_reg_file.parent
         checks = (
-            notebook_check(pre_reg_file, experiment / "lab-notebook.md"),
+            notebook_check(pre_reg_file, experiment / "lab-notebook.md", files=_FILES),
             certification_check(record, fingerprint),
             *MANUAL_RULES,
             roster_check([s.name for s in config.strategies.strategies if s.enabled], strategy_id),
@@ -169,12 +169,12 @@ def run(
             run_id=run_id,
             strategy_id=strategy_id,
             day_zero_at=now,
-            package_version=_package_version(),
+            package_version=package_version(),
             release=read_release(release_link).name,
-            config_sha256=sha256_tree(config_dir),
-            preregistration_sha256=sha256_file(pre_reg_file),
+            config_sha256=sha256_tree(config_dir, files=_FILES),
+            preregistration_sha256=_FILES.sha256(pre_reg_file),
             preregistration_signed_sha256=_signed_hash(pre_reg_file),
-            data_manifest_sha256=sha256_file(experiment / "data-manifest.json"),
+            data_manifest_sha256=_FILES.sha256(experiment / "data-manifest.json"),
             parameter_fingerprint=fingerprint,
             archived_ledger=None if archived_sha is None else str(archived),
             archived_ledger_sha256=archived_sha,
@@ -230,7 +230,7 @@ def _archive(db: Path, target: Path) -> str:
             source.backup(copy)
             if copy.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
                 raise ValueError(f"archived copy {target} fails its integrity check")
-            if _row_counts(source) != _row_counts(copy):
+            if table_row_counts(source) != table_row_counts(copy):
                 raise ValueError(f"archived copy {target} differs from {db} in rows")
         finally:
             copy.close()
@@ -238,16 +238,7 @@ def _archive(db: Path, target: Path) -> str:
         source.close()
     target.chmod(_READ_ONLY_FILE)
     target.parent.chmod(_READ_ONLY_DIR)
-    return sha256_file(target)
-
-
-def _row_counts(conn: sqlite3.Connection) -> dict[str, int]:
-    tables = [
-        row[0]
-        for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
-    ]
-    # Table names come from sqlite_master, never from input.
-    return {t: conn.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0] for t in tables}  # noqa: S608
+    return _FILES.sha256(target)
 
 
 def _write_record(runs_dir: Path, record: DayZeroRecord) -> Path:
@@ -274,13 +265,6 @@ def _create_ledger(db: Path) -> None:
     """
     with closing(open_ledger(db)) as connection:
         apply_migrations(connection)
-
-
-def _package_version() -> str:
-    try:
-        return metadata.version("hermes")
-    except metadata.PackageNotFoundError:
-        return "unknown"
 
 
 def _signed_hash(pre_reg_path: Path) -> str:
@@ -325,8 +309,8 @@ def _notebook_entry(record: DayZeroRecord, record_path: Path) -> str:
 def _parse(argv: list[str], err: TextIO) -> argparse.Namespace | None:
     parser = argparse.ArgumentParser(prog="hermes shadow-start", add_help=False)
     parser.add_argument("strategy_id", nargs="?")
-    parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
-    parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
+    add_db_arg(parser)
+    add_config_dir_arg(parser)
     parser.add_argument("--archive-dir", type=Path, default=None)
     parser.add_argument("--confirm", default="")
     parser.add_argument("-h", "--help", action="store_true")

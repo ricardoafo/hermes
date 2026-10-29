@@ -5,37 +5,35 @@ DSR ≥ 0.95 plus the ADR-021 §5 funnel. :func:`parse_v2_backtest_rules` reads
 the DSR floor from the signed v2 file's §10 text and the funnel thresholds
 from its front matter; the secondary thresholds stay v1's, read from v1's
 accessor, and the parser refuses a v2 file whose §9 no longer says they are
-unchanged. :func:`evaluate_v2_gate` evaluates v1's backtest gate, replaces its
-``dsr`` row and appends the funnel rows, so v1's gate code is untouched.
+unchanged. :func:`evaluate_v2_gate` runs the generic signed gate
+(:func:`~hermes.application.calibration.signed_gate.evaluate_signed_gate`) with
+those thresholds, so v2 and every batch candidate share one gate.
 
 Only the gate out of ``UNTRUSTED`` exists for v2: v2 §7 changes the shadow
 rule, so every later gate is refused until it is implemented.
 
 Reference: pre-registration-v2.md §0, §7, §9, §10; ADR-021 §5;
-openspec/changes/v2-certify-gate/change.md.
+openspec/archive/v2-certify-gate/change.md.
 """
 
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Final
 
 from hermes.application.calibration.backtest_funnel import (
     FunnelEvidence,
     FunnelThresholds,
-    evaluate_funnel,
     parse_funnel_front_matter,
 )
 from hermes.application.calibration.certification_gates import (
-    CertificationRecord,
-    GateCheck,
     GateEvidence,
     GateReport,
-    evaluate_next_gate,
 )
-from hermes.application.calibration.lifecycle import CertificationState
+from hermes.application.calibration.signed_gate import evaluate_signed_gate
 from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.domain.calibration.certification import CertificationRecord
 
 __all__ = [
     "V2_STRATEGY_ID",
@@ -50,9 +48,6 @@ V2_STRATEGY_ID: Final = "swing-mvp1-v2"
 
 _DSR_FLOOR = re.compile(r"^- DSR < (\d+(?:\.\d+)?);$")
 _UNCHANGED = "Unchanged from v1"
-_EVALUATED_HERE = frozenset(
-    {CertificationState.UNTRUSTED, CertificationState.DEAD, CertificationState.CERTIFIED}
-)
 
 
 class V2RulesError(ValueError):
@@ -121,20 +116,6 @@ def parse_v2_backtest_rules(document: str, front_matter: Mapping[str, object]) -
     return V2BacktestRules(dsr_min=floors[0], funnel=funnel)
 
 
-def _v2_dsr(row: GateCheck, dsr: float | None, floor: float) -> GateCheck:
-    return replace(row, requirement=f">= {floor:g}", passed=dsr is not None and dsr >= floor)
-
-
-def _funnel_rows(
-    funnel: FunnelEvidence | None, thresholds: FunnelThresholds
-) -> tuple[GateCheck, ...]:
-    if funnel is None:
-        return (
-            GateCheck("funnel", "ADR-021 §5 funnel (--funnel-evidence)", "not computed", False),
-        )
-    return evaluate_funnel(funnel, thresholds)
-
-
 def evaluate_v2_gate(
     record: CertificationRecord,
     evidence: GateEvidence,
@@ -162,21 +143,16 @@ def evaluate_v2_gate(
     Returns:
         The :class:`GateReport` for the next transition.
     """
-    if record.state not in _EVALUATED_HERE:
-        return GateReport(
-            record.strategy_id,
-            record.state,
-            None,
-            refused_reason=(
-                f"the gate out of {record.state} is not implemented for {V2_STRATEGY_ID}; "
-                "pre-registration v2 §7 changes the shadow rule, so v1's gate does not apply."
-            ),
-        )
-    report = evaluate_next_gate(record, evidence, now=now, pre_reg=v1)
-    if record.state != CertificationState.UNTRUSTED:
-        return report
-    dsr = evidence.backtest.dsr if evidence.backtest else None
-    rows = tuple(
-        _v2_dsr(row, dsr, rules.dsr_min) if row.name == "dsr" else row for row in report.checks
+    return evaluate_signed_gate(
+        record,
+        evidence,
+        now=now,
+        v1=v1,
+        dsr_min=rules.dsr_min,
+        thresholds=rules.funnel,
+        funnel=funnel,
+        refusal=(
+            f"the gate out of {record.state} is not implemented for {V2_STRATEGY_ID}; "
+            "pre-registration v2 §7 changes the shadow rule, so v1's gate does not apply."
+        ),
     )
-    return replace(report, checks=(*rows, *_funnel_rows(funnel, rules.funnel)))

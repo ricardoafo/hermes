@@ -16,8 +16,6 @@ Test coverage:
 Reference: spec-6-calibration-harness/change.md R-1..R-5.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -116,13 +114,6 @@ class TestM01FillCount:
         fills = [_make_fill("50000"), _make_fill("51000"), _make_fill("49000")]
         result = compute_m01_fill_count(fills)
         assert result == 3, f"M-01: 3 fills must return 3, got {result}."
-
-    def test_return_type_is_int(self) -> None:
-        """Return type must be int, not float or Decimal."""
-        result = compute_m01_fill_count([_make_fill("50000")])
-        assert isinstance(result, int), (
-            f"M-01: return type must be int, got {type(result).__name__}."
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -240,12 +231,19 @@ class TestM02FillPriceDeltaBps:
             "Percentiles are monotonically non-decreasing by definition."
         )
 
-    def test_return_type_is_fill_price_delta_bps(self) -> None:
-        """Return type must be FillPriceDeltaBps."""
-        fill = _make_fill("50000")
-        result = compute_m02_fill_price_delta_bps([fill], [Decimal("50000")])
-        assert isinstance(result, FillPriceDeltaBps), (
-            f"M-02: return type must be FillPriceDeltaBps, got {type(result).__name__}."
+    def test_ten_evenly_spaced_fills_give_hand_computed_percentiles(self) -> None:
+        """Deltas 0, 20, ..., 180 bps: mean 90, linear-interpolated p50 90, p95 171, p99 178.2.
+
+        p95 sits at index 0.95 x 9 = 8.55, so 160 + 0.55 x 20 = 171; p99 at 8.91,
+        so 160 + 0.91 x 20 = 178.2.
+        """
+        fills = [_make_fill(str(50000 + i * 100)) for i in range(10)]
+        result = compute_m02_fill_price_delta_bps(fills, [Decimal("50000")] * 10)
+        assert result == FillPriceDeltaBps(
+            avg_bps=Decimal("90"),
+            p50_bps=Decimal("90"),
+            p95_bps=Decimal("171"),
+            p99_bps=Decimal("178.2"),
         )
 
 
@@ -282,13 +280,9 @@ class TestM03LatencyMs:
             "Fills are not used to compute latency in backtest mode."
         )
 
-    def test_return_type_is_decimal(self) -> None:
-        """Return type must be Decimal, not float or int."""
-        result = compute_m03_latency_ms([])
-        assert isinstance(result, Decimal), (
-            f"M-03: return type must be Decimal, got {type(result).__name__}. "
-            "Decimal arithmetic is the project standard per code-conventions.md §6."
-        )
+    def test_latency_is_a_decimal_zero_not_a_float_or_int(self) -> None:
+        """The zero is a Decimal, as the project's arithmetic standard requires."""
+        assert repr(compute_m03_latency_ms([])) == "Decimal('0')"
 
 
 # ---------------------------------------------------------------------------
@@ -411,13 +405,6 @@ class TestM05OrphanPositions:
             "No fills at all means no position can be traced to a fill."
         )
 
-    def test_return_type_is_int(self) -> None:
-        """Return type must be int."""
-        result = compute_m05_orphan_positions([], [])
-        assert isinstance(result, int), (
-            f"M-05: return type must be int, got {type(result).__name__}."
-        )
-
 
 # ---------------------------------------------------------------------------
 # M-06: Regime-tagged returns
@@ -531,26 +518,7 @@ class TestM06RegimeReturns:
 class TestM07QueueQuality:
     """M-07: compute_m07_queue_quality — always None for MVP1 (OD-2)."""
 
-    def test_empty_fills_returns_none(self) -> None:
-        """Empty fills must return None — MVP1 placeholder."""
-        result = compute_m07_queue_quality([])
-        assert result is None, (
-            f"M-07: compute_m07_queue_quality must always return None for MVP1 (OD-2), "
-            f"got {result!r}. Real implementation is Spec 6 follow-up."
-        )
-        # Companion: the return type annotation is Decimal | None; None must be the sentinel.
-        assert not isinstance(result, Decimal), (
-            f"M-07: return must NOT be a Decimal for MVP1 — must be None (OD-2), got {result!r}."
-        )
-
-    def test_with_fills_returns_none(self) -> None:
-        """Fills present must still return None — stub ignores all inputs."""
+    def test_the_stub_returns_none_for_empty_and_non_empty_fills(self) -> None:
+        """Empty and non-empty fills alike give None, not a Decimal: MVP1 placeholder (OD-2)."""
         fills = [_make_fill("50000"), _make_fill("51000")]
-        result = compute_m07_queue_quality(fills)
-        assert result is None, (
-            f"M-07: must return None regardless of fill count (MVP1 OD-2), got {result!r}."
-        )
-        # Companion: the return type annotation is Decimal | None; None must be the sentinel.
-        assert not isinstance(result, Decimal), (
-            f"M-07: 2-fill input must also return None, not a Decimal (MVP1 OD-2), got {result!r}."
-        )
+        assert [compute_m07_queue_quality([]), compute_m07_queue_quality(fills)] == [None, None]

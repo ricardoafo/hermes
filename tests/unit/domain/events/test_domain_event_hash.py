@@ -18,8 +18,6 @@ across a wide range of inputs.
 Reference: spec-1-domain-aggregates (D-2, D-3), ADR-003 §00.
 """
 
-from __future__ import annotations
-
 import importlib
 import inspect
 import pkgutil
@@ -104,16 +102,9 @@ class TestPayloadSha256Determinism:
 
     def test_same_event_seq_same_price_deterministic(self) -> None:
         """Constructing the same event twice yields the same hash — no randomness."""
-        h1 = _trade(event_seq=7).payload_sha256
-        h2 = _trade(event_seq=7).payload_sha256
-        assert h1 == h2, (
-            "payload_sha256 must be deterministic — same input fields "
-            f"must yield the same digest across constructions. Got h1={h1!r}, h2={h2!r}."
-        )
-        assert len(h1) == 64, f"BLAKE2b-256 hex digest must be 64 chars, got {len(h1)}"
-        assert all(c in "0123456789abcdef" for c in h1), (
-            f"BLAKE2b-256 hex digest must be lowercase hex; got {h1!r}"
-        )
+        digests = {_trade(event_seq=7).payload_sha256 for _ in range(3)}
+        assert len(digests) == 1
+        assert re.fullmatch(r"[0-9a-f]{64}", digests.pop())
 
 
 class TestPayloadSha256Sensitivity:

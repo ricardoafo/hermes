@@ -15,10 +15,8 @@ digest the desk falls back to when a text fails the gate. The brief inherits
 the tools' blindness (D-06): it states times, states, pairs and counts, never
 a price, value or P&L.
 
-Reference: openspec/changes/365-supervisor-desk-briefings/change.md; issues #365, #496.
+Reference: openspec/archive/365-supervisor-desk-briefings/change.md; issues #365, #496.
 """
-
-from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass

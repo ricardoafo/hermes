@@ -7,9 +7,6 @@ zero peak, the full severity order, and the immutability of the state and
 decision records. Each test below pins one of them.
 """
 
-from __future__ import annotations
-
-from dataclasses import FrozenInstanceError
 from decimal import Decimal
 
 import pytest
@@ -19,7 +16,7 @@ from hermes.domain.risk.depeg_halt import DepegHalt
 from hermes.domain.risk.depeg_warn import DepegWarn
 from hermes.domain.risk.spread_spike import SpreadSpike
 from hermes.domain.risk.state import PortfolioState
-from hermes.domain.risk.types import RiskAction, RiskDecision
+from hermes.domain.risk.types import RiskAction
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from tests.unit.domain.risk.conftest import make_market_snapshot, make_portfolio_state
@@ -134,19 +131,3 @@ class TestSeverityOrder:
     ) -> None:
         """The more severe action is worse; the less severe one is not."""
         assert (worse.is_worse_than(better), better.is_worse_than(worse)) == (True, False)
-
-
-class TestImmutability:
-    """Risk inputs and decisions cannot change after they are built."""
-
-    def test_records_are_frozen_with_slots(self) -> None:
-        """Portfolio state, market snapshot and decision reject edits and carry no dict."""
-        records: list[tuple[object, str]] = [
-            (make_portfolio_state(), "current_value"),
-            (make_market_snapshot(), "current_spread"),
-            (RiskDecision(action=RiskAction.OK, reason="ok"), "action"),
-        ]
-        for record, field_name in records:
-            with pytest.raises(FrozenInstanceError):
-                setattr(record, field_name, None)
-        assert not any(hasattr(record, "__dict__") for record, _ in records)

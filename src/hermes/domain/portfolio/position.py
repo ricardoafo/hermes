@@ -7,14 +7,12 @@ amounts are :class:`~decimal.Decimal`.
 Reference: 308-signal-event-portfolio-state change.md D-5.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal, localcontext
 
-from hermes.domain.portfolio.precision import EXACT_CONTEXT
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.precision import EXACT_CONTEXT
 
 __all__ = ["Position"]
 

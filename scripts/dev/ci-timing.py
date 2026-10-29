@@ -17,8 +17,6 @@ to Actions. Only successful and failed runs count; cancelled and skipped
 ones carry no useful timing.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import math

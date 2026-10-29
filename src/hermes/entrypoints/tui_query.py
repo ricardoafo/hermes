@@ -10,7 +10,9 @@ the same way, through :mod:`hermes.application.console.query`:
 - :class:`SortableTable`: a ``DataTable`` sorted by clicking a header or
   pressing ``S`` on a column; the sorted columns carry an arrow.
 - :class:`QueryList`: the three wired together over a list of rows; this is
-  what a screen embeds.
+  what a screen embeds. It posts :class:`QueryList.Refreshed` after every
+  filter or sort, so a screen can draw more from the same result (the Logs
+  volume histogram, issue #716).
 
 Styling is a few ``DEFAULT_CSS`` lines that read only the console's ``$hud-*``
 theme variables (:mod:`hermes.entrypoints.tui_theme`), so Neon, Control room and
@@ -21,7 +23,7 @@ read, so a list screen stays read-only.
 activity rows inside a :class:`~hermes.entrypoints.tui_widgets.HudPanel`. They
 are a demo harness, not wired into ``hermes tui``.
 
-Reference: openspec/changes/729-query-bar/change.md.
+Reference: openspec/archive/729-query-bar/change.md.
 """
 
 from collections.abc import Callable, Iterable, Sequence

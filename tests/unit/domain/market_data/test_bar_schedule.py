@@ -10,8 +10,6 @@ Invariants (live-bar-stream change D-3 and D-5):
   precede the 1d bar closing at the same instant, and reports skipped bars.
 """
 
-from __future__ import annotations
-
 import itertools
 import random
 from datetime import UTC, datetime, timedelta
@@ -21,7 +19,6 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from hermes.adapters.market_data.consolidator import interval_to_timedelta
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.bar_schedule import (
     Stream,
@@ -193,7 +190,7 @@ class TestBoundaries:
 
 
 class TestCloseTimeAndDuration:
-    """`close_time_of` matches Binance's inclusive close, and durations match the consolidator."""
+    """`close_time_of` matches Binance's inclusive close; each interval has its candle length."""
 
     def test_close_time_is_open_plus_interval_minus_one_millisecond(self) -> None:
         """The recorded 12:00 4h bar closes at 15:59:59.999, the value Binance reports."""
@@ -202,10 +199,21 @@ class TestCloseTimeAndDuration:
             2026, 10, 2, 15, 59, 59, 999000, tzinfo=UTC
         )
 
-    @pytest.mark.parametrize("interval", list(KlineInterval))
-    def test_interval_duration_matches_consolidator(self, interval: KlineInterval) -> None:
-        """Drift guard: the domain table equals the consolidator's (the domain cannot import it)."""
-        assert interval_duration(interval) == interval_to_timedelta(interval)
+    @pytest.mark.parametrize(
+        ("interval", "length"),
+        [
+            (KlineInterval.M1, timedelta(minutes=1)),
+            (KlineInterval.M5, timedelta(minutes=5)),
+            (KlineInterval.H1, timedelta(hours=1)),
+            (KlineInterval.H4, timedelta(hours=4)),
+            (KlineInterval.D1, timedelta(days=1)),
+        ],
+    )
+    def test_interval_duration_is_the_candle_length(
+        self, interval: KlineInterval, length: timedelta
+    ) -> None:
+        """Each Binance interval code maps to its own candle length (written out by hand)."""
+        assert interval_duration(interval) == length
 
     def test_close_time_of_rejects_a_naive_open_time(self) -> None:
         """A naive open time is rejected rather than read as UTC."""
@@ -385,7 +393,7 @@ class TestPlanDelivery:
         assert plan.bars == ()
         assert plan.cursors == cursors
 
-    @settings(max_examples=60, deadline=None)
+    @settings(max_examples=60)
     @given(
         hold_daily=st.booleans(),
         offsets=st.lists(st.integers(min_value=0, max_value=11), min_size=1, max_size=12),

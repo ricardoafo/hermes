@@ -6,10 +6,8 @@ end of the series so every observation is equally likely to be drawn.
 
 Reference: pre-registration-v1.md §8.2 (10,000 resamples, 30-day blocks,
 H1 needs the 95% lower bound above 0);
-openspec/changes/354-certification-statistics D-3.
+openspec/archive/354-certification-statistics D-3.
 """
-
-from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass

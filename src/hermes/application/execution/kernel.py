@@ -16,10 +16,8 @@ inputs per call.
   its ``TradeExecuted`` v2 event, which carries ``strategy_id`` so the
   startup rebuild (#392) can replay it once the caller persists it.
 
-Reference: openspec/changes/backtest-driver-mvp1-phase2/change.md D-2, D-3, R-4.
+Reference: openspec/archive/backtest-driver-mvp1-phase2/change.md D-2, D-3, R-4.
 """
-
-from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace

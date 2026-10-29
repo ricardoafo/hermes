@@ -4,68 +4,21 @@ Opens the ledger with SQLite's ``mode=ro`` URI and never migrates, like
 :class:`~hermes.adapters.ledger.filing_reader.LedgerFilingReader`, so it can
 run next to ``hermes serve`` and never changes the ledger.
 
-Reference: openspec/changes/568-tax-pack/change.md R-5.
+Reference: openspec/archive/568-tax-pack/change.md R-5.
 """
 
-from __future__ import annotations
-
 import sqlite3
-from pathlib import Path
-from typing import Self
 
 from hermes.adapters.ledger._cells import date_cell, decimal_cell
-from hermes.adapters.ledger.connection import open_ledger
+from hermes.adapters.ledger.connection import ReadOnlyLedgerReader
 from hermes.domain.errors import LedgerError
 from hermes.domain.filing.trail import TradeRate
 
 __all__ = ["LedgerTradeRates"]
 
 
-class LedgerTradeRates:
+class LedgerTradeRates(ReadOnlyLedgerReader):
     """The :class:`~hermes.ports.tax_pack.TradeRatesPort` over a SQLite ledger."""
-
-    def __init__(self, connection: sqlite3.Connection) -> None:
-        """Wrap an open connection; :meth:`open` makes a read-only one.
-
-        Args:
-            connection: The ledger connection.
-        """
-        self._conn = connection
-
-    @classmethod
-    def open(cls, path: Path) -> Self:
-        """Open ``path`` read-only.
-
-        Args:
-            path: The ledger file.
-
-        Returns:
-            A reader over a ``mode=ro`` connection.
-
-        Raises:
-            FileNotFoundError: There is no file at ``path``; nothing is created.
-            LedgerError: SQLite refused to open the file.
-        """
-        resolved = path.resolve()
-        if not resolved.is_file():
-            raise FileNotFoundError(str(path))
-        try:
-            connection = open_ledger(resolved, read_only=True)
-        except sqlite3.Error as exc:
-            raise LedgerError(msg=f"cannot open {path} read-only: {exc}") from exc
-        return cls(connection)
-
-    def close(self) -> None:
-        """Close the connection."""
-        self._conn.close()
-
-    def __enter__(self) -> Self:
-        """Return ``self`` for ``with`` blocks."""
-        return self
-
-    def __exit__(self, *_exc_info: object) -> None:
-        """Close the connection."""
-        self.close()
 
     def eur_rates(self) -> dict[str, TradeRate]:
         """Return the stored rate per trade id; trades with no rate yet are absent.

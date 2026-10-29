@@ -10,8 +10,6 @@ Protects the #162 invariants:
 - A body that already carries the marker is not rewritten again.
 """
 
-from __future__ import annotations
-
 import importlib.util
 import os
 import shutil
@@ -23,8 +21,9 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-_REPO = Path(__file__).resolve().parents[3]
-_SCRIPT_PATH = _REPO / "scripts" / "dev" / "rewrite-dependabot-body.py"
+from tests.support.paths import REPO_ROOT
+
+_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev" / "rewrite-dependabot-body.py"
 _spec = importlib.util.spec_from_file_location("rewrite_dependabot_body", _SCRIPT_PATH)
 assert _spec is not None and _spec.loader is not None
 rewrite = importlib.util.module_from_spec(_spec)
@@ -55,12 +54,12 @@ def _lint(body: str) -> subprocess.CompletedProcess[str]:
     bash = shutil.which("bash")
     assert bash is not None
     return subprocess.run(  # noqa: S603 - fixed argv, repo-owned script
-        [bash, str(_REPO / "scripts" / "dev" / "pr-body-lint.sh")],
+        [bash, str(REPO_ROOT / "scripts" / "dev" / "pr-body-lint.sh")],
         env={**os.environ, "PR_BODY": body},
         capture_output=True,
         text=True,
         check=False,
-        cwd=_REPO,
+        cwd=REPO_ROOT,
     )
 
 

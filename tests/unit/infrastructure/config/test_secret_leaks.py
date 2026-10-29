@@ -6,16 +6,13 @@ would read. The shipped ``config/`` tree is the input, so the tests follow
 whatever the repo ships.
 """
 
-from __future__ import annotations
-
-from pathlib import Path
-
 import pytest
 
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import load_config
+from tests.support.paths import REPO_ROOT
 
-_CONFIG_DIR = Path(__file__).resolve().parents[4] / "config"
+_CONFIG_DIR = REPO_ROOT / "config"
 _PLANTED = "PLANTED-7f3a9c"
 
 

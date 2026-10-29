@@ -20,24 +20,38 @@ The loader raises :class:`ConfigError` on:
 - YAML parse failure,
 - pydantic validation failure (with the full validation error attached).
 
+A setting that breaks its tier's rules raises :class:`TierError`, a
+``ConfigError`` that lists every such problem by name.
+
 Design note: we do NOT use ``BaseSettings`` + ``YamlConfigSettingsSource``
 directly. That path forces every sub-config to declare its own env prefix
 and creates five parallel merge chains. Reading YAML → deep-merging env →
 ``Model.model_validate`` keeps one merge chain, one prefix, one error path.
 """
 
-from __future__ import annotations
-
 import os
 from collections.abc import Mapping
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import yaml
 from dotenv import load_dotenv
 from pydantic import BaseModel, ValidationError
 
-from hermes.infrastructure.config.errors import ConfigError
+from hermes.adapters.clock.remote import TEST_CLOCK_URL_ENV
+from hermes.adapters.endpoint import (
+    DEFAULT_SLACK_API_BASE,
+    DEFAULT_TELEGRAM_API_BASE,
+    SLACK_API_BASE_ENV,
+    TELEGRAM_API_BASE_ENV,
+    is_loopback,
+)
+from hermes.infrastructure.config.errors import ConfigError, TierError
+from hermes.infrastructure.config.fingerprints import (
+    load_prod_fingerprints,
+    prod_value_problems,
+)
 from hermes.infrastructure.config.models import (
     BinanceExchangeConfig,
     FeesConfig,
@@ -51,9 +65,17 @@ from hermes.infrastructure.config.models import (
     StrategiesConfig,
     TaxGuardConfig,
 )
-from hermes.infrastructure.config.root import HermesConfig
+from hermes.infrastructure.config.root import LOOPBACK_TIERS, EndpointTierError, HermesConfig
 
-__all__ = ["DEFAULT_CONFIG_DIR", "DEFAULT_DOTENV_PATH", "load_config", "load_yaml_model"]
+__all__ = [
+    "DEFAULT_CONFIG_DIR",
+    "DEFAULT_DOTENV_PATH",
+    "env_tier_problems",
+    "load_config",
+    "load_optional_yaml_model",
+    "load_sentry_config",
+    "load_yaml_model",
+]
 
 
 DEFAULT_CONFIG_DIR: Path = Path("config")
@@ -68,12 +90,38 @@ _NESTED_DELIMITER: str = "__"
 # specific YAML section.
 _ENV_TIER: str = "HERMES_ENV"
 _ENV_ALLOW_MAINNET: str = "HERMES_ALLOW_MAINNET"
-# Credentials that share a section's prefix but belong to an adapter, not
+# Variables that share a section's prefix but belong to an adapter or a script, not
 # to the section's YAML model (BinanceSpotConfig.from_env reads these).
 # Treating them as overrides failed validation under extra=forbid and
 # echoed the secret in the error (#794).
 _CREDENTIAL_ENV_VARS: frozenset[str] = frozenset(
-    {"HERMES_BINANCE__API_KEY", "HERMES_BINANCE__API_SECRET"}
+    {
+        "HERMES_BINANCE__API_KEY",
+        "HERMES_BINANCE__API_SECRET",
+        # Read by the deploy shell scripts only; the Healthchecks YAML model has
+        # no field for them, so as overrides they stopped `hermes serve` at start.
+        "HERMES_HEALTHCHECKS__DAILY_PING_URL",
+        "HERMES_HEALTHCHECKS__ARCHIVE_CHECK_PING_URL",
+    }
+)
+# Keys that can place orders. Dev and sandbox keep their testnet keys; qa
+# runs on fakes and staging on public data only, so neither may hold one
+# (ADR-024 §4). Prod's own gate is HERMES_ALLOW_MAINNET.
+_TRADING_KEY_ENV_VARS: tuple[str, ...] = (
+    "HERMES_BINANCE__API_KEY",
+    "HERMES_BINANCE__API_SECRET",
+    "HERMES_KRAKEN__API_KEY",
+    "HERMES_KRAKEN__API_SECRET",
+)
+_NO_TRADING_KEY_TIERS: frozenset[str] = frozenset({"qa", "staging"})
+# A test clock moves the release onto the fake market's scripted time (#972),
+# so only the tiers that run scenarios may name one, and only on loopback.
+_TEST_CLOCK_TIERS: frozenset[str] = frozenset({"dev", "qa"})
+_NOTIFIER_API_BASES: Mapping[str, str] = MappingProxyType(
+    {
+        TELEGRAM_API_BASE_ENV: DEFAULT_TELEGRAM_API_BASE,
+        SLACK_API_BASE_ENV: DEFAULT_SLACK_API_BASE,
+    }
 )
 
 
@@ -116,7 +164,7 @@ def _read_yaml(path: Path) -> dict[str, Any]:
 
 
 def _coerce_scalar(value: str) -> Any:
-    """Coerce a string env value to bool / int / float / str.
+    """Coerce a string env value to bool / int / str.
 
     Pydantic itself is quite lenient with strict=True + string input for
     scalars: booleans need explicit true/false, numerics are parsed. We do
@@ -128,7 +176,7 @@ def _coerce_scalar(value: str) -> Any:
 
     Returns:
         Bool for ``true``/``false`` (case-insensitive); int if parseable as
-        int; float if parseable as float; otherwise the original string.
+        int; otherwise the original string, decimals included.
     """
     lowered = value.strip().lower()
     if lowered in {"true", "yes", "on"}:
@@ -139,10 +187,8 @@ def _coerce_scalar(value: str) -> Any:
         return int(value)
     except ValueError:
         pass
-    try:
-        return float(value)
-    except ValueError:
-        pass
+    # A decimal string stays a string: pydantic parses it exactly into a Decimal
+    # field, where a float pre-pass would round it first (#1176).
     return value
 
 
@@ -271,6 +317,58 @@ def load_yaml_model[T: BaseModel](
         ) from exc
 
 
+def load_optional_yaml_model[T: BaseModel](
+    path: Path,
+    model_cls: type[T],
+    *,
+    env_section: str,
+    env: dict[str, str] | None = None,
+) -> T:
+    """Load a YAML file like :func:`load_yaml_model`, but let a missing file mean defaults.
+
+    For sections that no running code needs yet: a fresh clone or a
+    deployment without the file still starts, and the model's own defaults
+    (plus any ``HERMES_<section>__...`` override) apply.
+
+    Args:
+        path: Path to the YAML file; it may not exist.
+        model_cls: Pydantic model to validate against; every field needs a default.
+        env_section: Uppercase section name for env overrides.
+        env: Optional env-var snapshot (defaults to ``os.environ``).
+
+    Returns:
+        A validated ``model_cls`` instance.
+
+    Raises:
+        ConfigError: The file exists but is unreadable or invalid, or the
+            merged values fail schema validation.
+    """
+    env_snapshot = dict(os.environ) if env is None else env
+    if path.is_file():
+        return load_yaml_model(path, model_cls, env_section=env_section, env=env_snapshot)
+    try:
+        return model_cls.model_validate(_apply_env_overrides({}, env_section, env_snapshot))
+    except ValidationError as exc:
+        raise ConfigError(
+            f"validation failed for {model_cls.__name__} defaults: {_describe(exc)}"
+        ) from exc
+
+
+def load_sentry_config(config_dir: Path, *, env: dict[str, str] | None = None) -> SentryConfig:
+    """Load ``sentry.yaml`` from ``config_dir`` (optional), with ``HERMES_SENTRY__*`` overrides.
+
+    The CLI initializes Sentry before it knows which command runs, so it
+    loads only this section: a fresh clone that has not populated every
+    other YAML file still gets error reporting.
+
+    Raises:
+        ConfigError: The file exists but is invalid.
+    """
+    return load_optional_yaml_model(
+        config_dir / "sentry.yaml", SentryConfig, env_section="SENTRY", env=env
+    )
+
+
 def _root_env_kwargs(env: dict[str, str]) -> dict[str, Any]:
     """Extract root-tier env vars (``HERMES_ENV``, ``HERMES_ALLOW_MAINNET``).
 
@@ -337,7 +435,9 @@ def load_config(
         ConfigError: Any of the YAML files is missing, malformed, or fails
             schema validation. The message identifies the offending file and
             the pydantic validation error. Also raised when the tier is prod
-            and ``config_dir`` is relative.
+            and ``config_dir`` is relative. A tier refusal, including a
+            watched value whose hash ``prod_fingerprints.yaml`` lists outside
+            prod, is a :class:`TierError` naming each variable.
     """
     base = config_dir if config_dir is not None else DEFAULT_CONFIG_DIR
     if env is None:
@@ -377,13 +477,13 @@ def load_config(
         env_section="FEES",
         env=env_snapshot,
     )
-    tax_guard = load_yaml_model(
+    tax_guard = load_optional_yaml_model(
         base / "tax_guard.yaml",
         TaxGuardConfig,
         env_section="TAX_GUARD",
         env=env_snapshot,
     )
-    ml = load_yaml_model(
+    ml = load_optional_yaml_model(
         base / "ml.yaml",
         MLConfig,
         env_section="ML",
@@ -407,12 +507,7 @@ def load_config(
         env_section="HEALTHCHECKS",
         env=env_snapshot,
     )
-    sentry = load_yaml_model(
-        base / "sentry.yaml",
-        SentryConfig,
-        env_section="SENTRY",
-        env=env_snapshot,
-    )
+    sentry = load_sentry_config(base, env=env_snapshot)
     kraken_public = load_yaml_model(
         base / "kraken_public.yaml",
         KrakenPublicConfig,
@@ -425,10 +520,11 @@ def load_config(
         env_section="MARKET_DATA",
         env=env_snapshot,
     )
+    prod_fingerprints = load_prod_fingerprints(base)
 
     root_kwargs = _root_env_kwargs(env_snapshot)
     try:
-        return HermesConfig(
+        config = HermesConfig(
             **root_kwargs,
             strategies=strategies,
             binance=binance,
@@ -443,7 +539,74 @@ def load_config(
             market_data=market_data,
         )
     except ValidationError as exc:
-        # Root-level validation covers env-tier gates (mainnet outside prod)
-        # + env literal narrowing. Wrap in ConfigError for a consistent
-        # error type across the loader.
-        raise ConfigError(f"HermesConfig validation failed: {_describe(exc)}") from exc
+        endpoint_error = _endpoint_tier_error(exc)
+        if endpoint_error is None:
+            # Root-level validation covers env-tier gates (mainnet outside prod)
+            # + env literal narrowing. Wrap in ConfigError for a consistent
+            # error type across the loader.
+            raise ConfigError(f"HermesConfig validation failed: {_describe(exc)}") from exc
+        problems = [
+            *endpoint_error.problems,
+            *env_tier_problems(endpoint_error.env, env_snapshot),
+            *prod_value_problems(endpoint_error.env, env_snapshot, prod_fingerprints),
+        ]
+        raise _tier_error(endpoint_error.env, problems) from exc
+    problems = [
+        *env_tier_problems(config.env, env_snapshot),
+        *prod_value_problems(config.env, env_snapshot, prod_fingerprints),
+    ]
+    if problems:
+        raise _tier_error(config.env, problems)
+    return config
+
+
+def _endpoint_tier_error(exc: ValidationError) -> EndpointTierError | None:
+    """Return the tier refusal when it is the only thing pydantic rejected."""
+    errors = exc.errors(include_input=False, include_url=False)
+    if len(errors) != 1:
+        return None
+    cause = errors[0].get("ctx", {}).get("error")
+    return cause if isinstance(cause, EndpointTierError) else None
+
+
+def _tier_error(tier: str, problems: list[str]) -> TierError:
+    return TierError(f"HERMES_ENV={tier}: " + "; ".join(problems), problems=tuple(problems))
+
+
+def env_tier_problems(tier: str, env: Mapping[str, str]) -> list[str]:
+    """Return how the env-only settings break the tier's rules (ADR-024 §4, #970).
+
+    The YAML-backed endpoints are checked by :class:`HermesConfig`; these
+    settings live only in the environment, beside their credentials. Each
+    problem names the variable, never its value.
+
+    Args:
+        tier: The validated ``HERMES_ENV``.
+        env: Env-var snapshot.
+
+    Returns:
+        The problems found; empty when the environment fits the tier.
+    """
+    problems = []
+    if tier in _NO_TRADING_KEY_TIERS:
+        problems += [
+            f"{name} is set, but {tier} holds no trading key"
+            for name in _TRADING_KEY_ENV_VARS
+            if env.get(name, "").strip()
+        ]
+    for name, default in _NOTIFIER_API_BASES.items():
+        value = env.get(name, "").strip()
+        if not value:
+            continue
+        if tier not in LOOPBACK_TIERS and is_loopback(value):
+            allowed = ", ".join(sorted(LOOPBACK_TIERS))
+            problems.append(f"{name} points at a loopback host, which only {allowed} may use")
+        elif tier == "prod" and value.rstrip("/") != default:
+            problems.append(f"{name} is not the default endpoint, which prod requires")
+    clock_url = env.get(TEST_CLOCK_URL_ENV, "").strip()
+    if clock_url and tier not in _TEST_CLOCK_TIERS:
+        allowed = ", ".join(sorted(_TEST_CLOCK_TIERS))
+        problems.append(f"{TEST_CLOCK_URL_ENV} is set, which only {allowed} may use")
+    elif clock_url and not is_loopback(clock_url):
+        problems.append(f"{TEST_CLOCK_URL_ENV} is not a loopback host, which a test clock must be")
+    return problems

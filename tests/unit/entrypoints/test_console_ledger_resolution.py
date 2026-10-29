@@ -12,8 +12,6 @@ Invariants:
   ``hermes activity`` reads it through the same live model (live-home-screen D-6).
 """
 
-from __future__ import annotations
-
 import io
 from datetime import UTC, datetime, timedelta
 from pathlib import Path

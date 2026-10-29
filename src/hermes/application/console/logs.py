@@ -7,14 +7,15 @@ correlation id, and renders them as::
 
     16:00:05  INFO   serve.bar.processed   pair=BTC/USDT interval=4h  …K7Q2ZP
 
+Each line also names its service, from the journal's systemd unit
+(``hermes.service`` is the ``engine``, ``hermes-bot.service`` the ``bot``).
+
 Lines whose message is not structlog JSON (systemd's own messages,
 tracebacks) pass through raw. No field is added or dropped: the line shows
 what hermes logged, which by ADR-008 never includes secrets or P&L.
 
-Reference: openspec/changes/376-hermes-logs/change.md.
+Reference: openspec/archive/376-hermes-logs/change.md.
 """
-
-from __future__ import annotations
 
 import json
 from collections.abc import Iterable, Iterator
@@ -32,11 +33,15 @@ __all__ = [
     "log_line_to_json",
     "parse_journal_entry",
     "render_log_line",
+    "service_name",
 ]
 
 _CORR_TAIL: Final = 6
 _SKIP_FIELDS: Final = frozenset({"event", "level", "timestamp", "correlation_id", "logger"})
 _LEVEL_STYLE: Final = {"warning": "yellow", "error": "red", "critical": "bold red"}
+_ENGINE_UNIT: Final = "hermes"
+_ENGINE: Final = "engine"
+_UNIT_PREFIX: Final = "hermes-"
 
 
 class LogLevel(IntEnum):
@@ -76,6 +81,8 @@ class LogLine:
         fields: The other structlog key/values, in logged order.
         correlation_id: The bar cycle's ULID, if logged.
         raw: The message as logged, for lines that are not structlog JSON.
+        service: The systemd unit as a short name (``engine``, ``bot``), or
+            ``None`` when the entry names no unit.
     """
 
     at: datetime
@@ -84,6 +91,7 @@ class LogLine:
     fields: tuple[tuple[str, str], ...] = field(default_factory=tuple)
     correlation_id: str | None = None
     raw: str | None = None
+    service: str | None = None
 
     @property
     def severity(self) -> LogLevel:
@@ -92,6 +100,29 @@ class LogLine:
             return LogLevel.parse(self.level) if self.level else LogLevel.INFO
         except ValueError:
             return LogLevel.INFO
+
+
+def service_name(unit: str) -> str:
+    """Return the short service name of a systemd unit.
+
+    Args:
+        unit: A unit name such as ``hermes.service`` or ``hermes-bot.service``.
+
+    Returns:
+        ``engine`` for ``hermes.service``; the unit without ``hermes-`` and its
+        suffix otherwise (``bot``, ``health``, ``notify-failure``).
+    """
+    base = unit.partition("@")[0]
+    stem = base.rpartition(".")[0] or base
+    if stem == _ENGINE_UNIT:
+        return _ENGINE
+    return stem.removeprefix(_UNIT_PREFIX)
+
+
+def _service(envelope: dict[str, object]) -> str | None:
+    """Return the service an envelope belongs to; systemd's own lines carry ``UNIT``."""
+    unit = envelope.get("UNIT") or envelope.get("_SYSTEMD_UNIT")
+    return service_name(unit) if isinstance(unit, str) and unit else None
 
 
 def parse_journal_entry(envelope_json: str) -> LogLine | None:
@@ -114,12 +145,13 @@ def parse_journal_entry(envelope_json: str) -> LogLine | None:
     if isinstance(message, list):  # journald stores non-UTF-8 text as a byte list
         message = bytes(int(b) for b in message).decode("utf-8", errors="replace")
     text = "" if message is None else str(message)
+    service = _service(envelope)
     try:
         payload = json.loads(text)
     except ValueError:
-        return LogLine(at=at, raw=text)
+        return LogLine(at=at, raw=text, service=service)
     if not isinstance(payload, dict) or "event" not in payload:
-        return LogLine(at=at, raw=text)
+        return LogLine(at=at, raw=text, service=service)
     fields = tuple(
         (str(key), _value(value)) for key, value in payload.items() if key not in _SKIP_FIELDS
     )
@@ -130,6 +162,7 @@ def parse_journal_entry(envelope_json: str) -> LogLine | None:
         event=str(payload["event"]),
         fields=fields,
         correlation_id=None if corr is None else str(corr),
+        service=service,
     )
 
 
@@ -179,8 +212,13 @@ def render_log_line(line: LogLine, tz: tzinfo = UTC) -> Text:
 
 
 def log_line_to_json(line: LogLine) -> dict[str, object]:
-    """Return ``line`` as JSON-ready data for ``hermes logs --json``."""
+    """Return ``line`` as JSON-ready data for ``hermes logs --json``.
+
+    ``service`` is included only when the entry named a unit.
+    """
     data: dict[str, object] = {"at": line.at.isoformat()}
+    if line.service is not None:
+        data["service"] = line.service
     if line.raw is not None:
         data["raw"] = line.raw
         return data

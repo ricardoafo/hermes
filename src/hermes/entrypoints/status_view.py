@@ -10,10 +10,8 @@
 
 Times show in UTC and Europe/Madrid. No P&L field exists in either form.
 
-Reference: openspec/changes/370-hermes-status/change.md.
+Reference: openspec/archive/370-hermes-status/change.md.
 """
-
-from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Final
@@ -66,7 +64,7 @@ def render_status(
             whether the verdict is a panel or plain lines.
         bot: State of the bot unit.
         release: The running release; no release line when ``None``.
-        version: The running version as screens name it (``v1.0.0-shadow.1``);
+        version: The running version as screens name it (``v0.2.0``);
             no version line when ``None``.
     """
     console.print(_header(report, bot))

@@ -1,7 +1,5 @@
 """``hermes runners``: see :mod:`hermes.entrypoints.runners`."""
 
-from __future__ import annotations
-
 from typing import Any, TextIO
 
 from hermes.entrypoints import runners as _impl

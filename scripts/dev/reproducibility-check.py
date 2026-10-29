@@ -41,8 +41,6 @@ are skipped (same reason).
 - 2: usage error / uv.lock not found / not valid TOML
 """
 
-from __future__ import annotations
-
 import os
 import sys
 import tomllib

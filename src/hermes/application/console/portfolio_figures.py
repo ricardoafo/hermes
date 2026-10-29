@@ -11,10 +11,8 @@ rate the positions use for "now". Closed trades keep the EUR values their fills
 were priced at (#435). The start capital is the seed's value at the seed-date
 rate. Whatever has no EUR value yet is flagged pending, never guessed.
 
-Reference: openspec/changes/live-home-screen/change.md (D-1 to D-3).
+Reference: openspec/archive/live-home-screen/change.md (D-1 to D-3).
 """
-
-from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass

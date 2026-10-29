@@ -11,20 +11,16 @@ Telegram sample is valid MarkdownV2 (no reserved character left bare).
 Reference: pre-registration v1 §5.2 (exit rules); issue #692.
 """
 
-from __future__ import annotations
-
 import ast
-from pathlib import Path
 
 import pytest
 
 from hermes.application.messages.telegram import telegram_template
 from hermes.domain.events.signal_emitted import SignalEmitted
 from tests.support.notification_samples import EXIT_REASONS, samples
+from tests.support.paths import REPO_ROOT
 
-_SWING_ADAPTER = (
-    Path(__file__).parents[4] / "src" / "hermes" / "domain" / "strategy" / "swing" / "adapter.py"
-)
+_SWING_ADAPTER = REPO_ROOT / "src" / "hermes" / "domain" / "strategy" / "swing" / "adapter.py"
 _MARKDOWN_V2_RESERVED = frozenset("_*[]()~`>#+-=|{}.!")
 
 

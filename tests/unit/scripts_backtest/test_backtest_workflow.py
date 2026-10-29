@@ -19,10 +19,11 @@ from typing import Any
 import pytest
 import yaml
 
-_ROOT = Path(__file__).resolve().parents[3]
-_WORKFLOW = _ROOT / ".github" / "workflows" / "backtest.yml"
-_COMPOSE = _ROOT / "scripts" / "dev" / "gh-runner" / "compose.yml"
-_MANIFEST = _ROOT / "docs" / "experiments" / "swing-mvp1" / "data-manifest.json"
+from tests.support.paths import REPO_ROOT
+
+_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "backtest.yml"
+_COMPOSE = REPO_ROOT / "scripts" / "dev" / "gh-runner" / "compose.yml"
+_MANIFEST = REPO_ROOT / "docs" / "experiments" / "swing-mvp1" / "data-manifest.json"
 _SHA_PIN = re.compile(r"^[\w.-]+/[\w.-]+(/[\w.-]+)*@[0-9a-f]{40}$")
 
 needs_tools = pytest.mark.skipif(
@@ -49,10 +50,10 @@ def _step(name: str) -> dict[str, Any]:
 
 
 def _run_step(name: str, env: dict[str, str], cwd: Path) -> subprocess.CompletedProcess[str]:
-    """Run a step's shell with ``env`` on top of a minimal environment."""
+    """Run a step's shell as the runner does (``bash -e``) with ``env`` on a minimal environment."""
     base = {"PATH": os.environ.get("PATH", "/usr/bin:/bin")}
     return subprocess.run(  # noqa: S603 — fixed interpreter, the workflow's own script
-        ["bash", "-c", str(_step(name)["run"])],  # noqa: S607 — bash from PATH, as on the runner
+        ["bash", "-e", "-c", str(_step(name)["run"])],  # noqa: S607 — bash from PATH, as on the runner
         env={**base, **env},
         cwd=cwd,
         capture_output=True,
@@ -378,7 +379,7 @@ def test_funnel_reads_the_signed_v2_pre_registration() -> None:
     path = _workflow()["env"]["PRE_REGISTRATION"]
 
     assert path == "docs/experiments/swing-mvp1/pre-registration-v2.md"
-    assert (_ROOT / path).is_file()
+    assert (REPO_ROOT / path).is_file()
 
 
 def test_hash_is_checked_first_and_unconditionally() -> None:
@@ -557,3 +558,57 @@ def test_summary_shows_funnel_verdicts_without_numbers(tmp_path: Path) -> None:
         f"```text\n{_FUNNEL_HEADER}\nPASS pbo\nFAIL t_stat\nPASS trade_count\nFUNNEL FAILED\n```\n"
     ) in text
     assert [n for n in ("0.0137", "2.7181", "4242", "0.05", "3.0") if n in text] == []
+
+
+_CERTIFY_STEP = "Certify (temporary store, nothing recorded)"
+
+_FAKE_UV_CERTIFY = """#!/usr/bin/env bash
+if [ "$3" = "certify" ]; then
+  printf '%s\\n' "GATE FAILED"
+  exit "$FAKE_EXIT"
+fi
+printf '%s\\n' '{"count": 1}'
+"""
+
+
+def _certify(tmp_path: Path, exit_code: int) -> tuple[subprocess.CompletedProcess[str], Path]:
+    """Run the certify step against a fake ``uv`` whose certify exits ``exit_code``."""
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake = bin_dir / "uv"
+    fake.write_text(_FAKE_UV_CERTIFY)
+    fake.chmod(0o755)
+    runner_temp = tmp_path / "rt"
+    (runner_temp / "out").mkdir(parents=True)
+    (runner_temp / "out" / "report.json").write_text(
+        '{"strategy_id": "swing-mvp1-v2", "fills_count": 3}'
+    )
+    (runner_temp / "github_output").write_text("")
+    env = {
+        "PATH": f"{bin_dir}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+        "RUNNER_TEMP": str(runner_temp),
+        "GITHUB_OUTPUT": str(runner_temp / "github_output"),
+        "FAKE_EXIT": str(exit_code),
+    }
+    return _run_step(_CERTIFY_STEP, env, tmp_path), runner_temp
+
+
+@needs_tools
+@pytest.mark.parametrize("exit_code", [0, 1], ids=["passed", "failed-or-refused"])
+def test_certify_verdict_does_not_fail_the_job(tmp_path: Path, exit_code: int) -> None:
+    """A gate verdict, passed or failed, keeps the step green under bash -e (issue #1036)."""
+    result, runner_temp = _certify(tmp_path, exit_code)
+
+    assert result.returncode == 0
+    assert (runner_temp / "github_output").read_text() == f"exit={exit_code}\n"
+    assert (runner_temp / "out" / "trial-stats.json").read_text() == '{"count": 1}\n'
+
+
+@needs_tools
+def test_certify_error_exit_fails_the_step(tmp_path: Path) -> None:
+    """A usage, config, evidence or store error fails the step with its own exit code."""
+    result, runner_temp = _certify(tmp_path, 3)
+
+    assert result.returncode == 3
+    assert "::error::hermes certify exited 3" in result.stdout
+    assert (runner_temp / "github_output").read_text() == "exit=3\n"

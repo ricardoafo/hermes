@@ -64,8 +64,6 @@ Design decisions
   ``chat.postMessage`` when threaded — expected cost.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -74,6 +72,8 @@ from typing import Any, Final
 import httpx
 import structlog
 
+from hermes.adapters.endpoint import DEFAULT_SLACK_API_BASE, SLACK_API_BASE_ENV, api_base_from_env
+from hermes.application.messages import correlation_tail
 from hermes.application.messages.eur_rate import EurRateLookup, resolve_eur_rate
 from hermes.application.messages.reporting_phase import (
     DEFAULT_REPORTING_PHASE,
@@ -86,9 +86,7 @@ from hermes.domain.events.base import DomainEvent
 
 __all__ = ["SlackAdapter", "SlackConfig", "SlackNotifierError"]
 
-_SLACK_API_BASE: Final[str] = "https://slack.com"
 _DEFAULT_TIMEOUT_SEC: Final[float] = 10.0
-_CORRELATION_TAIL_LEN: Final[int] = 6
 # HTTP status boundary — anything at or above signals an error response
 # regardless of what Slack sets in the body.
 _HTTP_ERROR_THRESHOLD: Final[int] = 400
@@ -142,10 +140,13 @@ class SlackConfig:
             post to when the caller does not override with a
             ``channel=`` kwarg. Stored as ``str`` since the API accepts
             both ID and name.
+        api_base: The Web API root. ``HERMES_SLACK__API_BASE`` points a
+            lower environment at a fake; unset, it is Slack's own.
     """
 
     bot_token: str = field(repr=False)
     default_channel: str
+    api_base: str = DEFAULT_SLACK_API_BASE
 
     @classmethod
     def from_env(cls, env: dict[str, str]) -> SlackConfig:
@@ -164,6 +165,8 @@ class SlackConfig:
                 empty. Fail-fast — the adapter is useless without
                 credentials and we would rather see the error at process
                 start than at first report time.
+            EndpointConfigError: ``HERMES_SLACK__API_BASE`` is set but
+                malformed or unsafe (see :mod:`hermes.adapters.endpoint`).
         """
         token = env.get("HERMES_SLACK__BOT_TOKEN", "").strip()
         channel = env.get("HERMES_SLACK__DEFAULT_CHANNEL", "").strip()
@@ -171,24 +174,8 @@ class SlackConfig:
             raise SlackNotifierError("HERMES_SLACK__BOT_TOKEN is not set (or empty)")
         if not channel:
             raise SlackNotifierError("HERMES_SLACK__DEFAULT_CHANNEL is not set (or empty)")
-        return cls(bot_token=token, default_channel=channel)
-
-
-def _correlation_tail(correlation_id: str) -> str:
-    """Return the last :data:`_CORRELATION_TAIL_LEN` chars of ``correlation_id``.
-
-    Per ADR-008 § Correlation ID convention, notifications carry the
-    correlation ID's tail so an operator reading a Slack ping can
-    immediately grep journald for the full log context.
-
-    Args:
-        correlation_id: The full ULID or short identifier.
-
-    Returns:
-        The tail (possibly the entire string if it is shorter than the
-        tail length). Never raises.
-    """
-    return correlation_id[-_CORRELATION_TAIL_LEN:]
+        api_base = api_base_from_env(env, SLACK_API_BASE_ENV, DEFAULT_SLACK_API_BASE)
+        return cls(bot_token=token, default_channel=channel, api_base=api_base)
 
 
 @dataclass(slots=True)
@@ -246,7 +233,7 @@ class SlackAdapter:
         Returns:
             A new adapter owning its :class:`httpx.Client`.
         """
-        client = httpx.Client(base_url=_SLACK_API_BASE, timeout=timeout_sec)
+        client = httpx.Client(base_url=config.api_base, timeout=timeout_sec)
         return cls(config=config, client=client, timeout_sec=timeout_sec, eur_rate=eur_rate)
 
     def close(self) -> None:
@@ -465,7 +452,7 @@ class SlackAdapter:
                 response, or ``ok=false`` body from any of the (1 +
                 3*len(attachments)) HTTP calls this method makes.
         """
-        tail = _correlation_tail(correlation_id)
+        tail = correlation_tail(correlation_id)
         blocks: list[dict[str, Any]] = [
             {"type": "header", "text": {"type": "plain_text", "text": title, "emoji": True}},
             {

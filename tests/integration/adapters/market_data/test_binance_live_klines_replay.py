@@ -14,12 +14,9 @@ Unit-level invariants live in
 ``tests/unit/adapters/market_data/test_binance_live_klines.py``.
 """
 
-from __future__ import annotations
-
 import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
 
 import anyio
 import httpx
@@ -29,6 +26,7 @@ import respx
 from hermes.adapters.clock import SimulatedClock
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
+from tests.support.paths import REPO_ROOT
 from tests.unit.adapters.market_data.fake_binance_public import (
     BTC_USDT,
     KLINES_URL,
@@ -43,7 +41,7 @@ from tests.unit.adapters.market_data.fake_binance_public import (
 
 pytestmark = pytest.mark.integration
 
-_FIXTURES = Path(__file__).parents[3] / "fixtures" / "binance_public"
+_FIXTURES = REPO_ROOT / "tests" / "fixtures" / "binance_public"
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _MIDNIGHT = datetime(2026, 10, 1, 0, 0, tzinfo=UTC)
 

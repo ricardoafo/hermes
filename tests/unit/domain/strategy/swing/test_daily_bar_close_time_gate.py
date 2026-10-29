@@ -8,10 +8,8 @@ Invariant tested:
     close-time ordering.
 
 Reference: issue #311; spec-5-swing-strategy-adapter change.md R-8;
-openspec/changes/311-daily-bar-look-ahead/change.md.
+openspec/archive/311-daily-bar-look-ahead/change.md.
 """
-
-from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal

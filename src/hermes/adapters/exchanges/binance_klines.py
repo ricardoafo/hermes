@@ -14,7 +14,7 @@ Design decisions
   ``src/hermes/adapters/notifier/telegram_adapter.py``). Sync, matches
   the port shape.
 - **Rate limiter**: token-bucket private to the exchanges adapter package
-  (:class:`hermes.adapters.exchanges.rate_limiter.RateLimiter`), pre-sized
+  (:class:`hermes.adapters._shared.rate_limiter.RateLimiter`), pre-sized
   to 5000 weight/min — well below Binance's published 6000 cap (ADR-003
   §04, "buffer below Binance's 6000/min"). Klines is weight 1 per
   request; the buffer covers accidental co-tenancy on the request pool.
@@ -35,18 +35,22 @@ Design decisions
   use one ``except InfraError`` if they want to.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Final
 
 import httpx
 import structlog
 
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
+from hermes.adapters._shared.wire import (
+    binance_symbol,
+    validate_http_config,
+    validate_utc_window,
+    wire_decimal,
+)
 from hermes.domain.errors import ExchangeError, NetworkError
 from hermes.domain.market_data.bar_schedule import close_time_of, previous_boundary
 from hermes.domain.market_data.kline import Kline, KlineInterval
@@ -101,12 +105,7 @@ class BinanceKlinesConfig:
 
     def __post_init__(self) -> None:
         """Validate the URL scheme and timeout — cheap fail-fast in the config layer."""
-        if not self.base_url.startswith("https://"):
-            raise ValueError(
-                f"BinanceKlinesConfig.base_url must start with https://, got {self.base_url!r}"
-            )
-        if self.timeout_sec <= 0:
-            raise ValueError(f"BinanceKlinesConfig.timeout_sec must be > 0, got {self.timeout_sec}")
+        validate_http_config("BinanceKlinesConfig", url=self.base_url, timeout_sec=self.timeout_sec)
 
 
 @dataclass(slots=True)
@@ -182,8 +181,8 @@ class BinanceKlinesAdapter:
             hermes.domain.errors.ExchangeError: On HTTP non-2xx (including
                 429), malformed schema, or unparseable numeric fields.
         """
-        _validate_window(since, until)
-        symbol = _pair_to_binance_symbol(pair)
+        validate_utc_window(since, until, caller="BinanceKlinesAdapter.fetch")
+        symbol = binance_symbol(pair)
         cursor_ms = _to_epoch_ms(since)
         end_ms = _to_epoch_ms(until)
 
@@ -291,37 +290,6 @@ class BinanceKlinesAdapter:
         return data
 
 
-def _validate_window(since: datetime, until: datetime) -> None:
-    """Reject naive datetimes and non-strictly-increasing windows.
-
-    Args:
-        since: Inclusive lower bound.
-        until: Exclusive upper bound.
-
-    Raises:
-        ValueError: On naive datetime or ``until <= since``.
-    """
-    for label, value in (("since", since), ("until", until)):
-        if value.tzinfo is None or value.tzinfo.utcoffset(None) != UTC.utcoffset(None):
-            raise ValueError(f"BinanceKlinesAdapter.fetch: {label} must be UTC-aware")
-    if until <= since:
-        raise ValueError(
-            f"BinanceKlinesAdapter.fetch: until ({until!r}) must be > since ({since!r})"
-        )
-
-
-def _pair_to_binance_symbol(pair: Pair) -> str:
-    """Translate hermes :class:`Pair` to Binance concatenated-symbol form.
-
-    Args:
-        pair: Trading pair.
-
-    Returns:
-        Uppercase concatenated symbol (e.g. ``"BTCUSDT"``).
-    """
-    return f"{pair.base.value}{pair.quote.value}"
-
-
 def _to_epoch_ms(dt: datetime) -> int:
     """Return the ms-since-epoch UTC timestamp for a tz-aware datetime.
 
@@ -354,28 +322,7 @@ def _from_epoch_ms(ms: int) -> datetime:
 
 
 def _decimal_or_raise(raw: object, *, field_name: str) -> Decimal:
-    """Coerce a raw JSON field into a :class:`Decimal` or raise :class:`ExchangeError`.
-
-    Args:
-        raw: Field value from the exchange response.
-        field_name: Descriptive name used in the error message.
-
-    Returns:
-        The value as :class:`Decimal`.
-
-    Raises:
-        hermes.domain.errors.ExchangeError: On non-string/numeric input
-            or a value that :class:`Decimal` refuses.
-    """
-    if not isinstance(raw, (str, int, float)):
-        raise ExchangeError(f"klines row field {field_name!r} not string/numeric: {raw!r}")
-    try:
-        value = Decimal(str(raw))
-    except InvalidOperation as exc:
-        raise ExchangeError(f"klines row field {field_name!r} is not a decimal: {raw!r}") from exc
-    if not value.is_finite():
-        raise ExchangeError(f"klines row field {field_name!r} is not a finite number: {raw!r}")
-    return value
+    return wire_decimal(raw, field=f"klines row field {field_name!r}", error=ExchangeError)
 
 
 def _row_to_kline(

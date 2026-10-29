@@ -1,14 +1,12 @@
 """Unit tests for the dataset manifest value objects and the bar content hash.
 
-Invariants under test (openspec/changes/356-data-manifest/change.md D-1, D-2):
+Invariants under test (openspec/archive/356-data-manifest/change.md D-1, D-2):
 
 - The content hash is a function of bar content only: input order and
   Decimal trailing zeros do not change it, any OHLCV or time change does.
 - Split windows are inclusive at both ends and ordered without overlap.
 - A manifest pins at most one entry per (pair, interval, split).
 """
-
-from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal

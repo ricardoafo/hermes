@@ -8,7 +8,7 @@ uniform start 2020-09-01 up to, but never including, the sealed OOS window
 month on or after it is ever enumerated or downloaded, and no flag changes
 that (#925). Supports two dataset kinds:
 
-  * klines     - OHLCV bars at 1h/4h/1d intervals (default)
+  * klines     - OHLCV bars at 1h/4h/1d intervals (default), 1m on request
   * agg_trades - aggregated trades, no interval dimension
 
 Each ZIP is SHA256-verified against Binance's `.CHECKSUM` companion
@@ -20,8 +20,8 @@ agg_trades coexist.
 Reference:
     - docs/experiments/swing-mvp1/data-ingest-plan.md (URL patterns)
     - docs/experiments/swing-mvp1/pre-registration-v1.md sec 4 (windows)
-    - openspec/changes/data-ingest-binance-vision/change.md (original)
-    - openspec/changes/data-ingest-agg-trades-and-peg/change.md (this extension)
+    - openspec/archive/data-ingest-binance-vision/change.md (original)
+    - openspec/archive/data-ingest-agg-trades-and-peg/change.md (this extension)
 
 Usage:
     python scripts/data/ingest_binance_vision.py [OPTIONS]
@@ -61,15 +61,13 @@ Exit codes:
     1 - one or more unexpected failures (see stderr for details)
 """
 
-from __future__ import annotations
-
 import argparse
 import hashlib
 import json
 import os
 import shutil
 import sys
-from datetime import date, datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -82,6 +80,9 @@ from _manifest_util import manifest_read, manifest_transaction
 # --- Pre-registration v1 sec 4 constants (BINDING; do not edit without a v2) ---
 PAIRS: tuple[str, ...] = ("BTCUSDT", "ETHUSDT", "SOLUSDT")
 INTERVALS: tuple[str, ...] = ("1h", "4h", "1d")
+# Opt-in only: a full default run never downloads minute bars (~400 MB for the
+# Train window); the stop slippage check (#1104) asks for them by name.
+ON_REQUEST_INTERVALS: tuple[str, ...] = ("1m",)
 BASE_URL = "https://data.binance.vision/data/spot/monthly"
 START_YEAR, START_MONTH = 2020, 9  # uniform start (SOL availability constraint)
 EXPERIMENT_MANIFEST = Path(__file__).resolve().parents[2] / (
@@ -329,7 +330,7 @@ def process_target(target: Target, root: Path, manifest: dict) -> tuple[str, str
         "sha256": actual,
         "url": target.url(),
         "size_bytes": len(data),
-        "downloaded_at": date.today().isoformat(),
+        "downloaded_at": datetime.now(UTC).date().isoformat(),
     }
     return "ok", f"OK ({len(data):,} bytes)"
 
@@ -381,7 +382,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--interval",
         action="append",
-        choices=list(INTERVALS),
+        choices=[*INTERVALS, *ON_REQUEST_INTERVALS],
         help="Restrict to one or more intervals (klines only; repeatable)",
     )
     parser.add_argument(

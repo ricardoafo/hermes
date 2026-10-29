@@ -9,8 +9,6 @@ captures the fact.
 Reference: ADR-003 §02 (exchange interactions), code-conventions.md §10 + §3.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 from typing import ClassVar

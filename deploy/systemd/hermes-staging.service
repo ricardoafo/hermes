@@ -2,7 +2,7 @@
 #
 # Shipped disabled: nothing in the repo enables it. The operator copies it to
 # /etc/systemd/system and enables it by hand; see
-# docs/guides/staging-on-hermes-01.md. Layout, fully separate from prod:
+# docs/guides/environments.md. Layout, fully separate from prod:
 #   /opt/hermes-staging/current    -> versions/<version>  (atomic symlink)
 #   /opt/hermes-staging/current/.venv   per-release virtualenv
 #   /opt/hermes-staging/current/config  per-release non-secret YAML
@@ -13,8 +13,10 @@
 
 [Unit]
 Description=Hermes trading engine, staging (hermes serve)
-After=network-online.target
-Wants=network-online.target
+# A restart reads the clock to tell missed bars from live ones (#1078): with
+# systemd-time-wait-sync enabled, time-sync.target waits for the first NTP sync.
+After=network-online.target time-sync.target
+Wants=network-online.target time-sync.target
 # Same crash-loop guard as prod: every start re-fetches warm-up history from
 # the same IP prod uses, so a loop here would eat prod's rate limit.
 StartLimitIntervalSec=10min
@@ -43,6 +45,23 @@ PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
 ReadWritePaths=/var/lib/hermes-staging
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+UMask=0027
 
 [Install]
 WantedBy=multi-user.target

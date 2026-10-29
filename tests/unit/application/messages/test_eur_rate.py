@@ -3,10 +3,8 @@
 Invariant protected: a missing, silent, invalid or failing lookup means "no
 rate", so a push never fails or shows a wrong euro figure because of it.
 
-Reference: openspec/changes/668-eur-prices-in-pushes/change.md (D-2, R-2).
+Reference: openspec/archive/668-eur-prices-in-pushes/change.md (D-2, R-2).
 """
-
-from __future__ import annotations
 
 from decimal import Decimal
 

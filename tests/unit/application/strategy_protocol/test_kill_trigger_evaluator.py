@@ -15,10 +15,7 @@ Tests cover:
 - Property: no trigger below all thresholds.
 """
 
-from __future__ import annotations
-
 from dataclasses import replace
-from pathlib import Path
 
 import pytest
 from hypothesis import given, settings
@@ -28,7 +25,8 @@ from hermes.application.strategy_protocol.kill_trigger_evaluator import (
     ExperimentState,
     KillTriggerEvaluator,
 )
-from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.infrastructure.project_root import load_pre_registration
+from tests.support.paths import REPO_ROOT
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -38,12 +36,8 @@ from hermes.application.strategy_protocol.preregistration import PreRegistration
 @pytest.fixture(scope="module")
 def evaluator() -> KillTriggerEvaluator:
     """Return a KillTriggerEvaluator using real pre-registration thresholds."""
-    here = Path(__file__).resolve().parent
-    for candidate in [here, *here.parents]:
-        if (candidate / "pyproject.toml").exists():
-            pre_reg = PreRegistration(project_root=candidate)
-            return KillTriggerEvaluator(pre_reg=pre_reg)
-    pytest.skip("Could not find project root")
+    pre_reg = load_pre_registration(REPO_ROOT)
+    return KillTriggerEvaluator(pre_reg=pre_reg)
 
 
 def _safe_state(**overrides: float | bool | None) -> ExperimentState:
@@ -120,9 +114,8 @@ class TestKillTriggerEvaluatorIndividualTriggers:
         """Kill reason must be a non-empty string that describes the drawdown trigger."""
         state = _safe_state(max_drawdown=0.20)
         decision = evaluator.evaluate(state)
-        assert "drawdown" in decision.reason.lower() or "15%" in decision.reason, (
-            f"Kill reason for drawdown trigger must mention 'drawdown' or '15%'. "
-            f"Got '{decision.reason}'."
+        assert decision.reason == "Max drawdown 20.0% >= kill threshold 15.0% (pre-reg §10).", (
+            f"Kill reason must name the drawdown and the 15% threshold. Got '{decision.reason}'."
         )
 
     def test_sa9_halt_triggers(self, evaluator: KillTriggerEvaluator) -> None:
@@ -214,8 +207,8 @@ class TestKillTriggerEvaluatorPriority:
         assert decision.triggered is True, (
             "When both drawdown and SA-9 fire, kill must be triggered."
         )
-        assert "15%" in decision.reason or "drawdown" in decision.reason.lower(), (
-            f"Reason should mention drawdown when both triggers fire. Got '{decision.reason}'."
+        assert decision.rule == "max_drawdown", (
+            f"Drawdown outranks SA-9 when both fire. Got rule {decision.rule!r}."
         )
 
 

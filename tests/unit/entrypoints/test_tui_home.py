@@ -19,8 +19,6 @@ Invariants:
 # The console prints the typographic minus (U+2212) on purpose.
 # ruff: noqa: RUF001, RUF002
 
-from __future__ import annotations
-
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal

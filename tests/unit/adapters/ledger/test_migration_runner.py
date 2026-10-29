@@ -10,8 +10,6 @@ Verifies:
 Reference: ADR-003 §03 (migration approach).
 """
 
-from __future__ import annotations
-
 import sqlite3
 from contextlib import closing
 from pathlib import Path

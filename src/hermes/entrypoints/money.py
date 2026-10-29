@@ -12,10 +12,8 @@ is the empty state, not an error.
 Exit codes: 0 success, 2 usage or unknown scenario, 3 unreadable ledger.
 
 Reference: issue #498; console build plan step 5;
-openspec/changes/live-home-screen/change.md (D-1 to D-3).
+openspec/archive/live-home-screen/change.md (D-1 to D-3).
 """
-
-from __future__ import annotations
 
 import argparse
 import json

@@ -14,7 +14,8 @@ Design notes
 - Environment tag mirrors :attr:`HermesConfig.env` (dev / sandbox / prod)
   so Sentry's UI can filter accordingly.
 - No PII in tags — we tag the runtime env, not user info
-  (``send_default_pii=False`` explicitly on ``sentry_sdk.init``).
+  (``send_default_pii`` stays unset: the SDK then sends no PII, and passing
+  it is deprecated since sentry-sdk 2.72).
 - No stack-frame local variables on events (``include_local_variables=False``).
   The SDK's scrubber masks keys named like ``token`` or ``secret``, but a
   credential inside another local (the Telegram adapter builds
@@ -42,8 +43,6 @@ enforce that). CLI wiring (``entrypoints/cli.py``) is the only expected
 call site for :func:`initialize`; the router / adapters can call
 :func:`capture` inline for exceptions they catch-and-continue on.
 """
-
-from __future__ import annotations
 
 from typing import Any
 
@@ -76,7 +75,7 @@ def initialize(dsn: str, environment: str) -> None:
         dsn: The Sentry Data Source Name. Empty string disables the
             integration silently — no wire calls happen.
         environment: Environment tag attached to every event
-            (``"dev"`` / ``"sandbox"`` / ``"staging"`` / ``"prod"``). Mirrors
+            (``"dev"`` / ``"sandbox"`` / ``"qa"`` / ``"staging"`` / ``"prod"``). Mirrors
             :attr:`HermesConfig.env` so Sentry's UI can filter accordingly.
 
     Notes:
@@ -97,7 +96,6 @@ def initialize(dsn: str, environment: str) -> None:
             environment=environment,
             # No PII: we do not want user emails / IP / session tokens
             # attached to events (LOPDGDD / GDPR posture).
-            send_default_pii=False,
             # Locals can hold credentials under names the scrubber does
             # not know (see the module docstring).
             include_local_variables=False,

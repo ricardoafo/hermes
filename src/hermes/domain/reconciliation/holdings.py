@@ -6,10 +6,8 @@ replay the shadow loop trades from, an exchange's balances) is compared to it
 asset by asset. A difference within the tolerance is a match; anything larger
 is drift. Fail loud, never auto-heal (ADR-003 §10): this module only reports.
 
-Reference: openspec/changes/35-monthly-reconciliation/change.md D-1, D-2.
+Reference: openspec/archive/35-monthly-reconciliation/change.md D-1, D-2.
 """
-
-from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
@@ -18,11 +16,11 @@ from decimal import Decimal, localcontext
 from enum import StrEnum
 from typing import Final
 
-from hermes.domain.portfolio.precision import EXACT_CONTEXT
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
+from hermes.domain.value_objects.precision import EXACT_CONTEXT
 
 __all__ = [
     "CheckStatus",

@@ -24,8 +24,6 @@ Example-based tests cover:
 Reference: ADR-003 §03, ADR-002 (Spanish FIFO), code-conventions.md.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -167,7 +165,7 @@ class TestSelectLotsFifoExactFill:
         )
         assert isinstance(result, Success)
         consumed_total = sum((c.consumed_qty.amount for c in result.unwrap()), start=Decimal("0"))
-        assert consumed_total == target
+        assert consumed_total == total_available / 2
 
 
 class TestSelectLotsFifoInsufficientInventory:
@@ -185,8 +183,12 @@ class TestSelectLotsFifoInsufficientInventory:
             Money(amount=Decimal("60000"), currency=Currency.EUR),
             datetime(2027, 3, 20, tzinfo=UTC),
         )
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), InsufficientInventory)
+        assert result == Failure(
+            InsufficientInventory(
+                requested=Quantity(amount=target, asset=Currency.BTC),
+                available=Quantity(amount=total_available, asset=Currency.BTC),
+            )
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -315,8 +317,12 @@ class TestSelectLotsFifoAssetFiltering:
             Money(amount=Decimal("70000"), currency=Currency.EUR),
             datetime(2027, 3, 20, tzinfo=UTC),
         )
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), InsufficientInventory)
+        assert result == Failure(
+            InsufficientInventory(
+                requested=Quantity(amount=Decimal("0.001"), asset=Currency.BTC),
+                available=Quantity(amount=Decimal("0"), asset=Currency.BTC),
+            )
+        )
 
 
 class TestMultiLotFanOut:

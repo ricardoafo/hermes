@@ -7,6 +7,9 @@ fields a query may use. The operator types one line:
 - ``field>=value``, ``<=``, ``>`` and ``<`` compare: as numbers when the row
   holds a number, as ISO text for dates, as case-insensitive text otherwise;
 - ``since:7d`` or ``since:24h`` keeps rows whose ``at`` timestamp is that recent;
+- ``level`` compares by severity, not by spelling: ``debug < info < warn <
+  error < critical`` (``warn`` and ``warning`` are the same level), so
+  ``level>=warn`` keeps warnings and worse, and a level column sorts by severity;
 - anything else is free text, searched in every value; quotes keep spaces
   (``"stop raised"``, ``coin:"two words"``).
 
@@ -18,11 +21,12 @@ Sorting is stable over several :class:`SortKey` values; empty values sort last
 whichever way a key points. Everything here is pure, so a list filters the same
 way in tests, in the TUI and anywhere else.
 
-Reference: openspec/changes/729-query-bar/change.md.
+Reference: openspec/archive/729-query-bar/change.md;
+openspec/archive/716-logs-screen/change.md (the level order and the
+``service`` / ``trace`` fields).
 """
 
 import difflib
-import os
 import re
 from collections import Counter
 from collections.abc import Collection, Iterable, Mapping, Sequence
@@ -31,10 +35,13 @@ from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from functools import partial
+from itertools import takewhile
 from typing import Final
 
 __all__ = [
     "AT_FIELD",
+    "LEVEL_FIELD",
+    "LEVEL_ORDER",
     "SHARED_FACETS",
     "SINCE_FIELD",
     "Condition",
@@ -54,15 +61,29 @@ __all__ = [
     "filter_rows",
     "format_query",
     "format_sort",
+    "level_rank",
     "matches",
     "parse_query",
     "sort_rows",
     "toggle_sort",
 ]
 
-SHARED_FACETS: Final = ("year", "month", "day", "coin", "kind", "state", "level", "run")
+SHARED_FACETS: Final = (
+    "year",
+    "month",
+    "day",
+    "coin",
+    "kind",
+    "state",
+    "level",
+    "service",
+    "trace",
+    "run",
+)
 SINCE_FIELD: Final = "since"
 AT_FIELD: Final = "at"
+LEVEL_FIELD: Final = "level"
+LEVEL_ORDER: Final = ("debug", "info", "warning", "error", "critical")
 
 type Row = Mapping[str, object]
 
@@ -72,6 +93,8 @@ _TERM = re.compile(r"([A-Za-z_]+)(>=|<=|>|<|:)(.*)", re.DOTALL)
 _SINCE_VALUE = re.compile(r"([0-9]+)([hdHD])")
 _NEEDS_QUOTES = re.compile(r"[\s:<>=]")
 _SINCE_HELP: Final = "since takes hours or days, like since:24h or since:7d"
+_LEVEL_HELP: Final = "level takes debug, info, warn, error or critical, like level>=warn"
+_LEVEL_ALIASES: Final = {"warn": "warning"}
 _QUOTE_HELP: Final = 'quotes must wrap a whole value, like "two words"'
 
 
@@ -219,13 +242,36 @@ def _term(token: str, fields: Collection[str]) -> Term | None:
     value = _unquote(raw)
     if not value:
         raise QueryError(f'"{name}{op.value}" needs a value, like {name}:{_example(name)}')
+    if name == LEVEL_FIELD and level_rank(value) is None:
+        raise QueryError(_LEVEL_HELP)
     return Condition(name, op, value)
 
 
+def level_rank(value: object) -> int | None:
+    """Return a level's place in :data:`LEVEL_ORDER`; ``None`` for anything else.
+
+    Args:
+        value: A level name, any case; ``warn`` counts as ``warning``.
+
+    Returns:
+        ``0`` for debug up to ``4`` for critical.
+    """
+    if not isinstance(value, str):
+        return None
+    name = value.strip().casefold()
+    name = _LEVEL_ALIASES.get(name, name)
+    return LEVEL_ORDER.index(name) if name in LEVEL_ORDER else None
+
+
 def _example(field: str) -> str:
-    return {"coin": "BTC", "year": "2026", "month": "2026-10", "day": "2026-10-05"}.get(
-        field, "value"
-    )
+    return {
+        "coin": "BTC",
+        "year": "2026",
+        "month": "2026-10",
+        "day": "2026-10-05",
+        "level": "warn",
+        "service": "engine",
+    }.get(field, "value")
 
 
 def _known(fields: Collection[str]) -> tuple[str, ...]:
@@ -304,7 +350,12 @@ def _number(value: object) -> Decimal | None:
     return Decimal(str(value)) if isinstance(value, float) else Decimal(value)
 
 
-def _compare(value: object, written: str) -> int | None:
+def _compare(field: str, value: object, written: str) -> int | None:
+    if field == LEVEL_FIELD:
+        have_rank, want_rank = level_rank(value), level_rank(written)
+        if have_rank is None or want_rank is None:
+            return None
+        return (have_rank > want_rank) - (have_rank < want_rank)
     number = _number(value)
     if number is not None:
         try:
@@ -342,7 +393,7 @@ def _holds(term: Term, row: Row, now: datetime) -> bool:
     value = row.get(term.field)
     if value is None:
         return False
-    compared = _compare(value, term.value)
+    compared = _compare(term.field, value, term.value)
     return compared is not None and _passes(term.op, compared)
 
 
@@ -392,7 +443,9 @@ def _sort_value(value: object) -> tuple[int, Decimal | str]:
 
 
 def _field_sort_value(field: str, row: Row) -> tuple[int, Decimal | str]:
-    return _sort_value(row[field])
+    value = row[field]
+    rank = level_rank(value) if field == LEVEL_FIELD else None
+    return _sort_value(value) if rank is None else (0, Decimal(rank))
 
 
 def sort_rows[R: Row](rows: Iterable[R], keys: Sequence[SortKey]) -> tuple[R, ...]:
@@ -479,6 +532,14 @@ def completions(prefix: str, fields: Collection[str]) -> tuple[str, ...]:
     return tuple(name for name in _known(fields) if name.startswith(wanted))
 
 
+def _common_prefix(names: Sequence[str]) -> str:
+    """Return the longest leading run of characters every name shares."""
+    return "".join(
+        chars[0]
+        for chars in takewhile(lambda chars: len(set(chars)) == 1, zip(*names, strict=False))
+    )
+
+
 def complete(text: str, fields: Collection[str]) -> str:
     """Complete the field name being typed at the end of ``text`` (Tab).
 
@@ -497,7 +558,7 @@ def complete(text: str, fields: Collection[str]) -> str:
     names = completions(word, fields)
     if not names:
         return text
-    filled = f"{names[0]}:" if len(names) == 1 else os.path.commonprefix(list(names))
+    filled = f"{names[0]}:" if len(names) == 1 else _common_prefix(names)
     if len(filled) <= len(word):
         return text
     return text[: len(text) - len(word)] + filled

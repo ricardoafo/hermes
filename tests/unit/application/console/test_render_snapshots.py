@@ -7,8 +7,6 @@ Snapshots store one string per line so blank lines survive the repository's
 trailing-whitespace hook.
 """
 
-from __future__ import annotations
-
 import pytest
 from syrupy.assertion import SnapshotAssertion
 

@@ -50,7 +50,6 @@ from run_calibration import (
     DATA_MANIFEST_JSON,
     FEE_HISTORY_CSV,
     _load_manifest,
-    _strategy_parameters,
 )
 from run_calibration_full import _select
 from run_portfolio_backtest import _kernel, _load, _parse_pairs
@@ -65,7 +64,6 @@ from hermes.application.execution.kernel import (
     Halted,
     MarketContext,
 )
-from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.domain.errors import DataManifestFormatError, DomainError, InfraError
 from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.fees.fee_schedule_selector import (
@@ -74,12 +72,12 @@ from hermes.domain.fees.fee_schedule_selector import (
 )
 from hermes.domain.market_data.dataset_manifest import DataSplit
 from hermes.domain.strategy.signal import StrategySignal
-from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.logging import new_correlation_id
+from hermes.infrastructure.project_root import load_pre_registration
 
 EXIT_SAME: Final = 0
 EXIT_CHANGED: Final = 1
@@ -265,7 +263,7 @@ async def _record(args: argparse.Namespace) -> int:
         roster, model = _select(Path(args.config_dir), args.strategy, ExecutionModel().depth_frac)
         start, end = train_window(Path(args.manifest))
         manifest = _load_manifest(Path(args.manifest))
-        pairs = _parse_pairs(",".join(PreRegistration().universe()))
+        pairs = _parse_pairs(",".join(load_pre_registration().universe()))
         bars, _ = await _load(manifest, pairs, start, end)
         fee_rows = load_binance_fee_history(Path(args.fee_history))
     except (
@@ -290,11 +288,11 @@ async def _record(args: argparse.Namespace) -> int:
         kernel_type=RecordingKernel,
     )
     assert isinstance(kernel, RecordingKernel)  # noqa: S101 — narrows the type for the reader
-    parameters = _strategy_parameters()
+    kind = roster.strategy_kind()
     try:
         replay(
             bars,
-            strategy={pair: SwingStrategyAdapter(**parameters) for pair in pairs},
+            strategy={pair: kind.create() for pair in pairs},
             kernel=kernel,
             window_start=start,
             window_end=end,

@@ -9,10 +9,8 @@ lists each finding.
 
 Exit codes: 0 OK, 1 findings, 2 usage, 3 ledger missing or unreadable.
 
-Reference: openspec/changes/538-ledger-verify/change.md.
+Reference: openspec/archive/538-ledger-verify/change.md.
 """
-
-from __future__ import annotations
 
 import argparse
 import json
@@ -21,8 +19,8 @@ from pathlib import Path
 from typing import Final, TextIO
 
 from hermes.adapters.ledger.integrity import LedgerReport, check_ledger, open_read_only
+from hermes.entrypoints._cli import add_db_arg, require_ledger
 from hermes.entrypoints._streams import resolve_err
-from hermes.entrypoints.serve import DEFAULT_DB_PATH
 
 __all__ = ["main"]
 
@@ -58,7 +56,7 @@ def main(argv: list[str], *, stream: TextIO, err: TextIO | None = None) -> int:
 
 def _verify(argv: list[str], stream: TextIO, err: TextIO) -> int:
     parser = argparse.ArgumentParser(prog="hermes ledger verify", add_help=False)
-    parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH)
+    add_db_arg(parser)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("-h", "--help", action="store_true")
     try:
@@ -70,9 +68,9 @@ def _verify(argv: list[str], stream: TextIO, err: TextIO) -> int:
         stream.write(_USAGE)
         return 0
     db: Path = parsed.db
-    if not db.exists():
-        err.write(f"ERROR: no ledger at {db}.\n")
-        return 3
+    missing = require_ledger(db, err)
+    if missing is not None:
+        return missing
     try:
         conn = open_read_only(db)
         try:

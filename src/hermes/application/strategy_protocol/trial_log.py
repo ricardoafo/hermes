@@ -1,9 +1,7 @@
 """Classify and summarise backtest trials for the Deflated Sharpe Ratio.
 
-Reference: pre-registration-v1.md §4 and §8.1, openspec/changes/357-trial-log/change.md.
+Reference: pre-registration-v1.md §4 and §8.1, openspec/archive/357-trial-log/change.md.
 """
-
-from __future__ import annotations
 
 from datetime import datetime
 

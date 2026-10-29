@@ -2,7 +2,7 @@
 
 Invariants:
 
-- tab 6 shows the supervisor desk's daily brief, unchanged, with the list of
+- tab 7 shows the supervisor desk's daily brief, unchanged, with the list of
   briefs beside it from 100 columns and above it below that;
 - every brief carries the "never sees profit" line, and a digest says so;
 - no price, value or P&L of the scenario is drawn on the screen;
@@ -14,20 +14,14 @@ Every app runs with motion off, a frozen clock and synthetic demo data, and
 never reads or writes the real settings file.
 """
 
-from __future__ import annotations
-
 import asyncio
 import json
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from importlib import resources
-from typing import ClassVar
 
 import pytest
 from syrupy.assertion import SnapshotAssertion
-from syrupy.extensions.image import SVGImageSnapshotExtension
-from syrupy.location import PyTestLocation
-from syrupy.types import SnapshotIndex
 
 from hermes.adapters.console import FixtureReadModel
 from hermes.application.console import ConsoleReadModel, Surface, ViewNotAvailableError
@@ -44,6 +38,7 @@ from hermes.entrypoints.tui_briefs import (
 )
 from hermes.entrypoints.tui_settings import ThemeChoice
 from hermes.entrypoints.tui_theme import BASE
+from tests.support.tui_views import assert_view, capture
 
 # The fixtures' read time (14:12 Madrid), well inside Auto's day window.
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
@@ -154,15 +149,15 @@ def _briefs_text(model: ConsoleReadModel) -> str:
         app = _app(model)
         async with app.run_test(size=(160, 45)) as pilot:
             await pilot.pause()
-            await pilot.press("6")
+            await pilot.press("7")
             await pilot.pause()
-            assert app.tab == 5
-            return app.plain_text("screen-6")
+            assert app.tab == 6
+            return app.plain_text("screen-7")
 
     return asyncio.run(drive())
 
 
-def test_pressing_6_shows_the_desks_daily_brief() -> None:
+def test_pressing_7_shows_the_desks_daily_brief() -> None:
     """Tab 6 draws the scenario's brief, as the desk published it."""
     model = FixtureReadModel.load("ok-two-positions")
     (brief,) = model.briefs()
@@ -210,28 +205,14 @@ def _document(name: str) -> dict[str, object]:
     return loaded
 
 
-class _NamedSVG(SVGImageSnapshotExtension):
-    """Store each snapshot under the name given to ``snapshot(name=...)`` alone."""
-
-    _file_extension: ClassVar[str] = "svg"
-
-    @classmethod
-    def get_snapshot_name(cls, *, test_location: PyTestLocation, index: SnapshotIndex = 0) -> str:
-        """Return the bare custom name, e.g. ``briefs_neon_160x45``."""
-        if isinstance(index, str):
-            return index
-        return super().get_snapshot_name(test_location=test_location, index=index)
-
-
 def _svg(size: tuple[int, int], theme: ThemeChoice) -> str:
     async def drive() -> str:
         app = _app(FixtureReadModel.load("ok-two-positions"), theme)
         async with app.run_test(size=size) as pilot:
             await pilot.pause()
-            await pilot.press("6")
+            await pilot.press("7")
             await pilot.pause()
-            svg = app.export_screenshot()
-        return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
+            return capture(app)
 
     return asyncio.run(drive())
 
@@ -249,4 +230,4 @@ def test_briefs_svg_snapshot(
 ) -> None:
     """The reviewed picture of the Briefs screen, in one theme, at one spec breakpoint."""
     name = f"briefs_{theme_name}_{size[0]}x{size[1]}"
-    assert _svg(size, theme) == snapshot(extension_class=_NamedSVG, name=name)
+    assert_view(snapshot, _svg(size, theme), name=name)

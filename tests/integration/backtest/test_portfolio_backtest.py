@@ -18,8 +18,6 @@ Invariants (822-portfolio-backtest change.md R-1..R-4):
   count and drawdown are the run's own.
 """
 
-from __future__ import annotations
-
 import json
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
@@ -28,6 +26,7 @@ from pathlib import Path
 
 import pytest
 
+from hermes.adapters.files import LocalFiles
 from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
 from hermes.application.backtest.performance import performance_file
 from hermes.application.backtest.replay import BacktestRun, replay
@@ -35,8 +34,8 @@ from hermes.application.calibration.certification_gates import GateEvidence
 from hermes.application.execution.kernel import FillKernel
 from hermes.application.order_router.risk_engine import RiskEngine
 from hermes.application.portfolio.tracker import PortfolioTracker
+from hermes.application.strategy_protocol.strategy_factory import strategy_kind
 from hermes.domain.calibration.trial_record import TrialSummary
-from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.risk.correlation_lock import CorrelationLock
@@ -47,7 +46,14 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.entrypoints.certify import apply_performance
 from hermes.ports.strategy import StrategyPort
-from tests.support.fill_kernel import BTC_USDT, SIZING, STRATEGY, fees, kill_evaluator, seed
+from tests.support.fill_kernel import (
+    BTC_USDT,
+    SIZING,
+    STRATEGY,
+    fees_at,
+    kill_evaluator,
+    seed,
+)
 from tests.support.parity import ScriptedStrategy
 
 pytestmark = pytest.mark.integration
@@ -123,11 +129,6 @@ def _kernel() -> FillKernel:
     )
 
 
-def _fees_at(at: datetime, pair: Pair) -> FeeSchedule:
-    _ = at
-    return fees(pair)
-
-
 def _run(
     bars: Sequence[Bar],
     strategies: Mapping[Pair, StrategyPort],
@@ -143,7 +144,7 @@ def _run(
         kernel=kernel if kernel is not None else _kernel(),
         window_start=window_start,
         window_end=window_end,
-        fees_at=_fees_at,
+        fees_at=fees_at,
         correlation_id=lambda: next(ids),
     )
 
@@ -297,11 +298,35 @@ def test_performance_file_round_trips_through_certify(tmp_path: Path) -> None:
     path = tmp_path / "train_val.json"
     path.write_text(json.dumps(payload))
 
-    metrics = apply_performance(GateEvidence(), path).backtest
+    metrics = apply_performance(GateEvidence(), path, files=LocalFiles()).backtest
 
     assert metrics is not None
     assert (metrics.trade_count, sorted(run.declined), metrics.max_drawdown) == (
         2,
         ["correlation-lock", "exposure-cap"],
         pytest.approx(max_drawdown([float(e) for _, e in run.daily_equity])),
+    )
+
+
+# SEV-1: v1 and v2 must trade their signed rule after the factory lands (contract §2a)
+def test_an_entry_with_no_signal_replays_exactly_as_the_swing_adapter() -> None:
+    """The factory's default kind is today's adapter, byte for byte (issue #1074).
+
+    Same bars, same kernel set-up: building through ``strategy_kind(None)``
+    gives the same signals, fills, refusals and equity curve as building
+    ``SwingStrategyAdapter()`` directly, as serve, parity and the driver did
+    before the factory existed.
+    """
+    bars = _bars(dict.fromkeys(_PAIRS, _swing_move), days=260)
+    window = {"window_start": _T0 + timedelta(days=210), "window_end": _T0 + timedelta(days=260)}
+    kind = strategy_kind(None)
+
+    direct = _run(bars, {p: SwingStrategyAdapter() for p in _PAIRS}, **window)
+    built = _run(bars, {p: kind.create(kind.default_parameters()) for p in _PAIRS}, **window)
+
+    assert (built.signals_seen, built.fills, built.declined, built.daily_equity) == (
+        direct.signals_seen,
+        direct.fills,
+        direct.declined,
+        direct.daily_equity,
     )

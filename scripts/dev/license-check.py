@@ -30,8 +30,7 @@ Explicitly blocked:
   are ambiguous in the Python packaging story; safer to block
 
 If a dep with a non-allowlisted license is genuinely required, add an
-exception line + justification to `known_licenses.yaml` (parallel to
-`known_advisories.yaml`) and re-run.
+exception line + justification to `config/ci/known_licenses.yaml` and re-run.
 
 ## Invocation
 
@@ -51,8 +50,6 @@ environment, which reads as zero packages and checks nothing (#757).
 - 1: at least one violation, or zero packages read
 - 2: usage error / malformed stdin
 """
-
-from __future__ import annotations
 
 import json
 import os
@@ -104,14 +101,14 @@ ALLOWED_LICENSES = frozenset(
 
 
 # ────────────────────────────────────────────────────────────────
-# Package-name exemptions live in `known_licenses.yaml` at repo root.
+# Package-name exemptions live in `config/ci/known_licenses.yaml`.
 # The file uses a simple YAML-adjacent format that this script parses
 # line-by-line (no PyYAML dep — Phase 0 stays stdlib-only). See the
 # file's own header for the format.
 # ────────────────────────────────────────────────────────────────
 def load_exceptions() -> set[str]:
     """Return set of package names allowlisted despite license mismatch."""
-    exceptions_path = Path(__file__).resolve().parent.parent.parent / "known_licenses.yaml"
+    exceptions_path = Path(__file__).resolve().parents[2] / "config/ci/known_licenses.yaml"
     if not exceptions_path.is_file():
         return set()
     exceptions: set[str] = set()
@@ -267,7 +264,7 @@ def run(packages: list[dict]) -> int:
     for v in violations:
         print(f"  - {v}", file=sys.stderr)
     print(
-        "\nAdd exception to `known_licenses.yaml` if the license is acceptable for our use.",
+        "\nAdd an exception to `config/ci/known_licenses.yaml` if the license is acceptable.",
         file=sys.stderr,
     )
     return 1

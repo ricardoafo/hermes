@@ -12,11 +12,9 @@ places the touch at the pre-registered execution price (pre-registration §6.2),
 so an order that fits the touch fills exactly at that price and larger orders
 walk deeper or are rejected.
 
-Reference: openspec/changes/backtest-driver-mvp1-phase2/change.md D-1, R-3;
+Reference: openspec/archive/backtest-driver-mvp1-phase2/change.md D-1, R-3;
 ADR-011 D-07.
 """
-
-from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import ROUND_DOWN, Decimal

@@ -1,1 +1,1 @@
-- Console: a toast says when a new bar has been checked and when the next one is due, and `HERMES_CONSOLE_BEEP=on` rings the terminal bell once whenever hermes turns late or down (#721).
+- The status row shows a spinner while a due bar check runs, and a new Activity row slides in from the left.

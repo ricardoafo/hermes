@@ -24,15 +24,12 @@ Measurement only (decision 9): trading code never imports this package.
 Reference: ADR-016, change ``tax-estimates``.
 """
 
-from __future__ import annotations
-
 from collections import defaultdict
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 from typing import Final, Literal
-from zoneinfo import ZoneInfo
 
 from returns.result import Failure
 
@@ -46,12 +43,14 @@ from hermes.domain.lots.eur_fifo import (
 )
 from hermes.domain.tax.marginal import marginal_tax
 from hermes.domain.tax.netting import CarriedLoss, TaxpayerYear
-from hermes.domain.tax.precision import exact
 from hermes.domain.tax.scale import SavingsScale
 from hermes.domain.tax.two_month import Acquisition, TwoMonthFlag, two_month_flags
 from hermes.domain.tax.year_position import Disposal, YearPosition, tax_year_of
 from hermes.domain.trading.order import OrderSide
+from hermes.domain.value_objects.cents import to_cents
 from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.precision import exact
+from hermes.domain.value_objects.time import MADRID
 from hermes.ports.ledger import EurTradeRow, TaxTradeSourcePort
 
 __all__ = [
@@ -62,15 +61,14 @@ __all__ = [
     "TaxService",
     "TaxYearEstimate",
     "estimate_year",
+    "rate_percent",
 ]
 
 ESTIMATE_LABEL: Final[str] = "estimate"
 SHADOW_LABEL: Final[str] = "shadow (no real tax due)"
 NO_PROFILE_NOTICE: Final[str] = "no taxpayer profile, assuming no other income"
 
-_MADRID: Final = ZoneInfo("Europe/Madrid")
 _ZERO: Final[Decimal] = Decimal(0)
-_CENT: Final[Decimal] = Decimal("0.01")
 _HUNDRED: Final[Decimal] = Decimal(100)
 
 
@@ -257,9 +255,9 @@ def estimate_year(
 
     today_tax = _ZERO
     if is_current:
-        today_start = datetime.combine(as_of.astimezone(_MADRID).date(), time(0), tzinfo=_MADRID)
+        today_start = datetime.combine(as_of.astimezone(MADRID).date(), time(0), tzinfo=MADRID)
         tomorrow = today_start.date() + timedelta(days=1)
-        today_end = datetime.combine(tomorrow, time(0), tzinfo=_MADRID)
+        today_end = datetime.combine(tomorrow, time(0), tzinfo=MADRID)
         with exact():
             today_tax = hermes_tax_through(today_end) - hermes_tax_through(today_start)
 
@@ -377,7 +375,11 @@ def _pro_rata(total: Decimal, parts: Sequence[Decimal], whole: Decimal) -> list[
     return shares
 
 
-def _percent(rate: Decimal) -> Decimal:
+def rate_percent(rate: Decimal) -> Decimal:
+    """Return a tax rate as a percentage, ``Decimal("0.19")`` as ``19``.
+
+    Whole percentages drop their decimals; others keep every digit.
+    """
     value = rate * _HUNDRED
     return value.quantize(Decimal(1)) if value == value.to_integral_value() else value
 
@@ -385,14 +387,14 @@ def _percent(rate: Decimal) -> Decimal:
 def _band(scale: SavingsScale, savings_base: Decimal) -> TaxBand:
     position = scale.band_at(savings_base)
     return TaxBand(
-        rate=_percent(position.rate),
-        next_rate=None if position.next_rate is None else _percent(position.next_rate),
+        rate=rate_percent(position.rate),
+        next_rate=None if position.next_rate is None else rate_percent(position.next_rate),
         room_to_next=position.room_to_next,
     )
 
 
 def _cents(amount: Decimal) -> Decimal:
-    return amount.quantize(_CENT, rounding=ROUND_HALF_UP)
+    return to_cents(amount)
 
 
 def _describe(flag: TwoMonthFlag) -> str:

@@ -7,10 +7,8 @@ pinned datasets, split, window), what it produced (metrics), and on which code
 (git SHA). :func:`summarise_trials` turns the log into the trial count and the
 Sharpe variance the DSR needs.
 
-Reference: pre-registration-v1.md §8.1, openspec/changes/357-trial-log/change.md.
+Reference: pre-registration-v1.md §8.1, openspec/archive/357-trial-log/change.md.
 """
-
-from __future__ import annotations
 
 import re
 import statistics

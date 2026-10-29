@@ -1,17 +1,14 @@
 """Certification store port — persistence for the certification record.
 
-One :class:`~hermes.application.calibration.certification_gates.CertificationRecord`
+One :class:`~hermes.domain.calibration.certification.CertificationRecord`
 per strategy. Implementations live in :mod:`hermes.adapters.certification`.
 
-Reference: openspec/changes/355-certification-gates/change.md D-7.
+Reference: openspec/archive/355-certification-gates/change.md D-7.
 """
 
-from __future__ import annotations
+from typing import Protocol, runtime_checkable
 
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
-
-if TYPE_CHECKING:
-    from hermes.application.calibration.certification_gates import CertificationRecord
+from hermes.domain.calibration.certification import CertificationRecord
 
 __all__ = ["CertificationStoreError", "CertificationStorePort"]
 

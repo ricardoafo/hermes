@@ -4,7 +4,7 @@ Every request is answered by respx (or an ``httpx.MockTransport`` in the
 property test) with replies shaped like Binance's spot REST API, served from
 ``tests/fixtures/binance_spot``; no test reaches the network.
 
-Invariants protected here (openspec/changes/29-binance-balance-read R-1..R-4):
+Invariants protected here (openspec/archive/29-binance-balance-read R-1..R-4):
 
 - the config refuses plain HTTP, an undocumented host and a blank credential,
   and ``from_env`` names a missing variable without echoing any value;
@@ -19,7 +19,6 @@ Invariants protected here (openspec/changes/29-binance-balance-read R-1..R-4):
 import json
 from collections.abc import Iterator
 from decimal import Decimal
-from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
@@ -29,16 +28,18 @@ import respx
 from hypothesis import given
 from hypothesis import strategies as st
 
+from hermes.adapters._shared.wire import BINANCE_TESTNET_HOST, binance_sign
 from hermes.adapters.exchanges.binance_balance_reader import (
     BinanceBalanceReader,
     BinanceBalanceReaderConfig,
 )
-from hermes.adapters.exchanges.binance_spot import TESTNET_BASE_URL, sign
 from hermes.domain.errors import ExchangeError, NetworkError
 from hermes.domain.value_objects.currency import Currency
+from tests.support.paths import REPO_ROOT
 
-_FIXTURES = Path(__file__).resolve().parents[3] / "fixtures" / "binance_spot"
+_FIXTURES = REPO_ROOT / "tests" / "fixtures" / "binance_spot"
 _BASE = "https://api.binance.com"
+_TESTNET_BASE_URL = f"https://{BINANCE_TESTNET_HOST}"
 _ACCOUNT_URL = f"{_BASE}/api/v3/account"
 _NOW_MS = 1_790_000_000_000
 _KEY = "read-key-not-real"  # gitleaks:allow
@@ -90,7 +91,7 @@ def test_an_undocumented_host_is_refused(base_url: str) -> None:
 
 
 @pytest.mark.parametrize(
-    "base_url", ["https://api.binance.com", "https://api3.binance.com", TESTNET_BASE_URL]
+    "base_url", ["https://api.binance.com", "https://api3.binance.com", _TESTNET_BASE_URL]
 )
 def test_documented_hosts_and_the_testnet_are_accepted(base_url: str) -> None:
     """A documented spot host or the spot testnet is a valid read target."""
@@ -226,7 +227,7 @@ def test_the_total_is_exactly_free_plus_locked(free: Decimal, locked: Decimal) -
 
 @respx.mock
 def test_the_request_is_a_signed_get_of_the_account(reader: BinanceBalanceReader) -> None:
-    """GET /api/v3/account carries the key header and an HMAC that verifies with sign()."""
+    """GET /api/v3/account carries the key header and an HMAC that verifies with binance_sign()."""
     route = respx.get(url__startswith=_ACCOUNT_URL).mock(
         return_value=httpx.Response(200, json=_account())
     )
@@ -247,7 +248,7 @@ def test_the_request_is_a_signed_get_of_the_account(reader: BinanceBalanceReader
         "/api/v3/account",
         _KEY,
         {"recvWindow": ["5000"], "timestamp": [str(_NOW_MS)]},
-        sign(unsigned, _SIGNING_MATERIAL),
+        binance_sign(unsigned, _SIGNING_MATERIAL),
     )
 
 

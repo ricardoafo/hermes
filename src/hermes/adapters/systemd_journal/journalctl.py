@@ -5,10 +5,8 @@ and yields its stdout lines. ``follow=True`` adds ``-f`` and streams until the
 caller stops iterating (Ctrl-C). The process runner is injectable so unit
 tests never start a real journalctl.
 
-Reference: openspec/changes/376-hermes-logs/change.md.
+Reference: openspec/archive/376-hermes-logs/change.md.
 """
-
-from __future__ import annotations
 
 import shutil
 import subprocess
@@ -16,13 +14,19 @@ from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import Final
 
+from hermes.domain.errors import InfraError
+
 __all__ = ["JournalUnavailableError", "JournalctlReader"]
 
 _UNIT: Final = "hermes.service"
 
 
-class JournalUnavailableError(RuntimeError):
-    """There is no ``journalctl`` on this machine (a dev box)."""
+class JournalUnavailableError(InfraError, RuntimeError):
+    """There is no ``journalctl`` on this machine (a dev box).
+
+    An :class:`~hermes.domain.errors.InfraError` like every adapter I/O
+    failure (issue #1187); still a ``RuntimeError`` for older handlers.
+    """
 
 
 def _popen(argv: list[str]) -> subprocess.Popen[str]:
@@ -33,15 +37,18 @@ def _popen(argv: list[str]) -> subprocess.Popen[str]:
 
 @dataclass(frozen=True, slots=True)
 class JournalctlReader:
-    """Stream hermes.service's journal entries as JSON lines.
+    """Stream a hermes unit's journal entries as JSON lines (hermes.service by default).
 
     Attributes:
         executable: Path to journalctl; ``None`` looks it up on ``PATH``.
         spawn: Starts the process; the default wraps :class:`subprocess.Popen`.
+        unit: The unit whose journal is read; the System screen's service
+            detail reads the other hermes units (#717).
     """
 
     executable: str | None = None
     spawn: Callable[[list[str]], subprocess.Popen[str]] = field(default=_popen)
+    unit: str = _UNIT
 
     def argv(self, *, last: int, since: str | None, follow: bool) -> list[str]:
         """Return the journalctl command line.
@@ -58,7 +65,7 @@ class JournalctlReader:
         if exe is None:
             msg = "journalctl is not available here; run hermes logs on the VPS"
             raise JournalUnavailableError(msg)
-        argv = [exe, "--unit", _UNIT, "--output", "json", "--no-pager", "--lines", str(last)]
+        argv = [exe, "--unit", self.unit, "--output", "json", "--no-pager", "--lines", str(last)]
         if since is not None:
             argv += ["--since", since]
         if follow:

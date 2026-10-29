@@ -41,6 +41,7 @@ from hermes.infrastructure.config.models import (
 )
 from hermes.infrastructure.config.renta import RentaCampaignsConfig
 from hermes.infrastructure.config.tax import TaxScalesConfig, load_taxpayer_profile
+from tests.support.paths import REPO_ROOT
 from tests.unit.adapters.wire_fuzz import (
     FUZZ_SLOW,
     accepted,
@@ -49,7 +50,7 @@ from tests.unit.adapters.wire_fuzz import (
     mutated,
 )
 
-_CONFIG: Final = Path(__file__).resolve().parents[4] / "config"
+_CONFIG: Final = REPO_ROOT / "config"
 
 _SECTIONS: Final[dict[str, tuple[type[BaseModel], str]]] = {
     "strategies.yaml": (StrategiesConfig, "STRATEGIES"),

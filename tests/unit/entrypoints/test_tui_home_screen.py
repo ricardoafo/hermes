@@ -21,8 +21,6 @@ Invariants:
   80x24, 120x36, 160x45 and 240x60, motion off and a frozen clock.
 """
 
-from __future__ import annotations
-
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import replace
@@ -33,7 +31,6 @@ from typing import cast
 
 import pytest
 from syrupy.assertion import SnapshotAssertion
-from syrupy.extensions.image import SVGImageSnapshotExtension
 from textual.pilot import Pilot
 
 from hermes.adapters.console import FixtureReadModel
@@ -42,12 +39,14 @@ from hermes.application.console import ConsoleReadModel, PortfolioRange, Portfol
 from hermes.application.console.logs import LogLine
 from hermes.entrypoints.tui import HomeApp
 from hermes.entrypoints.tui_home import LOGS_UNAVAILABLE
-from hermes.entrypoints.tui_theme import HERO_RULE_GLYPH
+from hermes.entrypoints.tui_theme import HERO_RULE_GLYPH, MOTION
 from hermes.entrypoints.tui_widgets import BigNumber, HudPanel
+from tests.support.tui_views import assert_view, capture
 from tests.unit.adapters.console._ledger_builder import LedgerBuilder
 
 _FROZEN = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
 _CAP = Decimal("0.15")
+_RECORD_SIZE = (160, 45)
 _SIZES = ((80, 24), (120, 36), (160, 45), (240, 60))
 _READ_METHODS = {
     "demo_scenario",
@@ -59,11 +58,6 @@ _READ_METHODS = {
     "shadow_test",
     "market_watch",
 }
-
-
-def _repo_clean(svg: str) -> str:
-    """Strip trailing whitespace, as the repository's pre-commit hook does to committed SVGs."""
-    return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
 
 
 def _run[T](
@@ -203,18 +197,25 @@ def test_compact_draws_the_sparkline_line_instead_of_the_curve() -> None:
 # ----------------------------------------------------------------------
 
 
-def test_big_total_counts_up_with_motion_on() -> None:
+def test_big_total_counts_up_with_motion_on(monkeypatch: pytest.MonkeyPatch) -> None:
     """A €100 rise counts up: mid-way the number is between, after 0.6 s it is the new total."""
     model = _Growing()
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str, str]:
+        del pilot
+        # The animator reads its own clock, so the frames are stepped by hand:
+        # a busy CI runner can stall a real pause past the whole count-up.
+        now = [app.animator._get_time()]
+        monkeypatch.setattr(app.animator, "_get_time", lambda: now[0])
         big = app.query_one("#portfolio-total", BigNumber)
         before = big.value
         model.grown = True
         app._redraw()
-        await pilot.pause(0.2)
+        now[0] += MOTION.slow / 3
+        app.animator()
         during = big.value
-        await pilot.pause(0.8)
+        now[0] += MOTION.slow
+        app.animator()
         return before, during, big.value
 
     before, during, after = _run(cast("ConsoleReadModel", model), probe, motion=True)
@@ -424,7 +425,7 @@ def test_app_only_reads_at_every_width() -> None:
 def _svg(model: ConsoleReadModel, size: tuple[int, int]) -> str:
     async def probe(app: HomeApp, pilot: Pilot[None]) -> str:
         del pilot
-        return _repo_clean(app.export_screenshot())
+        return capture(app)
 
     return _run(model, probe, size=size)
 
@@ -432,7 +433,7 @@ def _svg(model: ConsoleReadModel, size: tuple[int, int]) -> str:
 @pytest.mark.parametrize("size", _SIZES, ids=lambda s: f"{s[0]}x{s[1]}")
 def test_svg_snapshot_empty(size: tuple[int, int], snapshot: SnapshotAssertion) -> None:
     """The reviewed rendering of the empty demo scenario at each breakpoint."""
-    assert _svg(_fixture("empty"), size) == snapshot(extension_class=SVGImageSnapshotExtension)
+    assert_view(snapshot, _svg(_fixture("empty"), size), record=size == _RECORD_SIZE)
 
 
 @pytest.mark.parametrize("size", _SIZES, ids=lambda s: f"{s[0]}x{s[1]}")
@@ -443,4 +444,4 @@ def test_svg_snapshot_empty_live_ledger(
     path = tmp_path / "hermes.sqlite3"
     LedgerBuilder(path).close()
     model = LedgerReadModel(path, clock=lambda: _FROZEN)
-    assert _svg(model, size) == snapshot(extension_class=SVGImageSnapshotExtension)
+    assert_view(snapshot, _svg(model, size), record=size == _RECORD_SIZE)

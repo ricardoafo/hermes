@@ -28,8 +28,6 @@ stdlib/Decimal. No pydantic, no httpx, no ports.
 Reference: spec-6-calibration-harness/change.md D-4, pre-reg §Calibration, SA-5.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from dataclasses import dataclass
 from decimal import ROUND_HALF_EVEN, Decimal

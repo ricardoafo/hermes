@@ -9,15 +9,15 @@ typographic minus sign (U+2212), which lines up with the plus sign.
 
 All functions are pure.
 
-Reference: openspec/changes/console-read-model/change.md (D-6).
+Reference: openspec/archive/console-read-model/change.md (D-6).
 """
-
-from __future__ import annotations
 
 from collections.abc import Sequence
 from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
 from typing import Final
+
+from hermes.domain.value_objects.cents import to_cents
 
 __all__ = [
     "ARROW_DOWN",
@@ -55,7 +55,6 @@ ARROW_FLAT: Final = "·"
 MINUS: Final = "−"  # noqa: RUF001 - the typographic minus aligns with "+"
 TIMES: Final = "×"  # noqa: RUF001 - reads as "times" in folded rows
 
-_CENT: Final = Decimal("0.01")
 _TENTH: Final = Decimal("0.1")
 _ZERO: Final = Decimal(0)
 _SPARK_BLOCKS: Final = "▁▂▃▄▅▆▇█"
@@ -108,7 +107,7 @@ def big_digits(text: str) -> tuple[str, str, str]:
 
 def round2(value: Decimal) -> Decimal:
     """Round to cents, half up."""
-    return value.quantize(_CENT, rounding=ROUND_HALF_UP)
+    return to_cents(value)
 
 
 def arrow(value: Decimal) -> str:
@@ -185,7 +184,7 @@ def fmt_price(value: Decimal) -> str:
     if magnitude >= _PRICE_TENTHS_FROM:
         return f"{value.quantize(_TENTH, rounding=ROUND_HALF_UP):,}"
     if magnitude >= _PRICE_CENTS_FROM:
-        return f"{value.quantize(_CENT, rounding=ROUND_HALF_UP):,}"
+        return f"{to_cents(value):,}"
     return f"{value:.4g}"
 
 

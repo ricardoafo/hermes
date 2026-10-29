@@ -10,14 +10,14 @@ wrong constants.
 
 Reference:
   ``docs/experiments/swing-mvp1/pre-registration-v1.md``
-  ``openspec/changes/spec-9-strategy-development-protocol/change.md`` D-1.
+  ``openspec/archive/spec-9-strategy-development-protocol/change.md`` D-1.
 """
-
-from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+
+from hermes.ports.files import FilesPort
 
 __all__ = [
     "CertificationSchedule",
@@ -25,7 +25,6 @@ __all__ = [
     "H1Thresholds",
     "KillTriggers",
     "PreRegistration",
-    "SizingConfig",
 ]
 
 # ---------------------------------------------------------------------------
@@ -67,62 +66,6 @@ class DataWindows:
     validation_end: datetime
     oos_start: datetime
     oos_end: datetime
-
-    def is_in_oos(self, ts: datetime) -> bool:
-        """Return True if ``ts`` falls inside the OOS test window (inclusive).
-
-        Args:
-            ts: UTC-aware datetime to check.
-
-        Returns:
-            True iff ``oos_start <= ts <= oos_end``.
-        """
-        return self.oos_start <= ts <= self.oos_end
-
-    def is_in_train(self, ts: datetime) -> bool:
-        """Return True if ``ts`` falls inside the train window (inclusive).
-
-        Args:
-            ts: UTC-aware datetime to check.
-
-        Returns:
-            True iff ``train_start <= ts <= train_end``.
-        """
-        return self.train_start <= ts <= self.train_end
-
-    def is_in_validation(self, ts: datetime) -> bool:
-        """Return True if ``ts`` falls inside the validation window (inclusive).
-
-        Args:
-            ts: UTC-aware datetime to check.
-
-        Returns:
-            True iff ``validation_start <= ts <= validation_end``.
-        """
-        return self.validation_start <= ts <= self.validation_end
-
-
-@dataclass(frozen=True, slots=True)
-class SizingConfig:
-    """Position-sizing constants from pre-reg §5.4 and §5.5.
-
-    Reference: pre-registration-v1.md §5.4, §5.5.
-    """
-
-    risk_per_trade_fraction: float
-    """Fraction of experiment capital risked per trade (0.01 = 1%)."""
-
-    position_hard_cap_fraction: float
-    """Maximum notional per position as fraction of capital (0.05 = 5%)."""
-
-    max_concurrent_positions: int
-    """Maximum number of simultaneously open positions (3)."""
-
-    correlation_lock_threshold: float
-    """30-day rolling correlation above which new entry in third pair is blocked (0.80)."""
-
-    time_stop_days: int
-    """Maximum days to hold a position before forced close (90)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,41 +175,41 @@ class PreRegistration:
     against the hard-coded values in this module to detect tampering.
 
     The file is expected to live at ``<project_root>/docs/experiments/swing-mvp1/
-    pre-registration-v1.md``. Project root is auto-detected from this module's
-    location unless ``project_root`` is passed explicitly (useful for tests).
+    pre-registration-v1.md``. The caller names the project root: an installed
+    package has no repository to search from (issue #1186), so the entrypoint
+    or script that builds this decides where the signed file is.
 
     Args:
-        project_root: Optional path override. Defaults to the repository root
-            detected by walking up from this module's directory.
+        project_root: The directory that holds ``docs/experiments/``.
+        files: Reads the signed file.
 
     Raises:
         FileNotFoundError: If the pre-registration file is not found.
         ValueError: If the file's experiment_id in the YAML frontmatter does not
             match the expected ``swing-mvp1-v1``.
 
-    Reference: pre-registration-v1.md §4, §5.4, §9, §10.
+    Reference: pre-registration-v1.md §4, §9, §10.
     spec-9-strategy-development-protocol change.md D-1.
     """
 
     _PRE_REG_REL_PATH = Path("docs/experiments/swing-mvp1/pre-registration-v1.md")
 
-    def __init__(self, project_root: Path | None = None) -> None:
+    def __init__(self, project_root: Path, *, files: FilesPort) -> None:
         """Initialise parser and validate the pre-registration file exists.
 
         Args:
-            project_root: Optional explicit project root. Defaults to
-                auto-detected repository root.
+            project_root: The directory that holds ``docs/experiments/``.
+            files: Reads the signed file.
 
         Raises:
             FileNotFoundError: If the pre-registration file is absent.
             ValueError: If the frontmatter experiment_id is wrong.
         """
-        if project_root is None:
-            project_root = self._detect_project_root()
         self._root = project_root
+        self._files = files
         self._pre_reg_path = project_root / self._PRE_REG_REL_PATH
 
-        if not self._pre_reg_path.exists():
+        if not files.exists(self._pre_reg_path):
             raise FileNotFoundError(
                 f"Pre-registration file not found at {self._pre_reg_path}. "
                 f"This file is SIGNED and IMMUTABLE — do not rename or move it."
@@ -313,23 +256,6 @@ class PreRegistration:
             validation_end=_SIGNED_VAL_END,
             oos_start=_SIGNED_OOS_START,
             oos_end=_SIGNED_OOS_END,
-        )
-
-    def sizing_config(self) -> SizingConfig:
-        """Return position-sizing constants from pre-reg §5.4 and §5.5.
-
-        Returns:
-            :class:`SizingConfig` with risk fraction, cap, concurrency, and
-            correlation-lock threshold.
-
-        Reference: pre-registration-v1.md §5.4, §5.5.
-        """
-        return SizingConfig(
-            risk_per_trade_fraction=0.01,
-            position_hard_cap_fraction=0.05,
-            max_concurrent_positions=3,
-            correlation_lock_threshold=0.80,
-            time_stop_days=90,
         )
 
     def h1_thresholds(self) -> H1Thresholds:
@@ -400,28 +326,6 @@ class PreRegistration:
     # Private helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _detect_project_root() -> Path:
-        """Walk up from this module's directory to find the repo root.
-
-        Looks for a ``pyproject.toml`` (repo marker) walking upward from the
-        directory containing this file.
-
-        Returns:
-            Resolved :class:`Path` to the project root.
-
-        Raises:
-            FileNotFoundError: If no ``pyproject.toml`` is found in the
-                directory tree.
-        """
-        here = Path(__file__).resolve().parent
-        for candidate in [here, *here.parents]:
-            if (candidate / "pyproject.toml").exists():
-                return candidate
-        raise FileNotFoundError(
-            f"Could not detect project root: no pyproject.toml found searching upward from {here}."
-        )
-
     def _validate_experiment_id(self) -> None:
         """Validate the YAML frontmatter experiment_id matches the expected value.
 
@@ -432,7 +336,7 @@ class PreRegistration:
             ValueError: If ``experiment_id`` is missing or does not match
                 ``swing-mvp1-v1``.
         """
-        text = self._pre_reg_path.read_text(encoding="utf-8")
+        text = self._files.read_text(self._pre_reg_path)
         lines = text.splitlines()
 
         # Locate YAML frontmatter: first line must be `---`

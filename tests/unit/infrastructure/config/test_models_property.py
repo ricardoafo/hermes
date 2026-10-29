@@ -13,8 +13,6 @@ through the loader — the loader path is covered by ``test_loader.py``; here
 we're pinning the schema invariants themselves.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 from typing import Any
 
@@ -24,6 +22,11 @@ from hypothesis import strategies as st
 from pydantic import BaseModel, ValidationError
 
 from hermes.application.execution.prereg_book import ExecutionModel, ExitPricing
+from hermes.application.strategy_protocol.strategy_factory import (
+    DONCHIAN_BREAKOUT,
+    known_signals,
+    strategy_kind,
+)
 from hermes.infrastructure.config import (
     BinanceExchangeConfig,
     KrakenPublicConfig,
@@ -40,7 +43,7 @@ from hermes.infrastructure.config.models import (
 )
 
 # Deterministic profile — CI must be reproducible.
-_SETTINGS = settings(max_examples=50, deadline=None, derandomize=True)
+_SETTINGS = settings(max_examples=50)
 
 
 def _assert_field_in_validation_error(
@@ -296,6 +299,28 @@ def test_strategy_rejects_an_unknown_exit_pricing(text: str) -> None:
     """Any spelling but stop_order or bar_close fails at load instead of pricing as v1."""
     _assert_field_in_validation_error(
         {"strategies": [_strategy_entry(exit_pricing=text)]}, StrategiesConfig, "exit_pricing"
+    )
+
+
+def test_strategy_without_a_signal_is_the_donchian_breakout() -> None:
+    """A v1 or v2 entry has no ``signal:`` key and builds today's adapter (issue #1074)."""
+    entry = StrategiesConfig.model_validate({"strategies": [_strategy_entry()]}).strategies[0]
+    assert entry.strategy_kind() == strategy_kind(None)
+
+
+def test_strategy_reads_a_known_signal() -> None:
+    """``signal: donchian_breakout`` names the same kind as leaving it out."""
+    data = {"strategies": [_strategy_entry(signal=DONCHIAN_BREAKOUT)]}
+    entry = StrategiesConfig.model_validate(data).strategies[0]
+    assert entry.strategy_kind() == strategy_kind(DONCHIAN_BREAKOUT)
+
+
+@_SETTINGS
+@given(text=st.text(max_size=20).filter(lambda t: t not in known_signals()))
+def test_strategy_rejects_an_unknown_signal(text: str) -> None:
+    """A misspelt signal fails at load instead of trading the default rule (contract §2a)."""
+    _assert_field_in_validation_error(
+        {"strategies": [_strategy_entry(signal=text)]}, StrategiesConfig, "signal"
     )
 
 

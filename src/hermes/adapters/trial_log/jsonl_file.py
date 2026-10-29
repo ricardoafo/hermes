@@ -15,10 +15,8 @@ line, ``{"kind": "repair", ...}``, so the log keeps the record that a line went
 missing; repair lines are not trials and :meth:`JsonlTrialLog.records` skips
 them.
 
-Reference: openspec/changes/357-trial-log/change.md D-2.
+Reference: openspec/archive/357-trial-log/change.md D-2.
 """
-
-from __future__ import annotations
 
 import hashlib
 import json

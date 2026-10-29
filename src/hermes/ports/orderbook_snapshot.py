@@ -5,10 +5,8 @@ week, so it asks for one snapshot at that moment instead of keeping a book up to
 date from a diff stream. A snapshot is market data only: an adapter behind this
 port reads a public endpoint and holds no key.
 
-Reference: openspec/changes/353-fill-kernel-in-serve/change.md D-1.
+Reference: openspec/archive/353-fill-kernel-in-serve/change.md D-1.
 """
-
-from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 

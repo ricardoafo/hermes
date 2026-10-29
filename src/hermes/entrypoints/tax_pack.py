@@ -11,14 +11,12 @@ Nothing is ever submitted.
 Without ``--year`` it refreshes the current Madrid tax year and the previous
 one unless that is frozen (D-3); the daily timer runs exactly that.
 
-Exit codes: 0 written, 1 ledger failure, 2 usage, 3 config error,
+Exit codes: 0 written, 1 ledger read failure, 2 usage, 3 config error or no ledger,
 5 the requested year is frozen (nothing written). ERROR and WARNING lines go
 to ``err`` (stderr), the report to ``stream``.
 
-Reference: openspec/changes/568-tax-pack/change.md.
+Reference: openspec/archive/568-tax-pack/change.md.
 """
-
-from __future__ import annotations
 
 import argparse
 import io
@@ -57,17 +55,21 @@ from hermes.domain.filing.trail import TrailLine
 from hermes.domain.fx.eur_pricing import fill_date_madrid
 from hermes.domain.value_objects.currency import Currency
 from hermes.entrypoints import fx as fx_module
-from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints import tax as tax_module
+from hermes.entrypoints._cli import (
+    EXIT_NO_LEDGER,
+    add_config_dir_arg,
+    add_db_arg,
+    config_or_exit,
+)
 from hermes.entrypoints._streams import resolve_err
-from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.filing import (
     FilingConfig,
     Modelo721History,
     load_filing_config,
     load_modelo721_history,
 )
-from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
+from hermes.infrastructure.config.loader import load_config
 from hermes.infrastructure.config.renta import RentaCampaignsConfig, load_renta_campaigns
 from hermes.infrastructure.config.root import HermesConfig
 from hermes.infrastructure.config.tax import resolve_taxpayer_profile_path
@@ -105,7 +107,8 @@ _USAGE: Final[str] = (
     "  --history PATH  your earlier 721 declarations\n"
     "  --live          the ledger holds real fills (drops the shadow label)\n"
     "\n"
-    "Exit codes: 0 written, 1 ledger failure, 2 usage, 3 config, 5 frozen.\n"
+    "Exit codes: 0 written, 1 ledger read failure, 2 usage, 3 config or no ledger,\n"
+    "5 frozen.\n"
 )
 
 
@@ -159,14 +162,18 @@ def main(
     if overrides is None:
         return 2
     snapshot = dict(os.environ if env is None else env)
-    try:
-        config = load_config(parsed.config_dir)
-        filing = load_filing_config(parsed.config_dir, env=snapshot)
-        history = load_modelo721_history(parsed.history, env=snapshot)
-        campaigns = load_renta_campaigns(parsed.config_dir, env=snapshot)
-    except ConfigError as exc:
-        err.write(f"ERROR: config load failed: {exc}\n")
-        return 3
+    configs = config_or_exit(
+        lambda: (
+            load_config(parsed.config_dir),
+            load_filing_config(parsed.config_dir, env=snapshot),
+            load_modelo721_history(parsed.history, env=snapshot),
+            load_renta_campaigns(parsed.config_dir, env=snapshot),
+        ),
+        err,
+    )
+    if isinstance(configs, int):
+        return configs
+    config, filing, history, campaigns = configs
 
     refreshed_at = now()
     run = _Run(
@@ -277,7 +284,7 @@ def _read_ledger(
             trail = collect_trail(year, reader, rates)
     except FileNotFoundError:
         run.err.write(f"ERROR: no ledger at {parsed.db}\n")
-        return 1
+        return EXIT_NO_LEDGER
     except LedgerError as exc:
         run.err.write(f"ERROR: {exc}\n")
         return 1
@@ -362,8 +369,8 @@ def _parse(argv: list[str], stream: TextIO, err: TextIO) -> argparse.Namespace |
     parser = argparse.ArgumentParser(prog="hermes tax-pack", add_help=False)
     parser.add_argument("--year", type=int)
     parser.add_argument("--out", type=Path)
-    parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
-    parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
+    add_db_arg(parser)
+    add_config_dir_arg(parser)
     parser.add_argument("--price", action="append", default=[])
     parser.add_argument("--history", type=Path)
     parser.add_argument("--live", action="store_true")

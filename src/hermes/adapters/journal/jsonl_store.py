@@ -13,10 +13,8 @@ A torn last line left by a power loss blocks every read and append until
 chain line of kind ``repair``, so the journal keeps the record that a line went
 missing; :meth:`JsonlDecisionJournal.entries` does not return it.
 
-Reference: issue #363; openspec/changes/363-decision-journal D-2.
+Reference: issue #363; openspec/archive/363-decision-journal D-2.
 """
-
-from __future__ import annotations
 
 import hashlib
 import json

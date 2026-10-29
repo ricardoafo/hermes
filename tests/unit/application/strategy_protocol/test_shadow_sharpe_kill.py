@@ -1,7 +1,5 @@
 """Unit tests for the shadow-phase Sharpe kill (pre-registration §10, #422)."""
 
-from __future__ import annotations
-
 import math
 from datetime import date, timedelta
 from pathlib import Path
@@ -10,21 +8,25 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.application.strategy_protocol.shadow_sharpe_kill import (
     ShadowSharpeKill,
     rolling_annualised_sharpe,
 )
+from hermes.infrastructure.project_root import load_pre_registration
 
 _START = date(2026, 10, 10)
 
 
 @pytest.fixture
 def rule() -> ShadowSharpeKill:
-    """Build the rule from the signed §10 values."""
+    """Build the rule from the signed §10 values, as shadow_checks does."""
     here = Path(__file__).resolve().parent
     root = next(p for p in [here, *here.parents] if (p / "pyproject.toml").exists())
-    return ShadowSharpeKill.from_pre_registration(PreRegistration(project_root=root))
+    triggers = load_pre_registration(root).kill_triggers()
+    return ShadowSharpeKill(
+        floor=triggers.rolling_sharpe_min,
+        required_days=triggers.shadow_sharpe_consecutive_days,
+    )
 
 
 def _feed(rule: ShadowSharpeKill, values: list[float | None]) -> list[bool]:

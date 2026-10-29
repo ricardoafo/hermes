@@ -13,12 +13,10 @@ Invariants protected here:
 - an event with no Slack template raises instead of posting nothing.
 
 Reference: docs/decisions/2026-10-04-notification-templates-v2.md;
-    openspec/changes/144-notification-system/change.md (R-1, R-4).
+    openspec/archive/144-notification-system/change.md (R-1, R-4).
 """
 
 # ruff: noqa: RUF001 - the typographic minus sign is the character under test
-
-from __future__ import annotations
 
 import dataclasses
 import json

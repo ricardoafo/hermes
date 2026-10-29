@@ -8,8 +8,6 @@ restart never moves the start of the run.
 Reference: ADR-016 item 4, change ``405-usdt-fifo`` D-1.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import ClassVar
 

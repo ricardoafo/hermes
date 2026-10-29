@@ -10,10 +10,8 @@ EUR values the fills were priced at (#435); the current price, the stop and the
 high are converted at the newest rate the ledger holds. When any of that is
 missing the row is EUR pending and carries no EUR figure at all.
 
-Reference: openspec/changes/ledger-read-model/change.md (D-3 to D-7).
+Reference: openspec/archive/ledger-read-model/change.md (D-3 to D-7).
 """
-
-from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime

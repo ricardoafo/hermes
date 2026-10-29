@@ -14,30 +14,27 @@ Exit codes: 0 every pair passes, 1 at least one pair fails, 2 usage,
 3 config failure.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
-from pathlib import Path
 from typing import Final, TextIO
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig
 from hermes.adapters.exchanges.binance_klines import BinanceKlinesAdapter, BinanceKlinesConfig
 from hermes.adapters.exchanges.kraken_public import KrakenPublicAdapter
 from hermes.adapters.exchanges.kraken_public import KrakenPublicConfig as KrakenWireConfig
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig
 from hermes.domain.errors import InfraError
 from hermes.domain.market_data.kline import Kline, KlineInterval
 from hermes.domain.market_data.venue_parity import PairParity, ParityVerdict, compare_closes
 from hermes.domain.value_objects.pair import Pair
+from hermes.entrypoints._cli import add_config_dir_arg, load_config_or_exit
 from hermes.entrypoints._streams import resolve_err
-from hermes.infrastructure.config.errors import ConfigError
-from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.config.root import HermesConfig
 from hermes.infrastructure.time import now_utc
+from hermes.ports.klines import KlinesFetcherPort
 
 __all__ = ["FetchKlines", "Venues", "main"]
 
@@ -57,7 +54,6 @@ _MAX_BARS: Final = 500
 _DEFAULT_TOLERANCE_BPS: Final = Decimal(50)
 _EXIT_FAIL: Final = 1
 _EXIT_USAGE: Final = 2
-_EXIT_CONFIG: Final = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -101,7 +97,7 @@ def _parse(argv: list[str], stream: TextIO, err: TextIO) -> argparse.Namespace |
     parser.add_argument("--bars", type=int, default=_DEFAULT_BARS)
     parser.add_argument("--tolerance-bps", default=str(_DEFAULT_TOLERANCE_BPS))
     parser.add_argument("--json", action="store_true")
-    parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
+    add_config_dir_arg(parser)
     parser.add_argument("-h", "--help", action="store_true")
     try:
         parsed = parser.parse_args(argv)
@@ -255,8 +251,9 @@ def _live_venues(config: HermesConfig) -> tuple[Venues, Callable[[], None]]:
         binance.close()
         kraken.close()
 
+    primary: KlinesFetcherPort = binance
     venues = Venues(
-        primary=lambda p, i, s, u: binance.fetch(pair=p, interval=i, since=s, until=u),
+        primary=lambda p, i, s, u: primary.fetch(pair=p, interval=i, since=s, until=u),
         backup=lambda p, i, s, u: kraken.fetch_klines(pair=p, interval=i, since=s, until=u),
     )
     return venues, close
@@ -293,11 +290,9 @@ def main(
         return _EXIT_USAGE
     if parsed.help:
         return 0
-    try:
-        config = load_config(parsed.config_dir)
-    except ConfigError as exc:
-        err.write(f"ERROR: config: {exc}\n")
-        return _EXIT_CONFIG
+    config = load_config_or_exit(parsed.config_dir, err)
+    if isinstance(config, int):
+        return config
     close = _no_resources
     if venues is None:
         venues, close = _live_venues(config)

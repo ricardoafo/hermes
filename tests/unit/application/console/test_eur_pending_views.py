@@ -8,8 +8,6 @@ Invariants:
 - a priced live row still follows ``pnl_visible``: blind surfaces get no money.
 """
 
-from __future__ import annotations
-
 import json
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal

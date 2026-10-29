@@ -8,8 +8,6 @@ Invariants under test:
   never inherits an earlier position's stop.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
@@ -23,7 +21,6 @@ from hermes.domain.strategy.stop_mark import StopMark, StopRecord
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
-from hermes.ports.stop_history import StopHistoryPort
 
 _BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
 _ETH = Pair(base=Currency.ETH, quote=Currency.USDT)
@@ -62,11 +59,6 @@ def ledger() -> Iterator[SqliteLedger]:
     conn = sqlite3.connect(":memory:")
     yield SqliteLedger(conn)
     conn.close()
-
-
-def test_ledger_satisfies_the_port(ledger: SqliteLedger) -> None:
-    """The ledger can be injected wherever StopHistoryPort is expected."""
-    assert isinstance(ledger, StopHistoryPort)
 
 
 @pytest.mark.parametrize(("moved", "high"), [(True, "64000.5"), (False, "1"), (None, None)])

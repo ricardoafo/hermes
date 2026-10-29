@@ -13,13 +13,14 @@ Invariants protected here:
 - the ledger file is byte-identical after any run without ``--alert``;
 - an ``--alert`` alert is recorded once as an ``AnomalyDetected`` row, and a
   run in parity records none (#136);
-- the command is registered as ``parity``.
+- the command is registered as ``parity``;
+- a day with bars serve reached late after an outage prints that it was not
+  compared, exits 0 and sends no alert (#1078).
 """
-
-from __future__ import annotations
 
 import hashlib
 import io
+import json
 import sqlite3
 from collections.abc import Callable
 from contextlib import AbstractContextManager, nullcontext
@@ -34,6 +35,7 @@ from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.notification_router import RouterConfig
 from hermes.application.parity.check import HistoryFetcher
 from hermes.domain.errors import ExchangeError
+from hermes.domain.events.bar_missed import BarMissed
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.market_data.bar import Bar
@@ -44,7 +46,10 @@ from hermes.entrypoints.commands import discover
 from hermes.infrastructure.config.models import MarketDataConfig
 from hermes.ports.bar_feed import SourceState
 from tests.support.anomaly_rows import recorded_anomalies
+from tests.support.day_zero import write_day_zero
 from tests.support.parity import D1, DAY_END, DAY_START, H4, bar, signal_event
+from tests.support.paths import REPO_ROOT
+from tests.support.unknown_signal import config_with_unknown_signal, refusal_lines
 from tests.unit.adapters.market_data.fake_binance_public import (
     BTC_USDT,
     START,
@@ -54,7 +59,7 @@ from tests.unit.adapters.market_data.fake_binance_public import (
 )
 
 _NOW = datetime(2026, 10, 4, 0, 5, tzinfo=UTC)
-_CONFIG = Path(__file__).resolve().parents[3] / "config"
+_CONFIG = REPO_ROOT / "config"
 _PAIRS = ("BTC", "ETH", "SOL")
 _PRICE = "100"
 
@@ -291,7 +296,7 @@ def test_a_missing_ledger_exits_three_and_is_not_created(tmp_path: Path) -> None
 
     code, out, err = _run(_args(path))
 
-    assert (code, out, err) == (3, "", f"ERROR: no ledger at {path}.\n")
+    assert (code, out, err) == (3, "", f"ERROR: no ledger at {path}\n")
     assert not path.exists()
 
 
@@ -338,6 +343,18 @@ def test_a_config_that_cannot_load_exits_three(ledger: Path, tmp_path: Path) -> 
 
     assert (code, out) == (3, "")
     assert err.startswith("ERROR: ")
+
+
+def test_an_unknown_signal_exits_three_naming_it(ledger: Path, tmp_path: Path) -> None:
+    """Contract §2a (#1119): an unknown ``signal:`` stops parity at config load, exit 3."""
+    config_dir = config_with_unknown_signal(tmp_path)
+
+    code, _, err = _run(
+        ["check", "--date", "2026-10-03", "--db", str(ledger), "--config-dir", str(config_dir)]
+    )
+
+    lines = err.splitlines()
+    assert (code, lines[0], lines[-1]) == (3, *refusal_lines(config_dir))
 
 
 def test_the_command_is_registered_as_parity() -> None:
@@ -440,3 +457,108 @@ def test_the_default_warm_up_read_drives_the_klines_adapter_and_closes_it() -> N
         datetime(2026, 9, 30, 16, tzinfo=UTC),
     ]
     assert adapter.health().state is SourceState.STOPPED
+
+
+# ---------------------------------------------------------------------------
+# hermes parity window (#965)
+# ---------------------------------------------------------------------------
+
+_INSUFFICIENT = "M-09 P&L correlation: insufficient\nM-10 Sharpe match: insufficient\n"
+
+
+def _window_args(path: Path, *extra: str) -> list[str]:
+    return ["window", "--db", str(path), "--config-dir", str(_CONFIG), *extra]
+
+
+def test_window_prints_statuses_only_and_exits_one_when_not_both_pass(ledger: Path) -> None:
+    """One flat day has no round trip and too few days: both insufficient, exit 1."""
+    code, out, err = _run(_window_args(ledger, "--since", DAY_START.isoformat()))
+
+    assert (code, out, err) == (1, _INSUFFICIENT, "")
+
+
+def test_window_out_file_holds_the_window_and_the_two_statuses_only(
+    ledger: Path, tmp_path: Path
+) -> None:
+    """The file certify reads names the strategy, the window and two statuses, no value."""
+    out_file = tmp_path / "parity.json"
+
+    _run(_window_args(ledger, "--since", DAY_START.isoformat(), "--out", str(out_file)))
+
+    assert json.loads(out_file.read_text(encoding="utf-8")) == {
+        "strategy_id": "swing-donchian-4h",
+        "since": DAY_START.isoformat(),
+        "until": _NOW.isoformat(),
+        "m09": "insufficient",
+        "m10": "insufficient",
+    }
+
+
+def test_window_defaults_to_the_latest_day_zero_record(ledger: Path, tmp_path: Path) -> None:
+    """Without --since, day 0 is read from the run record beside the ledger."""
+    write_day_zero(ledger, "swing-donchian-4h", DAY_START)
+    out_file = tmp_path / "parity.json"
+
+    code, out, _ = _run(_window_args(ledger, "--out", str(out_file)))
+
+    assert (code, out) == (1, _INSUFFICIENT)
+    assert json.loads(out_file.read_text(encoding="utf-8"))["since"] == DAY_START.isoformat()
+
+
+def test_window_without_since_or_a_day_zero_record_exits_three(ledger: Path) -> None:
+    """No counted run has started, so there is no window to judge."""
+    code, out, err = _run(_window_args(ledger))
+
+    assert (code, out) == (3, "")
+    assert err.startswith("ERROR: no day-0 record for swing-donchian-4h")
+
+
+def test_window_leaves_the_ledger_byte_identical(ledger: Path) -> None:
+    """The window replay only reads the ledger."""
+    before = _digest(ledger)
+
+    _run(_window_args(ledger, "--since", DAY_START.isoformat()))
+
+    assert _digest(ledger) == before
+
+
+def test_window_on_a_missing_ledger_exits_three(tmp_path: Path) -> None:
+    """No ledger, nothing replayed, and none created."""
+    missing = tmp_path / "none.sqlite3"
+
+    code, _, err = _run(_window_args(missing, "--since", DAY_START.isoformat()))
+
+    assert (code, err, missing.exists()) == (3, f"ERROR: no ledger at {missing}\n", False)
+
+
+@pytest.mark.parametrize(
+    "since",
+    ["yesterday", "2026-10-03T00:00:00", _NOW.isoformat(), (_NOW + timedelta(days=1)).isoformat()],
+)
+def test_window_usage_errors_exit_two(ledger: Path, since: str) -> None:
+    """A non-ISO or offset-less --since, and a day 0 that is not in the past, exit 2."""
+    code, out, err = _run(_window_args(ledger, "--since", since))
+
+    assert (code, out) == (2, "")
+    assert err.startswith("ERROR: ")
+
+
+def test_an_outage_day_prints_not_compared_and_sends_no_alert(ledger: Path) -> None:
+    """#1078: the unfilled missed entry would be a mismatch; the outage line replaces it."""
+    late = DAY_START + timedelta(hours=8)
+    _with_signal(ledger, signal_event(late))
+    connection = sqlite3.connect(ledger)
+    SqliteLedger(connection).append_event(
+        BarMissed.from_bar(bar(late), handled_at=late + timedelta(hours=3), correlation_id="m1")
+    )
+    connection.close()
+    channel = _Channel()
+
+    code, out, err = _run(_args(ledger, "--alert"), channel=channel)
+
+    assert (code, out, err, channel.events) == (
+        0,
+        "OK — 2026-10-03 not compared: serve reached 1 bar late after an outage\n",
+        "",
+        [],
+    )

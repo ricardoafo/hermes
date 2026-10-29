@@ -6,10 +6,8 @@ enforced by the data-split wall, not here).
 
 Reference: pre-registration-v1.md §8.3; López de Prado (2018), *Advances in
 Financial Machine Learning*, ch. 7 and 12;
-openspec/changes/354-certification-statistics D-5.
+openspec/archive/354-certification-statistics D-5.
 """
-
-from __future__ import annotations
 
 from dataclasses import dataclass
 from itertools import combinations

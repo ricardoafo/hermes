@@ -10,8 +10,6 @@ Invariants protected here:
 A fake client stands in for Telegram; the client itself has contract tests.
 """
 
-from __future__ import annotations
-
 import io
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
@@ -27,6 +25,8 @@ from hermes.application.bot.replies import Replies, ReplySources
 from hermes.application.status import StatusReport, UnitState, ledger_missing_report
 from hermes.entrypoints import bot as bot_module
 from hermes.entrypoints import cli
+from tests.support.clock import FakeClock
+from tests.support.paths import REPO_ROOT
 
 _OPERATOR = "-1001234567890"
 _T0 = datetime(2026, 10, 4, 10, tzinfo=UTC)
@@ -46,16 +46,8 @@ class _FakeClient:
         self.sent.append((chat_id, text, silent))
 
 
-class _Clock:
-    def __init__(self) -> None:
-        self.now = _T0
-
-    def __call__(self) -> datetime:
-        return self.now
-
-
 def _loop(
-    batches: list[list[Update]], report: StatusReport, clock: _Clock
+    batches: list[list[Update]], report: StatusReport, clock: FakeClock
 ) -> tuple[bot_module.BotLoop, _FakeClient]:
     client = _FakeClient(batches)
     sources = ReplySources(
@@ -82,7 +74,7 @@ def _down() -> StatusReport:
 
 def test_a_step_answers_the_operator_and_ignores_a_stranger() -> None:
     """The operator's /status gets one reply; a stranger's gets none and is logged."""
-    clock = _Clock()
+    clock = FakeClock(_T0)
     batch = [
         Update(update_id=10, chat_id=_OPERATOR, text="/logs"),
         Update(update_id=11, chat_id="42", text="/status"),
@@ -102,7 +94,7 @@ def test_a_step_answers_the_operator_and_ignores_a_stranger() -> None:
 
 def test_the_offset_moves_past_every_update() -> None:
     """The next poll asks for updates after the last one seen, answered or not."""
-    clock = _Clock()
+    clock = FakeClock(_T0)
     batch = [Update(update_id=10, chat_id="42", text="/status")]
     loop, client = _loop([batch, []], _down(), clock)
 
@@ -114,11 +106,11 @@ def test_the_offset_moves_past_every_update() -> None:
 
 def test_heartbeat_pushes_a_change_once_and_checks_at_most_every_minute() -> None:
     """Down is pushed loudly once; within the minute no second check runs."""
-    clock = _Clock()
+    clock = FakeClock(_T0)
     loop, client = _loop([], _down(), clock)
 
     loop.step()
-    clock.now = _T0 + timedelta(seconds=30)
+    clock.current = _T0 + timedelta(seconds=30)
     loop.step()
 
     pushes = [(text.split(" since")[0], silent) for _, text, silent in client.sent]
@@ -146,7 +138,7 @@ def test_bot_is_a_registered_command() -> None:
 def test_bot_once_runs_one_step_with_a_fake_client(tmp_path: Path) -> None:
     """--once polls once and exits 0; the down verdict is pushed to the operator."""
     client = _FakeClient([[]])
-    config = Path(__file__).resolve().parents[3] / "config"
+    config = REPO_ROOT / "config"
     env = {
         "HERMES_TELEGRAM__BOT_TOKEN": "123456789:FAKE-bot-token_for_tests",  # gitleaks:allow
         "HERMES_TELEGRAM__CHAT_ID": _OPERATOR,
@@ -161,3 +153,21 @@ def test_bot_once_runs_one_step_with_a_fake_client(tmp_path: Path) -> None:
 
     assert code == 0
     assert [(chat, silent) for chat, _, silent in client.sent] == [(_OPERATOR, False)]
+
+
+def test_a_bad_telegram_api_base_exits_three_naming_it() -> None:
+    """An unsafe HERMES_TELEGRAM__API_BASE stops the bot before any call (#970)."""
+    err = io.StringIO()
+    env = {
+        "HERMES_TELEGRAM__BOT_TOKEN": "123456789:FAKE-bot-token_for_tests",  # gitleaks:allow
+        "HERMES_TELEGRAM__CHAT_ID": _OPERATOR,
+        "HERMES_TELEGRAM__API_BASE": "http://api.telegram.org",
+    }
+
+    code = bot_module.main([], stream=io.StringIO(), env=env, err=err)
+
+    assert (code, err.getvalue()) == (
+        3,
+        "ERROR: HERMES_TELEGRAM__API_BASE may use http only on a loopback host: "
+        "'http://api.telegram.org'\n",
+    )

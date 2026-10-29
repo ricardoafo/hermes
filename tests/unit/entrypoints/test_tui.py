@@ -14,8 +14,6 @@ operator feedback of 2026-10-03):
 
 # The console prints the typographic minus (U+2212) and times sign on purpose.
 
-from __future__ import annotations
-
 import ast
 import asyncio
 import io
@@ -27,7 +25,6 @@ from typing import cast
 
 from rich.console import Console, RenderableType
 from syrupy.assertion import SnapshotAssertion
-from syrupy.extensions.image import SVGImageSnapshotExtension
 from textual.binding import Binding
 from textual.widgets import Static
 
@@ -38,6 +35,7 @@ from hermes.application.console.logs import LogLine
 from hermes.entrypoints import tui as tui_module
 from hermes.entrypoints.tui import REFRESH_SECONDS, HomeApp, _PanelScreen
 from hermes.entrypoints.tui_widgets import BigNumber
+from tests.support.tui_views import assert_view, capture
 
 _TAX_FOOTNOTE = "est. · FIFO · 19% band · €5,988.30 left before 21%"
 # The fixture's read time (14:12 Madrid): snapshots never show the wall clock.
@@ -85,11 +83,6 @@ def _styled(content: RenderableType, width: int) -> str:
     return console.export_text(styles=True)
 
 
-def _repo_clean(svg: str) -> str:
-    """Strip trailing whitespace, as the repository's pre-commit hook does to committed SVGs."""
-    return "\n".join(line.rstrip() for line in svg.splitlines()) + "\n"
-
-
 async def _drive(
     model: ConsoleReadModel,
     keys: Sequence[str],
@@ -105,7 +98,7 @@ async def _drive(
         texts = {name: app.plain_text(name) for name in _WIDGETS}
         styled = {name: _styled(content, size[0]) for name, content in app._content.items()}
         screen = "\n".join(strip.text.rstrip() for strip in app.screen._compositor.render_strips())
-        svg = _repo_clean(app.export_screenshot())
+        svg = capture(app)
         shot = Shot(texts, styled, screen, len(app.screen_stack), svg)
     return shot, app
 
@@ -146,7 +139,7 @@ def test_down_adds_one_red_row_and_dims_the_money() -> None:
     """Down: a single red row with the call to action; money is dim and reads 'as of 18:04'."""
     shot = _shoot("down-stale")
     assert shot.texts["down-row"].strip() == "✖ hermes down since 18:04 · press L for why"
-    assert "\x1b[31m" in shot.styled["down-row"] or "\x1b[1;31m" in shot.styled["down-row"]
+    assert "\x1b[1;31m" in shot.styled["down-row"]
     assert "as of 18:04" in shot.texts["portfolio"]
     assert "\x1b[2m" in shot.styled["portfolio"]
     assert "as of 18:04" in shot.texts["positions"]
@@ -320,8 +313,12 @@ def test_down_key_moves_the_cursor_and_the_detail_follows() -> None:
 
 
 def test_demo_data_tag_is_visible_on_fixtures() -> None:
-    """A fixture read model always shows DEMO DATA with its scenario name."""
-    shot = _shoot("ok-two-positions")
+    """A fixture read model always shows DEMO DATA with its scenario name where the row has room.
+
+    At 80 columns the mainnet badge leads the status row in every theme
+    (issue #1097), so the scenario name only fits on a wider terminal.
+    """
+    shot = _shoot("ok-two-positions", size=(120, 36))
     assert shot.texts["demo-tag"].strip() == "DEMO DATA · scenario ok-two-positions"
 
 
@@ -450,31 +447,31 @@ def test_q_quits_the_app() -> None:
 def test_svg_snapshot_80x24(snapshot: SnapshotAssertion) -> None:
     """The reviewed 80x24 rendering of ok-two-positions."""
     svg = _shoot("ok-two-positions").svg
-    assert svg == snapshot(extension_class=SVGImageSnapshotExtension)
+    assert_view(snapshot, svg, record=False)
 
 
 def test_svg_snapshot_120x36(snapshot: SnapshotAssertion) -> None:
     """The reviewed 120x36 rendering of ok-two-positions with the detail open."""
     svg = _shoot("ok-two-positions", ["enter"], size=(120, 36)).svg
-    assert svg == snapshot(extension_class=SVGImageSnapshotExtension)
+    assert_view(snapshot, svg, record=False)
 
 
 def test_svg_snapshot_160x45(snapshot: SnapshotAssertion) -> None:
     """The reviewed 160x45 (wide) rendering of ok-two-positions."""
     svg = _shoot("ok-two-positions", size=(160, 45)).svg
-    assert svg == snapshot(extension_class=SVGImageSnapshotExtension)
+    assert_view(snapshot, svg, record=True)
 
 
 def test_svg_snapshot_240x60(snapshot: SnapshotAssertion) -> None:
     """The reviewed 240x60 (ultra) rendering of ok-two-positions."""
     svg = _shoot("ok-two-positions", size=(240, 60)).svg
-    assert svg == snapshot(extension_class=SVGImageSnapshotExtension)
+    assert_view(snapshot, svg, record=False)
 
 
 def test_svg_snapshot_down_80x24(snapshot: SnapshotAssertion) -> None:
     """The reviewed 80x24 rendering while hermes is down: red row, dimmed money."""
     svg = _shoot("down-stale").svg
-    assert svg == snapshot(extension_class=SVGImageSnapshotExtension)
+    assert_view(snapshot, svg, record=True)
 
 
 def _top_line(release: Callable[[], str] | None, size: tuple[int, int] = (100, 30)) -> str:
@@ -496,11 +493,14 @@ def test_top_line_names_the_running_release() -> None:
     """The status row reads "release <name>" beside the heartbeat (#649).
 
     Since issue #711 the window bar and the tabs sit above it and the theme
-    chip follows the heartbeat; the heartbeat is still drawn whole.
+    chip follows the heartbeat; since issue #1097 the mainnet badge leads it
+    in every theme. The heartbeat is still drawn whole.
     """
-    top = _top_line(lambda: "abc123def456")
+    top = _top_line(lambda: "abc123def456", size=(140, 30))
     assert (
-        top.startswith(" DEMO DATA · scenario ok-two-positions release abc123def456"),
+        top.startswith(
+            "SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions release abc123def456"
+        ),
         "● live · checked 14:00 · next 18:00" in top,
     ) == (True, True)
 

@@ -3,8 +3,6 @@
 Reference: ADR-002 §3, ADR-016 items 2 and 5.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
@@ -12,7 +10,12 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-from hermes.domain.fx.eur_pricing import EurPricing, fill_date_madrid, rate_is_final
+from hermes.domain.fx.eur_pricing import (
+    MAX_RATE_AGE_DAYS,
+    EurPricing,
+    fill_date_madrid,
+    rate_is_final,
+)
 from hermes.domain.fx.fx_rate import FxRate
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
@@ -119,13 +122,24 @@ class TestRateIsFinal:
 
     @given(
         fill=st.dates(min_value=date(2020, 1, 1), max_value=date(2030, 1, 1)),
-        back=st.integers(min_value=0, max_value=10),
+        back=st.integers(min_value=0, max_value=30),
         ahead=st.integers(min_value=1, max_value=10),
     )
-    def test_any_prior_business_day_is_final_once_the_fill_date_is_past(
+    def test_a_past_fill_takes_a_rate_up_to_four_days_older_and_no_older(
         self, fill: date, back: int, ahead: int
     ) -> None:
-        """Invariant: after the fill date, the closest prior business day is accepted."""
+        """Invariant: after the fill date, a rate is final exactly when at most 4 days older."""
         rate_day = date.fromordinal(fill.toordinal() - back)
         today = date.fromordinal(fill.toordinal() + ahead)
-        assert rate_is_final(fill_date=fill, rate_date=rate_day, today=today) is True
+        assert rate_is_final(fill_date=fill, rate_date=rate_day, today=today) is (back <= 4)
+
+    def test_easter_monday_takes_thursdays_rate_and_a_fifth_day_is_refused(self) -> None:
+        """Invariant: the longest real ECB gap (4 days) is accepted; one day more is not (#996)."""
+        easter_monday = date(2026, 4, 6)
+        today = date(2026, 4, 7)
+
+        assert MAX_RATE_AGE_DAYS == 4
+        assert (
+            rate_is_final(fill_date=easter_monday, rate_date=date(2026, 4, 2), today=today),
+            rate_is_final(fill_date=easter_monday, rate_date=date(2026, 4, 1), today=today),
+        ) == (True, False)

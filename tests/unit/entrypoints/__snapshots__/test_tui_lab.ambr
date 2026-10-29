@@ -1,0 +1,1733 @@
+# serializer version: 1
+# name: test_lab_detail_svg_snapshot[lab_detail_control_80x24][lab_detail_control_80x24]
+  '''
+   ◂ Lab › Backtests › synth-ensemble
+  ┏━ STRATEGY  ─────────────────────────────────────────────────────── computed
+   synth-ensemble  ★ CHAMPION
+   family breakout-ensemble
+  
+   BRIEF
+   • Long when breakouts over several lookbacks agree.
+   • Expected: fewer trades, better t-statistic.
+  
+   RULES                                                                        ▆▆
+   • Trend: the daily close is above its average.
+   • Entry (long only): at least two lookbacks break out together.
+   • Exit, first to fire: a trailing stop; a time stop.
+  
+   HYPOTHESIS
+   expects
+   • Fewer trades than the baseline.
+   • Bear stretch toward flat.
+   rejected if
+   • Rejected if the cost-stress check fails on Train.
+  
+   PARAMETERS
+   agree_min              signed 2 · neighbours 1, 3 · as run 2, 1
+   Esc back   [ ] prev/next   ^P palette   Q quit               2 of 6 · read-only
+  ---
+  colours: #000000 #070b14 #0c1424 #1a2740 #23535e #4894e7 #4ca3e8 #5088e9 #50b2e9 #54c2ea #58d1eb #637fee #7676f4 #838ca1 #8a6ef9 #8a94a8 #9d65ff #e6ecf5
+  
+  '''
+# ---
+# name: test_lab_detail_svg_snapshot[lab_detail_neon_80x24][lab_detail_neon_80x24]
+  '''
+   ◂ Lab › Backtests › synth-ensemble
+  ┏━ STRATEGY  ─────────────────────────────────────────────────────── computed
+   synth-ensemble  ★ CHAMPION
+   family breakout-ensemble
+  
+   BRIEF
+   • Long when breakouts over several lookbacks agree.
+   • Expected: fewer trades, better t-statistic.
+  
+   RULES                                                                        ▆▆
+   • Trend: the daily close is above its average.
+   • Entry (long only): at least two lookbacks break out together.
+   • Exit, first to fire: a trailing stop; a time stop.
+  
+   HYPOTHESIS
+   expects
+   • Fewer trades than the baseline.
+   • Bear stretch toward flat.
+   rejected if
+   • Rejected if the cost-stress check fails on Train.
+  
+   PARAMETERS
+   agree_min              signed 2 · neighbours 1, 3 · as run 2, 1
+   Esc back   [ ] prev/next   ^P palette   Q quit               2 of 6 · read-only
+  ---
+  colours: #000010 #00606f #00f0ff #0b0420 #120731 #1fcfff #3daeff #4a2399 #5c8dff #798bb6 #7b6cff #8fa8d8 #9759fd #b152fa #c8fbff #cb4bf7 #e544f3 #ff3df0
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_champion_control_120x36][lab_champion_control_120x36]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions     ● live · checked 14:00 · next 18:00 due  ◑ CONTROL ROOM
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  ┏━ BACKTESTS  ──────────────────────────────────────────────────────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation
+   6 of 6 · sort last ▼
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 · reversion 1 · +1 more
+   split  validation 3 · train 2
+    Strategy           Family               S T V J  Status               Trials  Fam.val  Last run ▼
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2       1/5      10-17 21:01
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3       1/5      10-17 21:00
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2       0/5      10-17 20:05                 ▃▃
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1       0/5      10-17 20:03
+   ↑↓ select · ↵ open · / filter · S sort ──────────────────────────────────────────────────────────────────────────────━┛
+  ┏━ STRATEGY  ──────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────── computed
+   synth-ensemble  ★ CHAMPION                                  GATE                 Train  Valid  threshold
+   family breakout-ensemble                                    max_drawdown         PASS  PASS   < 15%
+                                                               recovery_days        PASS  PASS   < 90 days from a
+   BRIEF                                                       drawdown ≥ 8%
+   • Long when breakouts over several lookbacks agree.         profit_factor        PASS  PASS   > 1.3
+   • Expected: fewer trades, better t-statistic.               ulcer_index          PASS  PASS   < 10
+                                                               fee_share            PASS  PASS   < 30% of gross P&L
+   RULES                                                       win_rate             PASS  PASS   ≥ 30%
+   • Trend: the daily close is above its average.              dsr                  PASS  PASS   ≥ 0.95
+   • Entry (long only): at least two lookbacks break out       pbo                  PASS  PASS   ≤ 0.05
+   together.                                                   t_stat               PASS  PASS   > 3.0
+   • Exit, first to fire: a trailing stop; a time stop.        trade_count          PASS  PASS   ≥ 100
+                                                               cost_stress          PASS  PASS   still positive at x2.0
+   HYPOTHESIS                                                  positive_years       PASS  PASS   share of years > 0.5
+   expects                                                     bull_return          PASS  PASS   positive in every bull
+   • Fewer trades than the baseline.                           stretch
+   signed parameters against as run ───────────────────────━┛  thresholds always · values only when shown ──────────────━┛
+  Shadow test · day 12 of 90  ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                      read-only
+  ---
+  colours: #000000 #070b14 #0c1424 #131d31 #161e2e #182338 #19253c #1a2740 #23535e #468ce6 #468de6 #468ee6 #478ce6 #478fe6 #4790e6 #4791e6 #488be7 #4892e6 #4894e7 #4895e7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a9ae7 #4a9ce7 #4a9de7 #4b8ae7 #4b9ee7 #4b9fe7 #4ba0e7 #4ca1e8 #4ca3e8 #4ca4e8 #4d89e8 #4da5e8 #4da6e8 #4da7e8 #4da8e8 #4e88e8 #4eaae8 #4eabe8 #4eace8 #4fade8 #4faee8 #4fafe9 #5088e9 #50b1e9 #50b2e9 #50b3e9 #50b4e9 #5187e9 #51b5e9 #51b6e9 #51b7e9 #5286ea #52b9e9 #52bae9 #52bbe9 #538fab #53bce9 #53bdea #53beea #53c0ea #5486ea #5490ab #54c0ea #54c1ea #54c2ea #54c3ea #5585ea #5591ab #55c4ea #55c5ea #55c7ea #5693ac #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57ceeb #57cfeb #5884eb #5896ad #58d0eb #58d1eb #5a83ec #5a97ad #5a98ad #5b82ec #5c82ec #5c9aae #5c9cae #5d6575 #5d82ed #5e81ed #5e9daf #6081ed #6180ee #637fee #647fef #657eef #677def #687df0 #697cf0 #6a7cf0 #6b7bf1 #6d7bf1 #6e7af2 #7079f2 #7179f2 #7278f2 #7378f3 #7477f3 #7676f4 #7677f4 #768eb2 #7776f4 #7875f4 #7a75f5 #7b74f5 #7d73f6 #7e73f6 #8072f7 #8171f7 #8371f7 #838ca1 #8470f8 #866ff8 #876ff9 #896ef9 #8a6ef9 #8a6efa #8a94a8 #8b6dfa #8c6dfa #8d6cfa #8e6cfb #906bfb #916afc #936afc #9469fc #9668fd #9768fd #9967fe #9a66fe #9a9fa8 #9c66ff #9d65ff #a26efe #e6be28 #e6ecf5
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_champion_control_160x45][lab_champion_control_160x45]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                       ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  ┏━ BACKTESTS  ─────────────────────────────────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation                            GATE                 Train  Valid  threshold
+   6 of 6 · sort last ▼                                                                            max_drawdown         PASS  PASS   < 15%
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more                       recovery_days        PASS  PASS   < 90 days from a drawdown ≥
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 · reversion 1 · +1       8%
+   more                                                                                            profit_factor        PASS  PASS   > 1.3
+   split  validation 3 · train 2                                                                   ulcer_index          PASS  PASS   < 10
+    Strategy           Family               S T V J  Status               Trials  Fam.val  Last    fee_share            PASS  PASS   < 30% of gross P&L
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2       1/5      10-17   win_rate             PASS  PASS   ≥ 30%
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3       1/5      10-17   dsr                  PASS  PASS   ≥ 0.95
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2       0/5      10-17   pbo                  PASS  PASS   ≤ 0.05
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1       0/5      10-17   t_stat               PASS  PASS   > 3.0
+    synth-legacy                            ✓ · · ·  · NO VERDICT         1                10-08   trade_count          PASS  PASS   ≥ 100
+    synth-prereg-only  reversion            ✓ · · ·  ○ DRAFT              0       0/5              cost_stress          PASS  PASS   still positive at x2.0
+                                                                                                   positive_years       PASS  PASS   share of years > 0.5
+                                                                                                   bull_return          PASS  PASS   positive in every bull
+                                                                                                   stretch
+                                                                                         ▌         bear_return          PASS  PASS   bounded in every bear
+   ↑↓ select · ↵ open · / filter · S sort ─────────────────────────────────────────────────────━┛  stretch
+  ┏━ STRATEGY  ──────────────────────────────────────────────────────────────────────── computed   validation_vs_train  NA  PASS   ratio ≥ 0.5
+   synth-ensemble  ★ CHAMPION                                                                      neighbours           PASS  PASS   Sharpe ratio ≥ 0.5
+   family breakout-ensemble                                                                        correlation          PASS  PASS   < 0.7
+                                                                                                   bh_survivor          PASS
+   BRIEF                                                                                           champion             PASS
+   • Long when breakouts over several lookbacks agree.
+   • Expected: fewer trades, better t-statistic.                                                   RUNS
+                                                                                                   10-17 21:00 validation base
+   RULES                                                                                           2020-09-01..2024-06-30 a1b2c3d4 #f268aaae ⛓
+   • Trend: the daily close is above its average.                                                  10-17 20:01 train      agree_min=1
+   • Entry (long only): at least two lookbacks break out together.                                 2020-09-01..2024-06-30 a1b2c3d4 #a76eee8a ⛓
+   • Exit, first to fire: a trailing stop; a time stop.                                            10-17 20:00 train      base
+                                                                                                   2020-09-01..2024-06-30 a1b2c3d4 #09cbbc0f ⛓
+   HYPOTHESIS
+   expects                                                                                         LINKS
+   • Fewer trades than the baseline.                                                               batch    docs/experiments/synth-exp/batches/b1.md
+   • Bear stretch toward flat.                                                                     card     docs/experiments/synth-exp/cards/synth-ensemble.md
+   rejected if                                                                                     verdicts verdicts/b1/
+   • Rejected if the cost-stress check fails on Train.                                             notebook docs/experiments/synth-exp/lab-notebook.md
+   signed parameters against as run ───────────────────────────────────────────────────────────━┛  thresholds always · values only when shown ──────────────────━┛
+  Shadow test · day 12 of 90  █████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                                                              read-only
+  ---
+  colours: #000000 #070b14 #0c1424 #131d31 #161e2e #19253c #1a2740 #1b3a6b #23535e #254c86 #2e5ea2 #3871bd #4183d8 #468ce6 #468de6 #478ce6 #478ee6 #478fe6 #4790e6 #4791e6 #4792e6 #488be6 #4893e6 #4893e7 #4894e7 #4895e7 #498be7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a99e7 #4a9ae7 #4a9be7 #4a9ce7 #4a9de7 #4b8ae7 #4b9ee7 #4b9fe7 #4ba0e7 #4c89e8 #4ca1e8 #4ca2e8 #4ca3e8 #4ca4e8 #4ca5e8 #4d89e8 #4da6e8 #4da7e8 #4da8e8 #4e88e8 #4e96e9 #4ea9e8 #4eaae8 #4eabe8 #4eace8 #4eade8 #4f88e9 #4fade8 #4faee8 #4fafe9 #4fb0e9 #5087e9 #5088e9 #50b1e9 #50b2e9 #50b3e9 #5187e9 #51b4e9 #51b5e9 #51b6e9 #51b7e9 #51b8e9 #528dab #528fab #52b9e9 #52bae9 #52bbe9 #5386ea #53bce9 #53bdea #53beea #53bfea #53c0ea #5486ea #548fab #5490ab #54c0ea #54c1ea #54c2ea #54c3ea #5585ea #5591ab #55c4ea #55c5ea #55c6ea #55c7ea #5685eb #5692ac #5693ac #56c7ea #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57cdeb #57ceeb #5884eb #5895ad #5896ad #58cfeb #58d0eb #58d1eb #5983ec #5997ad #5a83ec #5a98ad #5b82ec #5b99ad #5c82ec #5c9aae #5c9bae #5d6575 #5d9caf #5dabee #5e81ed #5e9daf #5f81ed #6080ed #6180ee #627fee #637fee #647fef #657eef #667eef #677df0 #687df0 #697cf0 #6a7cf0 #6b7cf1 #6c7bf1 #6cc0f4 #6d7bf1 #6e7af1 #6f7af2 #7079f2 #7179f2 #7278f2 #7278f3 #7378f3 #7577f3 #7676f4 #7677f4 #768eb2 #7776f4 #7876f4 #7975f5 #7a75f5 #7b74f5 #7c74f6 #7cd4f9 #7d73f6 #7e73f6 #7f72f7 #8172f7 #8271f7 #8371f7 #838ca1 #8470f8 #8570f8 #866ff8 #876ff9 #886ef9 #896ef9 #8a6dfa #8a6ef9 #8a94a8 #8b6dfa #8be9ff #8c6dfa #8d6cfa #8e6cfb #8f6bfb #906bfb #916afc #926afc #9369fc #9469fc #9568fd #9668fd #9867fd #9967fe #9a66fe #9a9fa8 #9b66fe #9c65ff #9d65ff #a26efe #e6be28 #e6ecf5
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_champion_control_240x60][lab_champion_control_240x60]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                       ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  ┏━ BACKTESTS  ────────────────────────────────────────────────────────────────────────────── computed  ┏━ STRATEGY  ───────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation                                   synth-ensemble  ★ CHAMPION                                           GATE                 Train  Valid  threshold
+   6 of 6 · sort last ▼                                                                                   family breakout-ensemble                                             max_drawdown         PASS  PASS   < 15%
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more                                                                                                   recovery_days        PASS  PASS   < 90 days from a drawdown ≥ 8%
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 · reversion 1 · +1 more         BRIEF                                                                profit_factor        PASS  PASS   > 1.3
+   split  validation 3 · train 2                                                                          • Long when breakouts over several lookbacks agree.                  ulcer_index          PASS  PASS   < 10
+    Strategy           Family               S T V J  Status               Trials  Fam.val  Last run ▼     • Expected: fewer trades, better t-statistic.                        fee_share            PASS  PASS   < 30% of gross P&L
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2       1/5      10-17 21:01                                                                         win_rate             PASS  PASS   ≥ 30%
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3       1/5      10-17 21:00    RULES                                                                dsr                  PASS  PASS   ≥ 0.95
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2       0/5      10-17 20:05    • Trend: the daily close is above its average.                       pbo                  PASS  PASS   ≤ 0.05
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1       0/5      10-17 20:03    • Entry (long only): at least two lookbacks break out together.      t_stat               PASS  PASS   > 3.0
+    synth-legacy                            ✓ · · ·  · NO VERDICT         1                10-08 16:38    • Exit, first to fire: a trailing stop; a time stop.                 trade_count          PASS  PASS   ≥ 100
+    synth-prereg-only  reversion            ✓ · · ·  ○ DRAFT              0       0/5                                                                                          cost_stress          PASS  PASS   still positive at x2.0
+                                                                                                          HYPOTHESIS                                                           positive_years       PASS  PASS   share of years > 0.5
+                                                                                                          expects                                                              bull_return          PASS  PASS   positive in every bull stretch
+                                                                                                          • Fewer trades than the baseline.                                    bear_return          PASS  PASS   bounded in every bear stretch
+                                                                                                          • Bear stretch toward flat.                                          validation_vs_train  NA  PASS   ratio ≥ 0.5
+                                                                                                          rejected if                                                          neighbours           PASS  PASS   Sharpe ratio ≥ 0.5
+                                                                                                          • Rejected if the cost-stress check fails on Train.                  correlation          PASS  PASS   < 0.7
+                                                                                                                                                                               bh_survivor          PASS
+                                                                                                          PARAMETERS                                                           champion             PASS
+                                                                                                          agree_min              signed 2 · neighbours 1, 3 · as run 2, 1
+                                                                                                          lookback               signed 120 · neighbours 90, 180 · as run      RUNS
+                                                                                                          120                                                                  10-17 21:00 validation base               2020-09-01..2024-06-30
+                                                                                                                                                                               a1b2c3d4 #f268aaae ⛓
+                                                                                                                                                                               10-17 20:01 train      agree_min=1        2020-09-01..2024-06-30
+                                                                                                                                                                               a1b2c3d4 #a76eee8a ⛓
+                                                                                                                                                                               10-17 20:00 train      base               2020-09-01..2024-06-30
+                                                                                                                                                                               a1b2c3d4 #09cbbc0f ⛓
+  
+                                                                                                                                                                               LINKS
+                                                                                                                                                                               batch    docs/experiments/synth-exp/batches/b1.md
+                                                                                                                                                                               card     docs/experiments/synth-exp/cards/synth-ensemble.md
+                                                                                                                                                                               verdicts verdicts/b1/
+                                                                                                                                                                               notebook docs/experiments/synth-exp/lab-notebook.md
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+   ↑↓ select · ↵ open · / filter · S sort ────────────────────────────────────────────────────────────━┛  signed parameters against as run ────────────────────────────────━┛  thresholds always · values only when shown ──────────────────────━┛
+  Shadow test · day 12 of 90  ███████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                                                                                                                                              read-only
+  ---
+  colours: #070b14 #0c1424 #131d31 #161e2e #182338 #19253c #1a2740 #1b3a6b #254c86 #2e5ea2 #3871bd #4183d8 #468ce6 #468de6 #478ce6 #478ee6 #478fe6 #4790e6 #4791e6 #488be7 #4892e6 #4893e6 #4893e7 #4894e7 #4895e7 #4896e7 #498be7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a9ae7 #4a9be7 #4a9ce7 #4a9de7 #4b8ae7 #4b8ae8 #4b9ee7 #4b9fe7 #4ba0e7 #4ba1e8 #4c89e8 #4ca2e8 #4ca3e8 #4ca4e8 #4ca5e8 #4d89e8 #4da5e8 #4da6e8 #4da7e8 #4da8e8 #4da9e8 #4e88e8 #4e89e8 #4e96e9 #4ea9e8 #4eaae8 #4eabe8 #4eace8 #4f88e9 #4fade8 #4faee8 #4fafe9 #4fb0e9 #5088e9 #50b1e9 #50b2e9 #50b3e9 #50b4e9 #5187e9 #51b5e9 #51b6e9 #51b7e9 #51b8e9 #5287e9 #528dab #528eab #52b8e9 #52b9e9 #52bae9 #52bbe9 #52bce9 #5386ea #538fab #53bce9 #53bdea #53beea #53bfea #53c0ea #5486ea #548fab #5490ab #54c0ea #54c1ea #54c2ea #54c3ea #5585ea #5591ab #5592ab #55c4ea #55c5ea #55c6ea #55c7ea #5685ea #5685eb #5692ac #5693ac #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57cdeb #57ceeb #57cfeb #5884eb #5894ad #5895ad #5896ad #58cfeb #58d0eb #58d1eb #5983ec #5984eb #5996ad #5997ad #5a83ec #5a98ad #5a99ad #5b82ec #5b83ec #5b9aae #5c82ec #5c9aae #5c9bae #5d6575 #5d82ed #5d9caf #5dabee #5e81ed #5e9daf #5f81ed #6080ed #6180ee #627fee #637fee #647eef #657eef #667def #667eef #677df0 #687df0 #697cf0 #6a7cf0 #6b7bf1 #6b7cf1 #6c7bf1 #6cc0f4 #6d7bf1 #6e7af1 #6e7af2 #6f7af2 #7079f2 #7179f2 #7278f2 #7278f3 #7378f3 #7477f3 #7478f3 #7577f3 #7676f4 #7677f4 #768eb2 #7776f4 #7876f4 #7975f5 #7a75f5 #7b74f5 #7c74f5 #7c74f6 #7cd4f9 #7d73f6 #7e73f6 #7f72f6 #8072f7 #8171f7 #8172f7 #8271f7 #8371f7 #838ca1 #8470f8 #8570f8 #866ff8 #866ff9 #876ff9 #886ef9 #896ef9 #8a6dfa #8a6ef9 #8a94a8 #8b6dfa #8be9ff #8c6dfa #8d6cfa #8e6cfb #8f6bfb #906bfb #916afc #916bfb #926afc #936afc #9469fc #9569fd #9668fd #9768fd #9867fe #9967fe #9a66fe #9a9fa8 #9b66fe #9c65ff #9c66ff #9d65ff #a26efe #e6be28 #e6ecf5
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_champion_control_80x24][lab_champion_control_80x24]
+  '''
+  
+    1   2   3   4   5   6   7   8   9
+  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  ┏━ BACKTESTS  ──────────────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation
+   6 of 6 · sort last ▼
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 ·
+   reversion 1 · +1 more
+   split  validation 3 · train 2
+    Strategy           Family               S T V J  Status               Trials
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1
+    synth-legacy                            ✓ · · ·  · NO VERDICT         1
+    synth-prereg-only  reversion            ✓ · · ·  ○ DRAFT              0
+  
+  
+                                                               ▉
+   ↑↓ select · ↵ open · / filter · S sort ──────────────────────────────────────━┛
+  Shadow test · day 12 of 90  ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9    ↵    T    ?    ^P    Q quit         next due · read-only
+  ---
+  colours: #000000 #070b14 #0c1424 #131d31 #161e2e #19253c #1a2740 #23535e #468ce6 #468de6 #478ce6 #478fe6 #4790e6 #4892e6 #4894e7 #498be7 #4996e7 #4997e7 #4999e7 #4a9ae7 #4a9be7 #4a9de7 #4b9ee7 #4ba0e7 #4c8ae8 #4ca2e8 #4ca4e8 #4da5e8 #4da7e8 #4da8e8 #4e89e8 #4ea9e8 #4eabe8 #4eace8 #4faee8 #4fb0e9 #5088e9 #50b2e9 #50b3e9 #51b5e9 #51b7e9 #5287e9 #52b9e9 #52bae9 #53bce9 #53beea #53c0ea #5486ea #548fab #54c1ea #54c3ea #55c5ea #55c7ea #5692ac #56c8ea #56caea #5784eb #5785eb #57cceb #57ceeb #5895ad #58cfeb #58d1eb #5984eb #5a98ad #5b83ec #5c9aae #5d6575 #5d82ed #5e9daf #5f81ed #6280ee #647fef #667eef #687df0 #697cf0 #6a7cf0 #6d7bf1 #6f7af2 #7179f2 #7378f3 #7577f4 #768eb2 #7876f4 #7a75f5 #7c74f6 #7e73f6 #8072f7 #8371f7 #838ca1 #8570f8 #876ff9 #896ef9 #8a94a8 #8b6dfa #8c6dfa #8e6cfb #906bfb #926afc #9469fc #9668fd #9967fe #9a9fa8 #9b66fe #9d65ff #a26efe #e6be28 #e6ecf5
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_champion_neon_120x36][lab_champion_neon_120x36]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions             ● live · checked 14:00 · next 18:00 due  ◑ NEON
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  ┏━ BACKTESTS  ──────────────────────────────────────────────────────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation
+   6 of 6 · sort last ▼
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 · reversion 1 · +1 more
+   split  validation 3 · train 2
+    Strategy           Family               S T V J  Status               Trials  Fam.val  Last run ▼
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2       1/5      10-17 21:01
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3       1/5      10-17 21:00
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2       0/5      10-17 20:05                 ▃▃
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1       0/5      10-17 20:03
+   ↑↓ select · ↵ open · / filter · S sort ──────────────────────────────────────────────────────────────────────────────━┛
+  ┏━ STRATEGY  ──────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────── computed
+   synth-ensemble  ★ CHAMPION                                  GATE                 Train  Valid  threshold
+   family breakout-ensemble                                    max_drawdown         PASS  PASS   < 15%
+                                                               recovery_days        PASS  PASS   < 90 days from a
+   BRIEF                                                       drawdown ≥ 8%
+   • Long when breakouts over several lookbacks agree.         profit_factor        PASS  PASS   > 1.3
+   • Expected: fewer trades, better t-statistic.               ulcer_index          PASS  PASS   < 10
+                                                               fee_share            PASS  PASS   < 30% of gross P&L
+   RULES                                                       win_rate             PASS  PASS   ≥ 30%
+   • Trend: the daily close is above its average.              dsr                  PASS  PASS   ≥ 0.95
+   • Entry (long only): at least two lookbacks break out       pbo                  PASS  PASS   ≤ 0.05
+   together.                                                   t_stat               PASS  PASS   > 3.0
+   • Exit, first to fire: a trailing stop; a time stop.        trade_count          PASS  PASS   ≥ 100
+                                                               cost_stress          PASS  PASS   still positive at x2.0
+   HYPOTHESIS                                                  positive_years       PASS  PASS   share of years > 0.5
+   expects                                                     bull_return          PASS  PASS   positive in every bull
+   • Fewer trades than the baseline.                           stretch
+   signed parameters against as run ───────────────────────━┛  thresholds always · values only when shown ──────────────━┛
+  Shadow test · day 12 of 90  ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                      read-only
+  ---
+  colours: #000010 #00606f #00f0ff #02eeff #039fb3 #059db3 #05ebff #079bb3 #07e9ff #09e6ff #0a99b3 #0b0420 #0c96b3 #0ce4ff #0e94b3 #0ee1ff #1091b3 #10dfff #120731 #128fb3 #13dcff #148db3 #15daff #168bb3 #17d7ff #1888b3 #1ad5ff #1b133b #1cd2ff #1e1543 #1ed0ff #1f1646 #1fcfff #20cdff #22cbff #23cbff #25c8ff #27c6ff #2ac3ff #2cc1ff #2ebeff #31bcff #33b9ff #34186f #35b7ff #37b5ff #38b4ff #3ab2ff #3cafff #3daeff #3fadff #41aaff #43a8ff #45a6ff #468ce6 #46a5ff #48a3ff #4a2399 #4aa0ff #4d9eff #4f9bff #5199ff #5396ff #5397ff #5694ff #5891ff #5a8fff #5c8dff #5d8dff #5f8aff #6188ff #627099 #6485ff #6683ff #6880ff #6881ff #6b7eff #6d7bff #6e7aff #6f79ff #7276ff #7474ff #7671ff #796fff #798bb6 #7b6cff #7d6aff #8067ff #8265ff #8462ff #8760ff #87a7b3 #895dff #8a5cff #8b5cff #8d5bff #8f5bfe #8fa8d8 #915afe #935afe #9374ff #9559fe #9759fd #9958fd #9b58fd #9d57fd #9f57fc #a156fc #a355fc #a555fc #a754fb #a854fb #aa53fb #ac53fb #ae52fa #b052fa #b152fa #b251fa #b451fa #b650f9 #b850f9 #b950f9 #ba4ff9 #bc4ff9 #be4ef8 #c04ef8 #c24df8 #c44cf8 #c44df8 #c64cf7 #c84cf7 #c8fbff #ca4bf7 #cb4bf7 #cc4bf7 #ce4af6 #d049f6 #d04af6 #d249f6 #d448f6 #d648f5 #d847f5 #da47f5 #dc46f5 #de46f4 #e045f4 #e245f4 #e344f4 #e544f3 #e6be28 #e743f3 #e843f3 #e943f3 #eb42f3 #ed42f2 #ef41f2 #f141f2 #f340f2 #f540f1 #f73ff1 #f93ff1 #fb3ef1 #fd3ef0 #ff3df0
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_champion_neon_240x60][lab_champion_neon_240x60]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                               ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ NEON
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  ┏━ BACKTESTS  ────────────────────────────────────────────────────────────────────────────── computed  ┏━ STRATEGY  ───────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation                                   synth-ensemble  ★ CHAMPION                                           GATE                 Train  Valid  threshold
+   6 of 6 · sort last ▼                                                                                   family breakout-ensemble                                             max_drawdown         PASS  PASS   < 15%
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more                                                                                                   recovery_days        PASS  PASS   < 90 days from a drawdown ≥ 8%
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 · reversion 1 · +1 more         BRIEF                                                                profit_factor        PASS  PASS   > 1.3
+   split  validation 3 · train 2                                                                          • Long when breakouts over several lookbacks agree.                  ulcer_index          PASS  PASS   < 10
+    Strategy           Family               S T V J  Status               Trials  Fam.val  Last run ▼     • Expected: fewer trades, better t-statistic.                        fee_share            PASS  PASS   < 30% of gross P&L
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2       1/5      10-17 21:01                                                                         win_rate             PASS  PASS   ≥ 30%
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3       1/5      10-17 21:00    RULES                                                                dsr                  PASS  PASS   ≥ 0.95
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2       0/5      10-17 20:05    • Trend: the daily close is above its average.                       pbo                  PASS  PASS   ≤ 0.05
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1       0/5      10-17 20:03    • Entry (long only): at least two lookbacks break out together.      t_stat               PASS  PASS   > 3.0
+    synth-legacy                            ✓ · · ·  · NO VERDICT         1                10-08 16:38    • Exit, first to fire: a trailing stop; a time stop.                 trade_count          PASS  PASS   ≥ 100
+    synth-prereg-only  reversion            ✓ · · ·  ○ DRAFT              0       0/5                                                                                          cost_stress          PASS  PASS   still positive at x2.0
+                                                                                                          HYPOTHESIS                                                           positive_years       PASS  PASS   share of years > 0.5
+                                                                                                          expects                                                              bull_return          PASS  PASS   positive in every bull stretch
+                                                                                                          • Fewer trades than the baseline.                                    bear_return          PASS  PASS   bounded in every bear stretch
+                                                                                                          • Bear stretch toward flat.                                          validation_vs_train  NA  PASS   ratio ≥ 0.5
+                                                                                                          rejected if                                                          neighbours           PASS  PASS   Sharpe ratio ≥ 0.5
+                                                                                                          • Rejected if the cost-stress check fails on Train.                  correlation          PASS  PASS   < 0.7
+                                                                                                                                                                               bh_survivor          PASS
+                                                                                                          PARAMETERS                                                           champion             PASS
+                                                                                                          agree_min              signed 2 · neighbours 1, 3 · as run 2, 1
+                                                                                                          lookback               signed 120 · neighbours 90, 180 · as run      RUNS
+                                                                                                          120                                                                  10-17 21:00 validation base               2020-09-01..2024-06-30
+                                                                                                                                                                               a1b2c3d4 #f268aaae ⛓
+                                                                                                                                                                               10-17 20:01 train      agree_min=1        2020-09-01..2024-06-30
+                                                                                                                                                                               a1b2c3d4 #a76eee8a ⛓
+                                                                                                                                                                               10-17 20:00 train      base               2020-09-01..2024-06-30
+                                                                                                                                                                               a1b2c3d4 #09cbbc0f ⛓
+  
+                                                                                                                                                                               LINKS
+                                                                                                                                                                               batch    docs/experiments/synth-exp/batches/b1.md
+                                                                                                                                                                               card     docs/experiments/synth-exp/cards/synth-ensemble.md
+                                                                                                                                                                               verdicts verdicts/b1/
+                                                                                                                                                                               notebook docs/experiments/synth-exp/lab-notebook.md
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+   ↑↓ select · ↵ open · / filter · S sort ────────────────────────────────────────────────────────────━┛  signed parameters against as run ────────────────────────────────━┛  thresholds always · values only when shown ──────────────────────━┛
+  Shadow test · day 12 of 90  ███████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                                                                                                                                              read-only
+  ---
+  colours: #00f0ff #01efff #02eeff #039fb3 #03ecff #049fb3 #059db3 #05ebff #069db3 #06eaff #079bb3 #07e9ff #089bb3 #08e7ff #0999b3 #09e6ff #0ae5ff #0b0420 #0b97b3 #0c96b3 #0ce4ff #0d95b3 #0de2ff #0e94b3 #0ee1ff #0f93b3 #0fe0ff #1091b3 #1092b3 #10dfff #11ddff #120731 #128fb3 #1290b3 #12dcff #138eb3 #148db3 #14dbff #158cb3 #15daff #168bb3 #16d8ff #178ab3 #17d7ff #1888b3 #1889b3 #18d6ff #19d5ff #1a86b3 #1a88b3 #1b133b #1b3a6b #1bd4ff #1cd2ff #1dd1ff #1e1543 #1ed0ff #1f1646 #1fcfff #20cdff #21ccff #22cbff #23cbff #24caff #254c86 #25c8ff #26c7ff #27c6ff #28c5ff #2ac3ff #2bc2ff #2cc1ff #2dc0ff #2e5ea2 #2ebeff #2fbdff #31bcff #32bbff #33baff #34186f #34b8ff #35b7ff #36b6ff #37b5ff #3871bd #39b3ff #3ab2ff #3bb1ff #3cb0ff #3daeff #3eadff #40acff #4183d8 #41abff #42a9ff #43a8ff #44a7ff #45a6ff #468ce6 #46a4ff #48a3ff #49a2ff #4a2399 #4aa1ff #4b9fff #4c9eff #4d9dff #4e96e9 #4f9cff #509bff #5199ff #5298ff #5397ff #5496ff #5594ff #5793ff #5892ff #5991ff #5a8fff #5b8eff #5c8dff #5dabee #5e8cff #5f8aff #6089ff #6188ff #627099 #6287ff #6385ff #6484ff #6683ff #6782ff #6881ff #697fff #6a7eff #6b7dff #6cc0f4 #6d7cff #6e7aff #6f79ff #7078ff #7177ff #7275ff #7374ff #7573ff #7672ff #7770ff #786fff #796eff #798bb6 #7a6dff #7b6cff #7c6bff #7cd4f9 #7d6aff #7e69ff #7f68ff #8067ff #8165ff #8264ff #8463ff #8562ff #8660ff #875fff #87a7b3 #885eff #895dff #8a5cff #8b5cff #8be9ff #8c5bff #8d5bff #8e5bfe #8f5bfe #8fa8d8 #905afe #915afe #925afe #935afe #9374ff #9459fe #9559fe #9659fd #9758fd #9759fd #9858fd #9958fd #9a58fd #9b57fd #9c57fd #9d57fd #9e57fc #9f56fc #a056fc #a156fc #a256fc #a355fc #a455fc #a555fc #a655fb #a754fb #a854fb #a954fb #aa54fb #ab53fb #ac53fb #ad53fb #ae53fa #af52fa #b052fa #b152fa #b251fa #b351fa #b451fa #b551fa #b650f9 #b750f9 #b850f9 #b94ff9 #b950f9 #ba4ff9 #bb4ff9 #bc4ff9 #bd4ef8 #be4ef8 #bf4ef8 #c04ef8 #c14df8 #c24df8 #c34df8 #c44cf8 #c44df8 #c54cf7 #c64cf7 #c74cf7 #c84cf7 #c8fbff #c94bf7 #ca4bf7 #cb4bf7 #cc4af7 #cd4af6 #ce4af6 #cf4af6 #d049f6 #d149f6 #d249f6 #d349f6 #d448f6 #d548f5 #d648f5 #d748f5 #d847f5 #d947f5 #da47f5 #db47f5 #dc46f5 #dd46f4 #de46f4 #df46f4 #e045f4 #e145f4 #e245f4 #e345f4 #e444f4 #e544f3 #e644f3 #e6be28 #e743f3 #e843f3 #e943f3 #ea42f3 #eb42f3 #ec42f2 #ed42f2 #ee41f2 #ef41f2 #f041f2 #f141f2 #f240f2 #f340f2 #f440f1 #f540f1 #f63ff1 #f73ff1 #f83ff1 #f93ff1 #fa3ef1 #fb3ef1 #fc3ef0 #fd3ef0 #fe3df0 #ff3df0
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_champion_neon_80x24][lab_champion_neon_80x24]
+  '''
+  
+    1   2   3   4   5   6   7   8   9
+  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  ┏━ BACKTESTS  ──────────────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation
+   6 of 6 · sort last ▼
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 ·
+   reversion 1 · +1 more
+   split  validation 3 · train 2
+    Strategy           Family               S T V J  Status               Trials
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1
+    synth-legacy                            ✓ · · ·  · NO VERDICT         1
+    synth-prereg-only  reversion            ✓ · · ·  ○ DRAFT              0
+  
+  
+                                                               ▉
+   ↑↓ select · ↵ open · / filter · S sort ──────────────────────────────────────━┛
+  Shadow test · day 12 of 90  ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9    ↵    T    ?    ^P    Q quit         next due · read-only
+  ---
+  colours: #000010 #00606f #00f0ff #039fb3 #03ecff #079bb3 #07e9ff #0ae5ff #0b0420 #0b97b3 #0ee1ff #0f92b3 #11ddff #120731 #148eb3 #15daff #1889b3 #18d6ff #1b133b #1cd2ff #1f1646 #1fceff #23cbff #26c7ff #2ac3ff #2dbfff #31bcff #34186f #34b8ff #37b5ff #38b4ff #3bb0ff #3fadff #42a9ff #46a5ff #49a1ff #4a2399 #4d9eff #509aff #5397ff #5496ff #5792ff #5b8fff #5e8bff #627099 #6287ff #6583ff #6980ff #6c7cff #6e7aff #7078ff #7374ff #7771ff #798bb6 #7a6dff #7e69ff #8165ff #8562ff #87a7b3 #885eff #8a5cff #8b5cff #8e5bfe #8fa8d8 #915afe #9374ff #9459fe #9758fd #9a58fd #9d57fd #a056fc #a156fc #a355fc #a655fb #a954fb #ac53fb #af52fa #b251fa #b551f9 #b850f9 #b950f9 #bb4ff9 #be4ef8 #c14df8 #c44df8 #c74cf7 #c8fbff #ca4bf7 #cd4af6 #d049f6 #d04af6 #d349f6 #d648f5 #d847f5 #db46f5 #de46f4 #e145f4 #e444f3 #e6be28 #e743f3 #e843f3 #ea42f3 #ed42f2 #f041f2 #f340f2 #f63ff1 #f93ff1 #fc3ef0 #ff3df0
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_drafts_control_120x36][lab_drafts_control_120x36]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions     ● live · checked 14:00 · next 18:00 due  ◑ CONTROL ROOM
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  
+    Drafts: the parameter chat and the drafts of the next batch come with the MVP2 lab (issue #967).
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  Shadow test · day 12 of 90  ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                      read-only
+  ---
+  colours: #070b14 #131d31 #468de6 #468ee6 #478ce6 #478fe6 #4790e6 #4791e6 #488be7 #4892e6 #4894e7 #4895e7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a9ae7 #4a9ce7 #4a9de7 #4b8ae7 #4b9ee7 #4b9fe7 #4ba0e7 #4ca1e8 #4ca3e8 #4ca4e8 #4d89e8 #4da5e8 #4da6e8 #4da7e8 #4da8e8 #4e88e8 #4eaae8 #4eabe8 #4eace8 #4fade8 #4faee8 #4fafe9 #5088e9 #50b1e9 #50b2e9 #50b3e9 #50b4e9 #5187e9 #51b5e9 #51b6e9 #51b7e9 #5286ea #52b9e9 #52bae9 #52bbe9 #538fab #53bce9 #53bdea #53beea #53c0ea #5486ea #5490ab #54c1ea #54c2ea #54c3ea #5585ea #5591ab #55c4ea #55c5ea #55c7ea #5693ac #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57ceeb #57cfeb #5884eb #5896ad #58d0eb #58d1eb #5a83ec #5a97ad #5a98ad #5b82ec #5c9aae #5c9cae #5d6575 #5d82ed #5e81ed #5e9daf #6081ed #6180ee #637fee #647fef #657eef #677def #687df0 #6a7cf0 #6b7bf1 #6d7bf1 #6e7af2 #7079f2 #7179f2 #7378f3 #7477f3 #7677f4 #768eb2 #7776f4 #7875f4 #7a75f5 #7b74f5 #7d73f6 #7e73f6 #8072f7 #8171f7 #8371f7 #838ca1 #8470f8 #866ff8 #876ff9 #896ef9 #8a6efa #8a94a8 #8b6dfa #8d6cfa #8e6cfb #906bfb #916afc #936afc #9469fc #9668fd #9768fd #9967fe #9a66fe #9a9fa8 #9c66ff #9d65ff #e6be28 #e6ecf5
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_drafts_control_160x45][lab_drafts_control_160x45]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                       ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  
+    Drafts: the parameter chat and the drafts of the next batch come with the MVP2 lab (issue #967).
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  Shadow test · day 12 of 90  █████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                                                              read-only
+  ---
+  colours: #070b14 #131d31 #1b3a6b #254c86 #2e5ea2 #3871bd #4183d8 #468ce6 #468de6 #478ce6 #478ee6 #478fe6 #4790e6 #4791e6 #4792e6 #488be6 #4893e6 #4893e7 #4894e7 #4895e7 #498be7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a99e7 #4a9ae7 #4a9be7 #4a9ce7 #4a9de7 #4b8ae7 #4b9ee7 #4b9fe7 #4ba0e7 #4c89e8 #4ca1e8 #4ca2e8 #4ca3e8 #4ca4e8 #4ca5e8 #4d89e8 #4da6e8 #4da7e8 #4da8e8 #4e88e8 #4e96e9 #4ea9e8 #4eaae8 #4eabe8 #4eace8 #4eade8 #4f88e9 #4fade8 #4faee8 #4fafe9 #4fb0e9 #5087e9 #50b1e9 #50b2e9 #50b3e9 #5187e9 #51b4e9 #51b5e9 #51b6e9 #51b7e9 #51b8e9 #528dab #528fab #52b9e9 #52bae9 #52bbe9 #5386ea #53bce9 #53bdea #53beea #53bfea #53c0ea #5486ea #548fab #5490ab #54c1ea #54c2ea #54c3ea #5585ea #5591ab #55c4ea #55c5ea #55c6ea #55c7ea #5685eb #5692ac #5693ac #56c7ea #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57cdeb #57ceeb #5884eb #5895ad #5896ad #58cfeb #58d0eb #58d1eb #5983ec #5997ad #5a83ec #5a98ad #5b82ec #5b99ad #5c82ec #5c9aae #5c9bae #5d6575 #5d9caf #5dabee #5e81ed #5e9daf #5f81ed #6080ed #6180ee #627fee #637fee #647fef #657eef #667eef #677df0 #687df0 #6a7cf0 #6b7cf1 #6c7bf1 #6cc0f4 #6d7bf1 #6e7af1 #6f7af2 #7079f2 #7179f2 #7278f3 #7378f3 #7577f3 #7677f4 #768eb2 #7776f4 #7876f4 #7975f5 #7a75f5 #7b74f5 #7c74f6 #7cd4f9 #7d73f6 #7e73f6 #7f72f7 #8172f7 #8271f7 #8371f7 #838ca1 #8470f8 #8570f8 #866ff8 #876ff9 #886ef9 #896ef9 #8a6dfa #8a94a8 #8b6dfa #8be9ff #8d6cfa #8e6cfb #8f6bfb #906bfb #916afc #926afc #9369fc #9469fc #9568fd #9668fd #9867fd #9967fe #9a66fe #9a9fa8 #9b66fe #9c65ff #9d65ff #e6be28 #e6ecf5
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_drafts_control_240x60][lab_drafts_control_240x60]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                       ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  
+    Drafts: the parameter chat and the drafts of the next batch come with the MVP2 lab (issue #967).
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  Shadow test · day 12 of 90  ███████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                                                                                                                                              read-only
+  ---
+  colours: #070b14 #131d31 #1b3a6b #254c86 #2e5ea2 #3871bd #4183d8 #468ce6 #468de6 #478ce6 #478ee6 #478fe6 #4790e6 #4791e6 #488be7 #4892e6 #4893e6 #4893e7 #4894e7 #4895e7 #4896e7 #498be7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a9ae7 #4a9be7 #4a9ce7 #4a9de7 #4b8ae7 #4b8ae8 #4b9ee7 #4b9fe7 #4ba0e7 #4ba1e8 #4c89e8 #4ca2e8 #4ca3e8 #4ca4e8 #4ca5e8 #4d89e8 #4da5e8 #4da6e8 #4da7e8 #4da8e8 #4da9e8 #4e88e8 #4e89e8 #4e96e9 #4ea9e8 #4eaae8 #4eabe8 #4eace8 #4f88e9 #4fade8 #4faee8 #4fafe9 #4fb0e9 #5088e9 #50b1e9 #50b2e9 #50b3e9 #50b4e9 #5187e9 #51b5e9 #51b6e9 #51b7e9 #51b8e9 #5287e9 #528dab #528eab #52b8e9 #52b9e9 #52bae9 #52bbe9 #52bce9 #5386ea #538fab #53bce9 #53bdea #53beea #53bfea #53c0ea #5486ea #548fab #5490ab #54c0ea #54c1ea #54c2ea #54c3ea #5585ea #5591ab #5592ab #55c4ea #55c5ea #55c6ea #55c7ea #5685ea #5685eb #5692ac #5693ac #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57cdeb #57ceeb #57cfeb #5884eb #5894ad #5895ad #5896ad #58cfeb #58d0eb #58d1eb #5983ec #5984eb #5996ad #5997ad #5a83ec #5a98ad #5a99ad #5b82ec #5b83ec #5b9aae #5c82ec #5c9aae #5c9bae #5d6575 #5d82ed #5d9caf #5dabee #5e81ed #5e9daf #5f81ed #6080ed #6180ee #627fee #637fee #647eef #657eef #667def #667eef #677df0 #687df0 #697cf0 #6a7cf0 #6b7bf1 #6b7cf1 #6c7bf1 #6cc0f4 #6d7bf1 #6e7af1 #6e7af2 #6f7af2 #7079f2 #7179f2 #7278f3 #7378f3 #7477f3 #7478f3 #7577f3 #7676f4 #7677f4 #768eb2 #7776f4 #7876f4 #7975f5 #7a75f5 #7b74f5 #7c74f5 #7c74f6 #7cd4f9 #7d73f6 #7e73f6 #7f72f6 #8072f7 #8171f7 #8172f7 #8271f7 #8371f7 #838ca1 #8470f8 #8570f8 #866ff8 #866ff9 #876ff9 #886ef9 #896ef9 #8a6dfa #8a94a8 #8b6dfa #8be9ff #8c6dfa #8d6cfa #8e6cfb #8f6bfb #906bfb #916afc #916bfb #926afc #936afc #9469fc #9569fd #9668fd #9768fd #9867fe #9967fe #9a66fe #9a9fa8 #9b66fe #9c65ff #9c66ff #9d65ff #e6be28 #e6ecf5
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_drafts_control_80x24][lab_drafts_control_80x24]
+  '''
+  
+    1   2   3   4   5   6   7   8   9
+  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  
+    Drafts: the parameter chat and the drafts of the next batch come with the
+    MVP2 lab (issue #967).
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  Shadow test · day 12 of 90  ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9    ↵    T    ?    ^P    Q quit         next due · read-only
+  ---
+  colours: #070b14 #131d31 #468de6 #478ce6 #478fe6 #4790e6 #4892e6 #4894e7 #498be7 #4996e7 #4997e7 #4999e7 #4a9be7 #4a9de7 #4b9ee7 #4ba0e7 #4c8ae8 #4ca2e8 #4ca4e8 #4da5e8 #4da7e8 #4e89e8 #4ea9e8 #4eabe8 #4eace8 #4faee8 #4fb0e9 #5088e9 #50b2e9 #50b3e9 #51b5e9 #51b7e9 #5287e9 #52b9e9 #52bae9 #53bce9 #53beea #53c0ea #5486ea #548fab #54c1ea #54c3ea #55c5ea #55c7ea #5692ac #56c8ea #56caea #5785eb #57cceb #57ceeb #5895ad #58cfeb #58d1eb #5984eb #5a98ad #5b83ec #5c9aae #5d6575 #5d82ed #5e9daf #5f81ed #6280ee #647fef #667eef #687df0 #6a7cf0 #6d7bf1 #6f7af2 #7179f2 #7378f3 #7577f4 #768eb2 #7876f4 #7a75f5 #7c74f6 #7e73f6 #8072f7 #8371f7 #838ca1 #8570f8 #876ff9 #896ef9 #8a94a8 #8b6dfa #8e6cfb #906bfb #926afc #9469fc #9668fd #9967fe #9a9fa8 #9b66fe #9d65ff #e6be28 #e6ecf5
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_drafts_neon_120x36][lab_drafts_neon_120x36]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions             ● live · checked 14:00 · next 18:00 due  ◑ NEON
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  
+    Drafts: the parameter chat and the drafts of the next batch come with the MVP2 lab (issue #967).
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  Shadow test · day 12 of 90  ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                      read-only
+  ---
+  colours: #00f0ff #02eeff #039fb3 #059db3 #05ebff #079bb3 #07e9ff #09e6ff #0a99b3 #0b0420 #0c96b3 #0ce4ff #0e94b3 #0ee1ff #1091b3 #10dfff #128fb3 #13dcff #148db3 #15daff #168bb3 #17d7ff #1888b3 #1ad5ff #1cd2ff #1ed0ff #20cdff #23cbff #25c8ff #27c6ff #2ac3ff #2cc1ff #2ebeff #31bcff #33b9ff #34186f #35b7ff #38b4ff #3ab2ff #3cafff #3fadff #41aaff #43a8ff #46a5ff #48a3ff #4aa0ff #4d9eff #4f9bff #5199ff #5396ff #5694ff #5891ff #5a8fff #5d8dff #5f8aff #6188ff #627099 #6485ff #6683ff #6880ff #6b7eff #6d7bff #6f79ff #7276ff #7474ff #7671ff #796fff #798bb6 #7b6cff #7d6aff #8067ff #8265ff #8462ff #8760ff #87a7b3 #895dff #8b5cff #8d5bff #8f5bfe #8fa8d8 #915afe #935afe #9374ff #9559fe #9759fd #9958fd #9b58fd #9d57fd #9f57fc #a156fc #a355fc #a555fc #a754fb #a854fb #aa53fb #ac53fb #ae52fa #b052fa #b251fa #b451fa #b650f9 #b850f9 #ba4ff9 #bc4ff9 #be4ef8 #c04ef8 #c24df8 #c44df8 #c64cf7 #c84cf7 #c8fbff #ca4bf7 #cc4bf7 #ce4af6 #d04af6 #d249f6 #d448f6 #d648f5 #d847f5 #da47f5 #dc46f5 #de46f4 #e045f4 #e245f4 #e344f4 #e544f3 #e6be28 #e743f3 #e943f3 #eb42f3 #ed42f2 #ef41f2 #f141f2 #f340f2 #f540f1 #f73ff1 #f93ff1 #fb3ef1 #fd3ef0 #ff3df0
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_drafts_neon_240x60][lab_drafts_neon_240x60]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                               ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ NEON
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  
+    Drafts: the parameter chat and the drafts of the next batch come with the MVP2 lab (issue #967).
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  Shadow test · day 12 of 90  ███████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                                                                                                                                              read-only
+  ---
+  colours: #00f0ff #01efff #02eeff #039fb3 #03ecff #049fb3 #059db3 #05ebff #069db3 #06eaff #079bb3 #07e9ff #089bb3 #08e7ff #0999b3 #09e6ff #0ae5ff #0b0420 #0b97b3 #0c96b3 #0ce4ff #0d95b3 #0de2ff #0e94b3 #0ee1ff #0f93b3 #0fe0ff #1091b3 #1092b3 #10dfff #11ddff #128fb3 #1290b3 #12dcff #138eb3 #148db3 #14dbff #158cb3 #15daff #168bb3 #16d8ff #178ab3 #17d7ff #1888b3 #1889b3 #18d6ff #19d5ff #1a86b3 #1a88b3 #1b3a6b #1bd4ff #1cd2ff #1dd1ff #1ed0ff #1fcfff #20cdff #21ccff #23cbff #24caff #254c86 #25c8ff #26c7ff #27c6ff #28c5ff #2ac3ff #2bc2ff #2cc1ff #2dc0ff #2e5ea2 #2ebeff #2fbdff #31bcff #32bbff #33baff #34186f #34b8ff #35b7ff #36b6ff #37b5ff #3871bd #39b3ff #3ab2ff #3bb1ff #3cb0ff #3daeff #3eadff #40acff #4183d8 #41abff #42a9ff #43a8ff #44a7ff #45a6ff #46a4ff #48a3ff #49a2ff #4aa1ff #4b9fff #4c9eff #4d9dff #4e96e9 #4f9cff #509bff #5199ff #5298ff #5397ff #5496ff #5594ff #5793ff #5892ff #5991ff #5a8fff #5b8eff #5c8dff #5dabee #5e8cff #5f8aff #6089ff #6188ff #627099 #6287ff #6385ff #6484ff #6683ff #6782ff #6881ff #697fff #6a7eff #6b7dff #6cc0f4 #6d7cff #6e7aff #6f79ff #7078ff #7177ff #7275ff #7374ff #7573ff #7672ff #7770ff #786fff #796eff #798bb6 #7a6dff #7c6bff #7cd4f9 #7d6aff #7e69ff #7f68ff #8067ff #8165ff #8264ff #8463ff #8562ff #8660ff #875fff #87a7b3 #885eff #895dff #8a5cff #8b5cff #8be9ff #8c5bff #8d5bff #8e5bfe #8f5bfe #8fa8d8 #905afe #915afe #925afe #935afe #9374ff #9459fe #9559fe #9659fd #9758fd #9858fd #9958fd #9a58fd #9b57fd #9c57fd #9d57fd #9e57fc #9f56fc #a056fc #a156fc #a256fc #a355fc #a455fc #a555fc #a655fb #a754fb #a854fb #a954fb #aa54fb #ab53fb #ac53fb #ad53fb #ae53fa #af52fa #b052fa #b152fa #b251fa #b351fa #b451fa #b551fa #b650f9 #b750f9 #b850f9 #b94ff9 #b950f9 #ba4ff9 #bb4ff9 #bc4ff9 #bd4ef8 #be4ef8 #bf4ef8 #c04ef8 #c14df8 #c24df8 #c34df8 #c44df8 #c54cf7 #c64cf7 #c74cf7 #c84cf7 #c8fbff #c94bf7 #ca4bf7 #cb4bf7 #cc4af7 #cd4af6 #ce4af6 #cf4af6 #d049f6 #d149f6 #d249f6 #d349f6 #d448f6 #d548f5 #d648f5 #d748f5 #d847f5 #d947f5 #da47f5 #db47f5 #dc46f5 #dd46f4 #de46f4 #df46f4 #e045f4 #e145f4 #e245f4 #e345f4 #e444f4 #e544f3 #e644f3 #e6be28 #e743f3 #e843f3 #e943f3 #ea42f3 #eb42f3 #ec42f2 #ed42f2 #ee41f2 #ef41f2 #f041f2 #f141f2 #f240f2 #f340f2 #f440f1 #f540f1 #f63ff1 #f73ff1 #f83ff1 #f93ff1 #fa3ef1 #fb3ef1 #fc3ef0 #fd3ef0 #fe3df0 #ff3df0
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_drafts_neon_80x24][lab_drafts_neon_80x24]
+  '''
+  
+    1   2   3   4   5   6   7   8   9
+  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  
+    Drafts: the parameter chat and the drafts of the next batch come with the
+    MVP2 lab (issue #967).
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  Shadow test · day 12 of 90  ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9    ↵    T    ?    ^P    Q quit         next due · read-only
+  ---
+  colours: #00f0ff #039fb3 #03ecff #079bb3 #07e9ff #0ae5ff #0b0420 #0b97b3 #0ee1ff #0f92b3 #11ddff #148eb3 #15daff #1889b3 #18d6ff #1cd2ff #1fceff #23cbff #26c7ff #2ac3ff #2dbfff #31bcff #34186f #34b8ff #38b4ff #3bb0ff #3fadff #42a9ff #46a5ff #49a1ff #4d9eff #509aff #5496ff #5792ff #5b8fff #5e8bff #627099 #6287ff #6583ff #6980ff #6c7cff #7078ff #7374ff #7771ff #798bb6 #7a6dff #7e69ff #8165ff #8562ff #87a7b3 #885eff #8b5cff #8e5bfe #8fa8d8 #915afe #9374ff #9459fe #9758fd #9a58fd #9d57fd #a056fc #a355fc #a655fb #a954fb #ac53fb #af52fa #b251fa #b551f9 #b850f9 #bb4ff9 #be4ef8 #c14df8 #c44df8 #c74cf7 #c8fbff #ca4bf7 #cd4af6 #d04af6 #d349f6 #d648f5 #d847f5 #db46f5 #de46f4 #e145f4 #e444f3 #e6be28 #e743f3 #ea42f3 #ed42f2 #f041f2 #f340f2 #f63ff1 #f93ff1 #fc3ef0 #ff3df0
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_list_control_120x36][lab_list_control_120x36]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions     ● live · checked 14:00 · next 18:00 due  ◑ CONTROL ROOM
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  ┏━ BACKTESTS  ──────────────────────────────────────────────────────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation
+   6 of 6 · sort last ▼
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 · reversion 1 · +1 more
+   split  validation 3 · train 2
+    Strategy           Family               S T V J  Status               Trials  Fam.val  Last run ▼
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2       1/5      10-17 21:01
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3       1/5      10-17 21:00
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2       0/5      10-17 20:05                 ▃▃
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1       0/5      10-17 20:03
+   ↑↓ select · ↵ open · / filter · S sort ──────────────────────────────────────────────────────────────────────────────━┛
+  ┏━ STRATEGY  ──────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────── computed
+   synth-daily-ma  ✗ FAIL · validation                         GATE                 Train  Valid  threshold
+   family daily-ma-trend                                       max_drawdown         PASS  PASS   < 15%
+                                                               recovery_days        PASS  PASS   < 90 days from a
+   BRIEF                                                       drawdown ≥ 8%
+   • Long after a daily close crosses above its average.       profit_factor        PASS  PASS   > 1.3
+                                                               ulcer_index          PASS  PASS   < 10
+   RULES                                                       fee_share            PASS  PASS   < 30% of gross P&L
+   No card with rules is committed.                            win_rate             PASS  PASS   ≥ 30%
+                                                               dsr                  PASS  FAIL   ≥ 0.95
+   HYPOTHESIS                                                  pbo                  PASS  PASS   ≤ 0.05
+   expects                                                     t_stat               PASS  FAIL   > 3.0
+   Not recorded.                                               trade_count          PASS  PASS   ≥ 100
+   rejected if                                                 cost_stress          PASS  PASS   still positive at x2.0
+   Not recorded.                                               positive_years       PASS  PASS   share of years > 0.5
+                                                               bull_return          PASS  PASS   positive in every bull
+   PARAMETERS                                                  stretch
+   signed parameters against as run ───────────────────────━┛  thresholds always · values only when shown ──────────────━┛
+  Shadow test · day 12 of 90  ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                      read-only
+  ---
+  colours: #000000 #070b14 #0c1424 #131d31 #161e2e #182338 #19253c #1a2740 #23535e #468ce6 #468de6 #468ee6 #478ce6 #478fe6 #4790e6 #4791e6 #488be7 #4892e6 #4894e7 #4895e7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a9ae7 #4a9ce7 #4a9de7 #4b8ae7 #4b9ee7 #4b9fe7 #4ba0e7 #4ca1e8 #4ca3e8 #4ca4e8 #4d89e8 #4da5e8 #4da6e8 #4da7e8 #4da8e8 #4e88e8 #4eaae8 #4eabe8 #4eace8 #4fade8 #4faee8 #4fafe9 #5088e9 #50b1e9 #50b2e9 #50b3e9 #50b4e9 #5187e9 #51b5e9 #51b6e9 #51b7e9 #5286ea #52b9e9 #52bae9 #52bbe9 #538fab #53bce9 #53bdea #53beea #53c0ea #5486ea #5490ab #54c0ea #54c1ea #54c2ea #54c3ea #5585ea #5591ab #55c4ea #55c5ea #55c7ea #5693ac #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57ceeb #57cfeb #5884eb #5896ad #58d0eb #58d1eb #5a83ec #5a97ad #5a98ad #5b82ec #5c82ec #5c9aae #5c9cae #5d6575 #5d82ed #5e81ed #5e9daf #6081ed #6180ee #637fee #647fef #657eef #677def #687df0 #697cf0 #6a7cf0 #6b7bf1 #6d7bf1 #6e7af2 #7079f2 #7179f2 #7278f2 #7378f3 #7477f3 #7676f4 #7677f4 #768eb2 #7776f4 #7875f4 #7a75f5 #7b74f5 #7d73f6 #7e73f6 #8072f7 #8171f7 #8371f7 #838ca1 #8470f8 #866ff8 #876ff9 #896ef9 #8a6ef9 #8a6efa #8a94a8 #8b6dfa #8c6dfa #8d6cfa #8e6cfb #906bfb #916afc #936afc #9469fc #9668fd #9768fd #9967fe #9a66fe #9a9fa8 #9c66ff #9d65ff #a26efe #e6be28 #e6ecf5 #f07814
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_list_control_160x45][lab_list_control_160x45]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                       ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  ┏━ BACKTESTS  ─────────────────────────────────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation                            GATE                 Train  Valid  threshold
+   6 of 6 · sort last ▼                                                                            max_drawdown         PASS  PASS   < 15%
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more                       recovery_days        PASS  PASS   < 90 days from a drawdown ≥
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 · reversion 1 · +1       8%
+   more                                                                                            profit_factor        PASS  PASS   > 1.3
+   split  validation 3 · train 2                                                                   ulcer_index          PASS  PASS   < 10
+    Strategy           Family               S T V J  Status               Trials  Fam.val  Last    fee_share            PASS  PASS   < 30% of gross P&L
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2       1/5      10-17   win_rate             PASS  PASS   ≥ 30%
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3       1/5      10-17   dsr                  PASS  FAIL   ≥ 0.95
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2       0/5      10-17   pbo                  PASS  PASS   ≤ 0.05
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1       0/5      10-17   t_stat               PASS  FAIL   > 3.0
+    synth-legacy                            ✓ · · ·  · NO VERDICT         1                10-08   trade_count          PASS  PASS   ≥ 100
+    synth-prereg-only  reversion            ✓ · · ·  ○ DRAFT              0       0/5              cost_stress          PASS  PASS   still positive at x2.0
+                                                                                                   positive_years       PASS  PASS   share of years > 0.5
+                                                                                                   bull_return          PASS  PASS   positive in every bull
+                                                                                                   stretch
+                                                                                         ▌         bear_return          PASS  PASS   bounded in every bear
+   ↑↓ select · ↵ open · / filter · S sort ─────────────────────────────────────────────────────━┛  stretch
+  ┏━ STRATEGY  ──────────────────────────────────────────────────────────────────────── computed   validation_vs_train  NA  NA   ratio ≥ 0.5
+   synth-daily-ma  ✗ FAIL · validation                                                             neighbours           PASS  PASS   Sharpe ratio ≥ 0.5
+   family daily-ma-trend                                                                           correlation          PASS  PASS   < 0.7
+                                                                                                   bh_survivor          ·
+   BRIEF                                                                                           champion             FAIL
+   • Long after a daily close crosses above its average.
+                                                                                                   RUNS
+   RULES                                                                                           10-17 21:01 validation base
+   No card with rules is committed.                                                                2020-09-01..2024-06-30 a1b2c3d4 #c1d43f42 ⛓
+                                                                                                   10-17 20:02 train      base
+   HYPOTHESIS                                                                                      2020-09-01..2024-06-30 a1b2c3d4 #7bf38fad ⛓
+   expects
+   Not recorded.                                                                                   LINKS
+   rejected if                                                                                     batch    docs/experiments/synth-exp/batches/b1.md
+   Not recorded.                                                                                   card     —
+                                                                                                   verdicts verdicts/b1/
+   PARAMETERS                                                                                      notebook docs/experiments/synth-exp/lab-notebook.md
+   sma_period             signed 100 · neighbours 50, 150 · as run 100
+  
+   signed parameters against as run ───────────────────────────────────────────────────────────━┛  thresholds always · values only when shown ──────────────────━┛
+  Shadow test · day 12 of 90  █████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                                                              read-only
+  ---
+  colours: #000000 #070b14 #0c1424 #131d31 #161e2e #19253c #1a2740 #1b3a6b #23535e #254c86 #2e5ea2 #3871bd #4183d8 #468ce6 #468de6 #478ce6 #478ee6 #478fe6 #4790e6 #4791e6 #4792e6 #488be6 #4893e6 #4893e7 #4894e7 #4895e7 #498be7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a99e7 #4a9ae7 #4a9be7 #4a9ce7 #4a9de7 #4b8ae7 #4b9ee7 #4b9fe7 #4ba0e7 #4c89e8 #4ca1e8 #4ca2e8 #4ca3e8 #4ca4e8 #4ca5e8 #4d89e8 #4da6e8 #4da7e8 #4da8e8 #4e88e8 #4e96e9 #4ea9e8 #4eaae8 #4eabe8 #4eace8 #4eade8 #4f88e9 #4fade8 #4faee8 #4fafe9 #4fb0e9 #5087e9 #5088e9 #50b1e9 #50b2e9 #50b3e9 #5187e9 #51b4e9 #51b5e9 #51b6e9 #51b7e9 #51b8e9 #528dab #528fab #52b9e9 #52bae9 #52bbe9 #5386ea #53bce9 #53bdea #53beea #53bfea #53c0ea #5486ea #548fab #5490ab #54c0ea #54c1ea #54c2ea #54c3ea #5585ea #5591ab #55c4ea #55c5ea #55c6ea #55c7ea #5685eb #5692ac #5693ac #56c7ea #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57cdeb #57ceeb #5884eb #5895ad #5896ad #58cfeb #58d0eb #58d1eb #5983ec #5997ad #5a83ec #5a98ad #5b82ec #5b99ad #5c82ec #5c9aae #5c9bae #5d6575 #5d9caf #5dabee #5e81ed #5e9daf #5f81ed #6080ed #6180ee #627fee #637fee #647fef #657eef #667eef #677df0 #687df0 #697cf0 #6a7cf0 #6b7cf1 #6c7bf1 #6cc0f4 #6d7bf1 #6e7af1 #6f7af2 #7079f2 #7179f2 #7278f2 #7278f3 #7378f3 #7577f3 #7676f4 #7677f4 #768eb2 #7776f4 #7876f4 #7975f5 #7a75f5 #7b74f5 #7c74f6 #7cd4f9 #7d73f6 #7e73f6 #7f72f7 #8172f7 #8271f7 #8371f7 #838ca1 #8470f8 #8570f8 #866ff8 #876ff9 #886ef9 #896ef9 #8a6dfa #8a6ef9 #8a94a8 #8b6dfa #8be9ff #8c6dfa #8d6cfa #8e6cfb #8f6bfb #906bfb #916afc #926afc #9369fc #9469fc #9568fd #9668fd #9867fd #9967fe #9a66fe #9a9fa8 #9b66fe #9c65ff #9d65ff #a26efe #e6be28 #e6ecf5 #f07814
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_list_control_240x60][lab_list_control_240x60]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                       ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  ┏━ BACKTESTS  ────────────────────────────────────────────────────────────────────────────── computed  ┏━ STRATEGY  ───────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation                                   synth-daily-ma  ✗ FAIL · validation                                  GATE                 Train  Valid  threshold
+   6 of 6 · sort last ▼                                                                                   family daily-ma-trend                                                max_drawdown         PASS  PASS   < 15%
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more                                                                                                   recovery_days        PASS  PASS   < 90 days from a drawdown ≥ 8%
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 · reversion 1 · +1 more         BRIEF                                                                profit_factor        PASS  PASS   > 1.3
+   split  validation 3 · train 2                                                                          • Long after a daily close crosses above its average.                ulcer_index          PASS  PASS   < 10
+    Strategy           Family               S T V J  Status               Trials  Fam.val  Last run ▼                                                                          fee_share            PASS  PASS   < 30% of gross P&L
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2       1/5      10-17 21:01    RULES                                                                win_rate             PASS  PASS   ≥ 30%
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3       1/5      10-17 21:00    No card with rules is committed.                                     dsr                  PASS  FAIL   ≥ 0.95
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2       0/5      10-17 20:05                                                                         pbo                  PASS  PASS   ≤ 0.05
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1       0/5      10-17 20:03    HYPOTHESIS                                                           t_stat               PASS  FAIL   > 3.0
+    synth-legacy                            ✓ · · ·  · NO VERDICT         1                10-08 16:38    expects                                                              trade_count          PASS  PASS   ≥ 100
+    synth-prereg-only  reversion            ✓ · · ·  ○ DRAFT              0       0/5                     Not recorded.                                                        cost_stress          PASS  PASS   still positive at x2.0
+                                                                                                          rejected if                                                          positive_years       PASS  PASS   share of years > 0.5
+                                                                                                          Not recorded.                                                        bull_return          PASS  PASS   positive in every bull stretch
+                                                                                                                                                                               bear_return          PASS  PASS   bounded in every bear stretch
+                                                                                                          PARAMETERS                                                           validation_vs_train  NA  NA   ratio ≥ 0.5
+                                                                                                          sma_period             signed 100 · neighbours 50, 150 · as run      neighbours           PASS  PASS   Sharpe ratio ≥ 0.5
+                                                                                                          100                                                                  correlation          PASS  PASS   < 0.7
+                                                                                                                                                                               bh_survivor          ·
+                                                                                                                                                                               champion             FAIL
+  
+                                                                                                                                                                               RUNS
+                                                                                                                                                                               10-17 21:01 validation base               2020-09-01..2024-06-30
+                                                                                                                                                                               a1b2c3d4 #c1d43f42 ⛓
+                                                                                                                                                                               10-17 20:02 train      base               2020-09-01..2024-06-30
+                                                                                                                                                                               a1b2c3d4 #7bf38fad ⛓
+  
+                                                                                                                                                                               LINKS
+                                                                                                                                                                               batch    docs/experiments/synth-exp/batches/b1.md
+                                                                                                                                                                               card     —
+                                                                                                                                                                               verdicts verdicts/b1/
+                                                                                                                                                                               notebook docs/experiments/synth-exp/lab-notebook.md
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+   ↑↓ select · ↵ open · / filter · S sort ────────────────────────────────────────────────────────────━┛  signed parameters against as run ────────────────────────────────━┛  thresholds always · values only when shown ──────────────────────━┛
+  Shadow test · day 12 of 90  ███████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                                                                                                                                              read-only
+  ---
+  colours: #070b14 #0c1424 #131d31 #161e2e #182338 #19253c #1a2740 #1b3a6b #254c86 #2e5ea2 #3871bd #4183d8 #468ce6 #468de6 #478ce6 #478ee6 #478fe6 #4790e6 #4791e6 #488be7 #4892e6 #4893e6 #4893e7 #4894e7 #4895e7 #4896e7 #498be7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a9ae7 #4a9be7 #4a9ce7 #4a9de7 #4b8ae7 #4b8ae8 #4b9ee7 #4b9fe7 #4ba0e7 #4ba1e8 #4c89e8 #4ca2e8 #4ca3e8 #4ca4e8 #4ca5e8 #4d89e8 #4da5e8 #4da6e8 #4da7e8 #4da8e8 #4da9e8 #4e88e8 #4e89e8 #4e96e9 #4ea9e8 #4eaae8 #4eabe8 #4eace8 #4f88e9 #4fade8 #4faee8 #4fafe9 #4fb0e9 #5088e9 #50b1e9 #50b2e9 #50b3e9 #50b4e9 #5187e9 #51b5e9 #51b6e9 #51b7e9 #51b8e9 #5287e9 #528dab #528eab #52b8e9 #52b9e9 #52bae9 #52bbe9 #52bce9 #5386ea #538fab #53bce9 #53bdea #53beea #53bfea #53c0ea #5486ea #548fab #5490ab #54c0ea #54c1ea #54c2ea #54c3ea #5585ea #5591ab #5592ab #55c4ea #55c5ea #55c6ea #55c7ea #5685ea #5685eb #5692ac #5693ac #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57cdeb #57ceeb #57cfeb #5884eb #5894ad #5895ad #5896ad #58cfeb #58d0eb #58d1eb #5983ec #5984eb #5996ad #5997ad #5a83ec #5a98ad #5a99ad #5b82ec #5b83ec #5b9aae #5c82ec #5c9aae #5c9bae #5d6575 #5d82ed #5d9caf #5dabee #5e81ed #5e9daf #5f81ed #6080ed #6180ee #627fee #637fee #647eef #657eef #667def #667eef #677df0 #687df0 #697cf0 #6a7cf0 #6b7bf1 #6b7cf1 #6c7bf1 #6cc0f4 #6d7bf1 #6e7af1 #6e7af2 #6f7af2 #7079f2 #7179f2 #7278f2 #7278f3 #7378f3 #7477f3 #7478f3 #7577f3 #7676f4 #7677f4 #768eb2 #7776f4 #7876f4 #7975f5 #7a75f5 #7b74f5 #7c74f5 #7c74f6 #7cd4f9 #7d73f6 #7e73f6 #7f72f6 #8072f7 #8171f7 #8172f7 #8271f7 #8371f7 #838ca1 #8470f8 #8570f8 #866ff8 #866ff9 #876ff9 #886ef9 #896ef9 #8a6dfa #8a6ef9 #8a94a8 #8b6dfa #8be9ff #8c6dfa #8d6cfa #8e6cfb #8f6bfb #906bfb #916afc #916bfb #926afc #936afc #9469fc #9569fd #9668fd #9768fd #9867fe #9967fe #9a66fe #9a9fa8 #9b66fe #9c65ff #9c66ff #9d65ff #a26efe #e6be28 #e6ecf5 #f07814
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_list_control_80x24][lab_list_control_80x24]
+  '''
+  
+    1   2   3   4   5   6   7   8   9
+  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  ┏━ BACKTESTS  ──────────────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation
+   6 of 6 · sort last ▼
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 ·
+   reversion 1 · +1 more
+   split  validation 3 · train 2
+    Strategy           Family               S T V J  Status               Trials
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1
+    synth-legacy                            ✓ · · ·  · NO VERDICT         1
+    synth-prereg-only  reversion            ✓ · · ·  ○ DRAFT              0
+  
+  
+                                                               ▉
+   ↑↓ select · ↵ open · / filter · S sort ──────────────────────────────────────━┛
+  Shadow test · day 12 of 90  ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9    ↵    T    ?    ^P    Q quit         next due · read-only
+  ---
+  colours: #000000 #070b14 #0c1424 #131d31 #161e2e #19253c #1a2740 #23535e #468ce6 #468de6 #478ce6 #478fe6 #4790e6 #4892e6 #4894e7 #498be7 #4996e7 #4997e7 #4999e7 #4a9ae7 #4a9be7 #4a9de7 #4b9ee7 #4ba0e7 #4c8ae8 #4ca2e8 #4ca4e8 #4da5e8 #4da7e8 #4da8e8 #4e89e8 #4ea9e8 #4eabe8 #4eace8 #4faee8 #4fb0e9 #5088e9 #50b2e9 #50b3e9 #51b5e9 #51b7e9 #5287e9 #52b9e9 #52bae9 #53bce9 #53beea #53c0ea #5486ea #548fab #54c1ea #54c3ea #55c5ea #55c7ea #5692ac #56c8ea #56caea #5784eb #5785eb #57cceb #57ceeb #5895ad #58cfeb #58d1eb #5984eb #5a98ad #5b83ec #5c9aae #5d6575 #5d82ed #5e9daf #5f81ed #6280ee #647fef #667eef #687df0 #697cf0 #6a7cf0 #6d7bf1 #6f7af2 #7179f2 #7378f3 #7577f4 #768eb2 #7876f4 #7a75f5 #7c74f6 #7e73f6 #8072f7 #8371f7 #838ca1 #8570f8 #876ff9 #896ef9 #8a94a8 #8b6dfa #8c6dfa #8e6cfb #906bfb #926afc #9469fc #9668fd #9967fe #9a9fa8 #9b66fe #9d65ff #a26efe #e6be28 #e6ecf5
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_list_neon_120x36][lab_list_neon_120x36]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions             ● live · checked 14:00 · next 18:00 due  ◑ NEON
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  ┏━ BACKTESTS  ──────────────────────────────────────────────────────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation
+   6 of 6 · sort last ▼
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 · reversion 1 · +1 more
+   split  validation 3 · train 2
+    Strategy           Family               S T V J  Status               Trials  Fam.val  Last run ▼
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2       1/5      10-17 21:01
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3       1/5      10-17 21:00
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2       0/5      10-17 20:05                 ▃▃
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1       0/5      10-17 20:03
+   ↑↓ select · ↵ open · / filter · S sort ──────────────────────────────────────────────────────────────────────────────━┛
+  ┏━ STRATEGY  ──────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────── computed
+   synth-daily-ma  ✗ FAIL · validation                         GATE                 Train  Valid  threshold
+   family daily-ma-trend                                       max_drawdown         PASS  PASS   < 15%
+                                                               recovery_days        PASS  PASS   < 90 days from a
+   BRIEF                                                       drawdown ≥ 8%
+   • Long after a daily close crosses above its average.       profit_factor        PASS  PASS   > 1.3
+                                                               ulcer_index          PASS  PASS   < 10
+   RULES                                                       fee_share            PASS  PASS   < 30% of gross P&L
+   No card with rules is committed.                            win_rate             PASS  PASS   ≥ 30%
+                                                               dsr                  PASS  FAIL   ≥ 0.95
+   HYPOTHESIS                                                  pbo                  PASS  PASS   ≤ 0.05
+   expects                                                     t_stat               PASS  FAIL   > 3.0
+   Not recorded.                                               trade_count          PASS  PASS   ≥ 100
+   rejected if                                                 cost_stress          PASS  PASS   still positive at x2.0
+   Not recorded.                                               positive_years       PASS  PASS   share of years > 0.5
+                                                               bull_return          PASS  PASS   positive in every bull
+   PARAMETERS                                                  stretch
+   signed parameters against as run ───────────────────────━┛  thresholds always · values only when shown ──────────────━┛
+  Shadow test · day 12 of 90  ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                      read-only
+  ---
+  colours: #000010 #00606f #00f0ff #02eeff #039fb3 #059db3 #05ebff #079bb3 #07e9ff #09e6ff #0a99b3 #0b0420 #0c96b3 #0ce4ff #0e94b3 #0ee1ff #1091b3 #10dfff #120731 #128fb3 #13dcff #148db3 #15daff #168bb3 #17d7ff #1888b3 #1ad5ff #1b133b #1cd2ff #1e1543 #1ed0ff #1f1646 #1fcfff #20cdff #22cbff #23cbff #25c8ff #27c6ff #2ac3ff #2cc1ff #2ebeff #31bcff #33b9ff #34186f #35b7ff #37b5ff #38b4ff #3ab2ff #3cafff #3daeff #3fadff #41aaff #43a8ff #45a6ff #468ce6 #46a5ff #48a3ff #4a2399 #4aa0ff #4d9eff #4f9bff #5199ff #5396ff #5397ff #5694ff #5891ff #5a8fff #5c8dff #5d8dff #5f8aff #6188ff #627099 #6485ff #6683ff #6880ff #6881ff #6b7eff #6d7bff #6e7aff #6f79ff #7276ff #7474ff #7671ff #796fff #798bb6 #7b6cff #7d6aff #8067ff #8265ff #8462ff #8760ff #87a7b3 #895dff #8a5cff #8b5cff #8d5bff #8f5bfe #8fa8d8 #915afe #935afe #9374ff #9559fe #9759fd #9958fd #9b58fd #9d57fd #9f57fc #a156fc #a355fc #a555fc #a754fb #a854fb #aa53fb #ac53fb #ae52fa #b052fa #b152fa #b251fa #b451fa #b650f9 #b850f9 #b950f9 #ba4ff9 #bc4ff9 #be4ef8 #c04ef8 #c24df8 #c44cf8 #c44df8 #c64cf7 #c84cf7 #c8fbff #ca4bf7 #cb4bf7 #cc4bf7 #ce4af6 #d049f6 #d04af6 #d249f6 #d448f6 #d648f5 #d847f5 #da47f5 #dc46f5 #de46f4 #e045f4 #e245f4 #e344f4 #e544f3 #e6be28 #e743f3 #e843f3 #e943f3 #eb42f3 #ed42f2 #ef41f2 #f07814 #f141f2 #f340f2 #f540f1 #f73ff1 #f93ff1 #fb3ef1 #fd3ef0 #ff3df0
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_list_neon_240x60][lab_list_neon_240x60]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                               ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ NEON
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  ┏━ BACKTESTS  ────────────────────────────────────────────────────────────────────────────── computed  ┏━ STRATEGY  ───────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation                                   synth-daily-ma  ✗ FAIL · validation                                  GATE                 Train  Valid  threshold
+   6 of 6 · sort last ▼                                                                                   family daily-ma-trend                                                max_drawdown         PASS  PASS   < 15%
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more                                                                                                   recovery_days        PASS  PASS   < 90 days from a drawdown ≥ 8%
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 · reversion 1 · +1 more         BRIEF                                                                profit_factor        PASS  PASS   > 1.3
+   split  validation 3 · train 2                                                                          • Long after a daily close crosses above its average.                ulcer_index          PASS  PASS   < 10
+    Strategy           Family               S T V J  Status               Trials  Fam.val  Last run ▼                                                                          fee_share            PASS  PASS   < 30% of gross P&L
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2       1/5      10-17 21:01    RULES                                                                win_rate             PASS  PASS   ≥ 30%
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3       1/5      10-17 21:00    No card with rules is committed.                                     dsr                  PASS  FAIL   ≥ 0.95
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2       0/5      10-17 20:05                                                                         pbo                  PASS  PASS   ≤ 0.05
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1       0/5      10-17 20:03    HYPOTHESIS                                                           t_stat               PASS  FAIL   > 3.0
+    synth-legacy                            ✓ · · ·  · NO VERDICT         1                10-08 16:38    expects                                                              trade_count          PASS  PASS   ≥ 100
+    synth-prereg-only  reversion            ✓ · · ·  ○ DRAFT              0       0/5                     Not recorded.                                                        cost_stress          PASS  PASS   still positive at x2.0
+                                                                                                          rejected if                                                          positive_years       PASS  PASS   share of years > 0.5
+                                                                                                          Not recorded.                                                        bull_return          PASS  PASS   positive in every bull stretch
+                                                                                                                                                                               bear_return          PASS  PASS   bounded in every bear stretch
+                                                                                                          PARAMETERS                                                           validation_vs_train  NA  NA   ratio ≥ 0.5
+                                                                                                          sma_period             signed 100 · neighbours 50, 150 · as run      neighbours           PASS  PASS   Sharpe ratio ≥ 0.5
+                                                                                                          100                                                                  correlation          PASS  PASS   < 0.7
+                                                                                                                                                                               bh_survivor          ·
+                                                                                                                                                                               champion             FAIL
+  
+                                                                                                                                                                               RUNS
+                                                                                                                                                                               10-17 21:01 validation base               2020-09-01..2024-06-30
+                                                                                                                                                                               a1b2c3d4 #c1d43f42 ⛓
+                                                                                                                                                                               10-17 20:02 train      base               2020-09-01..2024-06-30
+                                                                                                                                                                               a1b2c3d4 #7bf38fad ⛓
+  
+                                                                                                                                                                               LINKS
+                                                                                                                                                                               batch    docs/experiments/synth-exp/batches/b1.md
+                                                                                                                                                                               card     —
+                                                                                                                                                                               verdicts verdicts/b1/
+                                                                                                                                                                               notebook docs/experiments/synth-exp/lab-notebook.md
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+   ↑↓ select · ↵ open · / filter · S sort ────────────────────────────────────────────────────────────━┛  signed parameters against as run ────────────────────────────────━┛  thresholds always · values only when shown ──────────────────────━┛
+  Shadow test · day 12 of 90  ███████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                                                                                                                                              read-only
+  ---
+  colours: #00f0ff #01efff #02eeff #039fb3 #03ecff #049fb3 #059db3 #05ebff #069db3 #06eaff #079bb3 #07e9ff #089bb3 #08e7ff #0999b3 #09e6ff #0ae5ff #0b0420 #0b97b3 #0c96b3 #0ce4ff #0d95b3 #0de2ff #0e94b3 #0ee1ff #0f93b3 #0fe0ff #1091b3 #1092b3 #10dfff #11ddff #120731 #128fb3 #1290b3 #12dcff #138eb3 #148db3 #14dbff #158cb3 #15daff #168bb3 #16d8ff #178ab3 #17d7ff #1888b3 #1889b3 #18d6ff #19d5ff #1a86b3 #1a88b3 #1b133b #1b3a6b #1bd4ff #1cd2ff #1dd1ff #1e1543 #1ed0ff #1f1646 #1fcfff #20cdff #21ccff #22cbff #23cbff #24caff #254c86 #25c8ff #26c7ff #27c6ff #28c5ff #2ac3ff #2bc2ff #2cc1ff #2dc0ff #2e5ea2 #2ebeff #2fbdff #31bcff #32bbff #33baff #34186f #34b8ff #35b7ff #36b6ff #37b5ff #3871bd #39b3ff #3ab2ff #3bb1ff #3cb0ff #3daeff #3eadff #40acff #4183d8 #41abff #42a9ff #43a8ff #44a7ff #45a6ff #468ce6 #46a4ff #48a3ff #49a2ff #4a2399 #4aa1ff #4b9fff #4c9eff #4d9dff #4e96e9 #4f9cff #509bff #5199ff #5298ff #5397ff #5496ff #5594ff #5793ff #5892ff #5991ff #5a8fff #5b8eff #5c8dff #5dabee #5e8cff #5f8aff #6089ff #6188ff #627099 #6287ff #6385ff #6484ff #6683ff #6782ff #6881ff #697fff #6a7eff #6b7dff #6cc0f4 #6d7cff #6e7aff #6f79ff #7078ff #7177ff #7275ff #7374ff #7573ff #7672ff #7770ff #786fff #796eff #798bb6 #7a6dff #7b6cff #7c6bff #7cd4f9 #7d6aff #7e69ff #7f68ff #8067ff #8165ff #8264ff #8463ff #8562ff #8660ff #875fff #87a7b3 #885eff #895dff #8a5cff #8b5cff #8be9ff #8c5bff #8d5bff #8e5bfe #8f5bfe #8fa8d8 #905afe #915afe #925afe #935afe #9374ff #9459fe #9559fe #9659fd #9758fd #9759fd #9858fd #9958fd #9a58fd #9b57fd #9c57fd #9d57fd #9e57fc #9f56fc #a056fc #a156fc #a256fc #a355fc #a455fc #a555fc #a655fb #a754fb #a854fb #a954fb #aa54fb #ab53fb #ac53fb #ad53fb #ae53fa #af52fa #b052fa #b152fa #b251fa #b351fa #b451fa #b551fa #b650f9 #b750f9 #b850f9 #b94ff9 #b950f9 #ba4ff9 #bb4ff9 #bc4ff9 #bd4ef8 #be4ef8 #bf4ef8 #c04ef8 #c14df8 #c24df8 #c34df8 #c44cf8 #c44df8 #c54cf7 #c64cf7 #c74cf7 #c84cf7 #c8fbff #c94bf7 #ca4bf7 #cb4bf7 #cc4af7 #cd4af6 #ce4af6 #cf4af6 #d049f6 #d149f6 #d249f6 #d349f6 #d448f6 #d548f5 #d648f5 #d748f5 #d847f5 #d947f5 #da47f5 #db47f5 #dc46f5 #dd46f4 #de46f4 #df46f4 #e045f4 #e145f4 #e245f4 #e345f4 #e444f4 #e544f3 #e644f3 #e6be28 #e743f3 #e843f3 #e943f3 #ea42f3 #eb42f3 #ec42f2 #ed42f2 #ee41f2 #ef41f2 #f041f2 #f07814 #f141f2 #f240f2 #f340f2 #f440f1 #f540f1 #f63ff1 #f73ff1 #f83ff1 #f93ff1 #fa3ef1 #fb3ef1 #fc3ef0 #fd3ef0 #fe3df0 #ff3df0
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_list_neon_80x24][lab_list_neon_80x24]
+  '''
+  
+    1   2   3   4   5   6   7   8   9
+  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  ┏━ BACKTESTS  ──────────────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation
+   6 of 6 · sort last ▼
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 ·
+   reversion 1 · +1 more
+   split  validation 3 · train 2
+    Strategy           Family               S T V J  Status               Trials
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1
+    synth-legacy                            ✓ · · ·  · NO VERDICT         1
+    synth-prereg-only  reversion            ✓ · · ·  ○ DRAFT              0
+  
+  
+                                                               ▉
+   ↑↓ select · ↵ open · / filter · S sort ──────────────────────────────────────━┛
+  Shadow test · day 12 of 90  ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9    ↵    T    ?    ^P    Q quit         next due · read-only
+  ---
+  colours: #000010 #00606f #00f0ff #039fb3 #03ecff #079bb3 #07e9ff #0ae5ff #0b0420 #0b97b3 #0ee1ff #0f92b3 #11ddff #120731 #148eb3 #15daff #1889b3 #18d6ff #1b133b #1cd2ff #1f1646 #1fceff #23cbff #26c7ff #2ac3ff #2dbfff #31bcff #34186f #34b8ff #37b5ff #38b4ff #3bb0ff #3fadff #42a9ff #46a5ff #49a1ff #4a2399 #4d9eff #509aff #5397ff #5496ff #5792ff #5b8fff #5e8bff #627099 #6287ff #6583ff #6980ff #6c7cff #6e7aff #7078ff #7374ff #7771ff #798bb6 #7a6dff #7e69ff #8165ff #8562ff #87a7b3 #885eff #8a5cff #8b5cff #8e5bfe #8fa8d8 #915afe #9374ff #9459fe #9758fd #9a58fd #9d57fd #a056fc #a156fc #a355fc #a655fb #a954fb #ac53fb #af52fa #b251fa #b551f9 #b850f9 #b950f9 #bb4ff9 #be4ef8 #c14df8 #c44df8 #c74cf7 #c8fbff #ca4bf7 #cd4af6 #d049f6 #d04af6 #d349f6 #d648f5 #d847f5 #db46f5 #de46f4 #e145f4 #e444f3 #e6be28 #e743f3 #e843f3 #ea42f3 #ed42f2 #f041f2 #f340f2 #f63ff1 #f93ff1 #fc3ef0 #ff3df0
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_mismatch_control_120x36][lab_mismatch_control_120x36]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions     ● live · checked 14:00 · next 18:00 due  ◑ CONTROL ROOM
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  ┏━ BACKTESTS  ──────────────────────────────────────────────────────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation
+   6 of 6 · sort last ▼
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 · reversion 1 · +1 more
+   split  validation 3 · train 2
+    Strategy           Family               S T V J  Status               Trials  Fam.val  Last run ▼
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2       1/5      10-17 21:01
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3       1/5      10-17 21:00
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2       0/5      10-17 20:05                 ▃▃
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1       0/5      10-17 20:03
+   ↑↓ select · ↵ open · / filter · S sort ──────────────────────────────────────────────────────────────────────────────━┛
+  ┏━ STRATEGY  ──────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────── computed
+   synth-pullback  ▸ TRAIN PASS                                GATE                 Train  Valid  threshold
+   family pullback-in-uptrend                                  max_drawdown         PASS  ·   < 15%
+                                                               recovery_days        PASS  ·   < 90 days from a drawdown ≥
+   BRIEF                                                       8%
+   • Buy short pullbacks inside a daily uptrend.               profit_factor        PASS  ·   > 1.3
+                                                               ulcer_index          PASS  ·   < 10
+   RULES                                                       fee_share            PASS  ·   < 30% of gross P&L
+   No card with rules is committed.                            win_rate             PASS  ·   ≥ 30%
+                                                               dsr                  PASS  ·   ≥ 0.95
+   HYPOTHESIS                                                  pbo                  PASS  ·   ≤ 0.05
+   expects                                                     t_stat               PASS  ·   > 3.0
+   Not recorded.                                               trade_count          PASS  ·   ≥ 100
+   rejected if                                                 cost_stress          PASS  ·   still positive at x2.0
+   Not recorded.                                               positive_years       PASS  ·   share of years > 0.5
+                                                               bull_return          PASS  ·   positive in every bull
+   PARAMETERS                                                  stretch
+   signed parameters against as run ───────────────────────━┛  thresholds always · values only when shown ──────────────━┛
+  Shadow test · day 12 of 90  ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                      read-only
+  ---
+  colours: #000000 #070b14 #0c1424 #131d31 #161e2e #182338 #19253c #1a2740 #23535e #468ce6 #468de6 #468ee6 #478ce6 #478fe6 #4790e6 #4791e6 #488be7 #4892e6 #4894e7 #4895e7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a9ae7 #4a9ce7 #4a9de7 #4b8ae7 #4b9ee7 #4b9fe7 #4ba0e7 #4ca1e8 #4ca3e8 #4ca4e8 #4d89e8 #4da5e8 #4da6e8 #4da7e8 #4da8e8 #4e88e8 #4eaae8 #4eabe8 #4eace8 #4fade8 #4faee8 #4fafe9 #5088e9 #50b1e9 #50b2e9 #50b3e9 #50b4e9 #5187e9 #51b5e9 #51b6e9 #51b7e9 #5286ea #52b9e9 #52bae9 #52bbe9 #538fab #53bce9 #53bdea #53beea #53c0ea #5486ea #5490ab #54c0ea #54c1ea #54c2ea #54c3ea #5585ea #5591ab #55c4ea #55c5ea #55c7ea #5693ac #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57ceeb #57cfeb #5884eb #5896ad #58d0eb #58d1eb #5a83ec #5a97ad #5a98ad #5b82ec #5c82ec #5c9aae #5c9cae #5d6575 #5d82ed #5e81ed #5e9daf #6081ed #6180ee #637fee #647fef #657eef #677def #687df0 #697cf0 #6a7cf0 #6b7bf1 #6d7bf1 #6e7af2 #7079f2 #7179f2 #7278f2 #7378f3 #7477f3 #7676f4 #7677f4 #768eb2 #7776f4 #7875f4 #7a75f5 #7b74f5 #7d73f6 #7e73f6 #8072f7 #8171f7 #8371f7 #838ca1 #8470f8 #866ff8 #876ff9 #896ef9 #8a6ef9 #8a6efa #8a94a8 #8b6dfa #8c6dfa #8d6cfa #8e6cfb #906bfb #916afc #936afc #9469fc #9668fd #9768fd #9967fe #9a66fe #9a9fa8 #9c66ff #9d65ff #a26efe #e6be28 #e6ecf5
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_mismatch_control_160x45][lab_mismatch_control_160x45]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                       ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  ┏━ BACKTESTS  ─────────────────────────────────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation                            GATE                 Train  Valid  threshold
+   6 of 6 · sort last ▼                                                                            max_drawdown         PASS  ·   < 15%
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more                       recovery_days        PASS  ·   < 90 days from a drawdown ≥ 8%
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 · reversion 1 · +1       profit_factor        PASS  ·   > 1.3
+   more                                                                                            ulcer_index          PASS  ·   < 10
+   split  validation 3 · train 2                                                                   fee_share            PASS  ·   < 30% of gross P&L
+    Strategy           Family               S T V J  Status               Trials  Fam.val  Last    win_rate             PASS  ·   ≥ 30%
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2       1/5      10-17   dsr                  PASS  ·   ≥ 0.95
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3       1/5      10-17   pbo                  PASS  ·   ≤ 0.05
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2       0/5      10-17   t_stat               PASS  ·   > 3.0
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1       0/5      10-17   trade_count          PASS  ·   ≥ 100
+    synth-legacy                            ✓ · · ·  · NO VERDICT         1                10-08   cost_stress          PASS  ·   still positive at x2.0
+    synth-prereg-only  reversion            ✓ · · ·  ○ DRAFT              0       0/5              positive_years       PASS  ·   share of years > 0.5
+                                                                                                   bull_return          PASS  ·   positive in every bull stretch
+                                                                                                   bear_return          PASS  ·   bounded in every bear stretch
+                                                                                                   validation_vs_train  NA  ·   ratio ≥ 0.5
+                                                                                         ▌         neighbours           PASS  ·   Sharpe ratio ≥ 0.5
+   ↑↓ select · ↵ open · / filter · S sort ─────────────────────────────────────────────────────━┛  correlation          PASS  ·   < 0.7
+  ┏━ STRATEGY  ──────────────────────────────────────────────────────────────────────── computed   bh_survivor          ·
+   synth-pullback  ▸ TRAIN PASS                                                                    champion             ·
+   family pullback-in-uptrend
+                                                                                                   RUNS
+   BRIEF                                                                                           10-17 20:05 train      rsi_level=33
+   • Buy short pullbacks inside a daily uptrend.                                                   2020-09-01..2024-06-30 a1b2c3d4 #8c9a5f54 ⛓
+                                                                                                   10-17 20:04 train      base
+   RULES                                                                                           2020-09-01..2024-06-30 a1b2c3d4 #634d0602 ⛓
+   No card with rules is committed.
+                                                                                                   LINKS
+   HYPOTHESIS                                                                                      batch    docs/experiments/synth-exp/batches/b1.md
+   expects                                                                                         card     —
+   Not recorded.                                                                                   verdicts verdicts/b1/
+   rejected if                                                                                     notebook docs/experiments/synth-exp/lab-notebook.md
+   Not recorded.
+  
+   PARAMETERS
+   rsi_level              signed 35 · neighbours 30, 40 · as run 35, 33 ⚠ differs from signed
+  
+   signed parameters against as run ───────────────────────────────────────────────────────────━┛  thresholds always · values only when shown ──────────────────━┛
+  Shadow test · day 12 of 90  █████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                                                              read-only
+  ---
+  colours: #000000 #070b14 #0c1424 #131d31 #161e2e #19253c #1a2740 #1b3a6b #23535e #254c86 #2e5ea2 #3871bd #4183d8 #468ce6 #468de6 #478ce6 #478ee6 #478fe6 #4790e6 #4791e6 #4792e6 #488be6 #4893e6 #4893e7 #4894e7 #4895e7 #498be7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a99e7 #4a9ae7 #4a9be7 #4a9ce7 #4a9de7 #4b8ae7 #4b9ee7 #4b9fe7 #4ba0e7 #4c89e8 #4ca1e8 #4ca2e8 #4ca3e8 #4ca4e8 #4ca5e8 #4d89e8 #4da6e8 #4da7e8 #4da8e8 #4e88e8 #4e96e9 #4ea9e8 #4eaae8 #4eabe8 #4eace8 #4eade8 #4f88e9 #4fade8 #4faee8 #4fafe9 #4fb0e9 #5087e9 #5088e9 #50b1e9 #50b2e9 #50b3e9 #5187e9 #51b4e9 #51b5e9 #51b6e9 #51b7e9 #51b8e9 #528dab #528fab #52b9e9 #52bae9 #52bbe9 #5386ea #53bce9 #53bdea #53beea #53bfea #53c0ea #5486ea #548fab #5490ab #54c0ea #54c1ea #54c2ea #54c3ea #5585ea #5591ab #55c4ea #55c5ea #55c6ea #55c7ea #5685eb #5692ac #5693ac #56c7ea #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57cdeb #57ceeb #5884eb #5895ad #5896ad #58cfeb #58d0eb #58d1eb #5983ec #5997ad #5a83ec #5a98ad #5b82ec #5b99ad #5c82ec #5c9aae #5c9bae #5d6575 #5d9caf #5dabee #5e81ed #5e9daf #5f81ed #6080ed #6180ee #627fee #637fee #647fef #657eef #667eef #677df0 #687df0 #697cf0 #6a7cf0 #6b7cf1 #6c7bf1 #6cc0f4 #6d7bf1 #6e7af1 #6f7af2 #7079f2 #7179f2 #7278f2 #7278f3 #7378f3 #7577f3 #7676f4 #7677f4 #768eb2 #7776f4 #7876f4 #7975f5 #7a75f5 #7b74f5 #7c74f6 #7cd4f9 #7d73f6 #7e73f6 #7f72f7 #8172f7 #8271f7 #8371f7 #838ca1 #8470f8 #8570f8 #866ff8 #876ff9 #886ef9 #896ef9 #8a6dfa #8a6ef9 #8a94a8 #8b6dfa #8be9ff #8c6dfa #8d6cfa #8e6cfb #8f6bfb #906bfb #916afc #926afc #9369fc #9469fc #9568fd #9668fd #9867fd #9967fe #9a66fe #9a9fa8 #9b66fe #9c65ff #9d65ff #a26efe #e6be28 #e6ecf5
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_mismatch_control_240x60][lab_mismatch_control_240x60]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                       ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  ┏━ BACKTESTS  ────────────────────────────────────────────────────────────────────────────── computed  ┏━ STRATEGY  ───────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation                                   synth-pullback  ▸ TRAIN PASS                                         GATE                 Train  Valid  threshold
+   6 of 6 · sort last ▼                                                                                   family pullback-in-uptrend                                           max_drawdown         PASS  ·   < 15%
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more                                                                                                   recovery_days        PASS  ·   < 90 days from a drawdown ≥ 8%
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 · reversion 1 · +1 more         BRIEF                                                                profit_factor        PASS  ·   > 1.3
+   split  validation 3 · train 2                                                                          • Buy short pullbacks inside a daily uptrend.                        ulcer_index          PASS  ·   < 10
+    Strategy           Family               S T V J  Status               Trials  Fam.val  Last run ▼                                                                          fee_share            PASS  ·   < 30% of gross P&L
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2       1/5      10-17 21:01    RULES                                                                win_rate             PASS  ·   ≥ 30%
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3       1/5      10-17 21:00    No card with rules is committed.                                     dsr                  PASS  ·   ≥ 0.95
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2       0/5      10-17 20:05                                                                         pbo                  PASS  ·   ≤ 0.05
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1       0/5      10-17 20:03    HYPOTHESIS                                                           t_stat               PASS  ·   > 3.0
+    synth-legacy                            ✓ · · ·  · NO VERDICT         1                10-08 16:38    expects                                                              trade_count          PASS  ·   ≥ 100
+    synth-prereg-only  reversion            ✓ · · ·  ○ DRAFT              0       0/5                     Not recorded.                                                        cost_stress          PASS  ·   still positive at x2.0
+                                                                                                          rejected if                                                          positive_years       PASS  ·   share of years > 0.5
+                                                                                                          Not recorded.                                                        bull_return          PASS  ·   positive in every bull stretch
+                                                                                                                                                                               bear_return          PASS  ·   bounded in every bear stretch
+                                                                                                          PARAMETERS                                                           validation_vs_train  NA  ·   ratio ≥ 0.5
+                                                                                                          rsi_level              signed 35 · neighbours 30, 40 · as run 35,    neighbours           PASS  ·   Sharpe ratio ≥ 0.5
+                                                                                                          33 ⚠ differs from signed                                             correlation          PASS  ·   < 0.7
+                                                                                                                                                                               bh_survivor          ·
+                                                                                                                                                                               champion             ·
+  
+                                                                                                                                                                               RUNS
+                                                                                                                                                                               10-17 20:05 train      rsi_level=33       2020-09-01..2024-06-30
+                                                                                                                                                                               a1b2c3d4 #8c9a5f54 ⛓
+                                                                                                                                                                               10-17 20:04 train      base               2020-09-01..2024-06-30
+                                                                                                                                                                               a1b2c3d4 #634d0602 ⛓
+  
+                                                                                                                                                                               LINKS
+                                                                                                                                                                               batch    docs/experiments/synth-exp/batches/b1.md
+                                                                                                                                                                               card     —
+                                                                                                                                                                               verdicts verdicts/b1/
+                                                                                                                                                                               notebook docs/experiments/synth-exp/lab-notebook.md
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+   ↑↓ select · ↵ open · / filter · S sort ────────────────────────────────────────────────────────────━┛  signed parameters against as run ────────────────────────────────━┛  thresholds always · values only when shown ──────────────────────━┛
+  Shadow test · day 12 of 90  ███████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                                                                                                                                              read-only
+  ---
+  colours: #070b14 #0c1424 #131d31 #161e2e #182338 #19253c #1a2740 #1b3a6b #254c86 #2e5ea2 #3871bd #4183d8 #468ce6 #468de6 #478ce6 #478ee6 #478fe6 #4790e6 #4791e6 #488be7 #4892e6 #4893e6 #4893e7 #4894e7 #4895e7 #4896e7 #498be7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a9ae7 #4a9be7 #4a9ce7 #4a9de7 #4b8ae7 #4b8ae8 #4b9ee7 #4b9fe7 #4ba0e7 #4ba1e8 #4c89e8 #4ca2e8 #4ca3e8 #4ca4e8 #4ca5e8 #4d89e8 #4da5e8 #4da6e8 #4da7e8 #4da8e8 #4da9e8 #4e88e8 #4e89e8 #4e96e9 #4ea9e8 #4eaae8 #4eabe8 #4eace8 #4f88e9 #4fade8 #4faee8 #4fafe9 #4fb0e9 #5088e9 #50b1e9 #50b2e9 #50b3e9 #50b4e9 #5187e9 #51b5e9 #51b6e9 #51b7e9 #51b8e9 #5287e9 #528dab #528eab #52b8e9 #52b9e9 #52bae9 #52bbe9 #52bce9 #5386ea #538fab #53bce9 #53bdea #53beea #53bfea #53c0ea #5486ea #548fab #5490ab #54c0ea #54c1ea #54c2ea #54c3ea #5585ea #5591ab #5592ab #55c4ea #55c5ea #55c6ea #55c7ea #5685ea #5685eb #5692ac #5693ac #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57cdeb #57ceeb #57cfeb #5884eb #5894ad #5895ad #5896ad #58cfeb #58d0eb #58d1eb #5983ec #5984eb #5996ad #5997ad #5a83ec #5a98ad #5a99ad #5b82ec #5b83ec #5b9aae #5c82ec #5c9aae #5c9bae #5d6575 #5d82ed #5d9caf #5dabee #5e81ed #5e9daf #5f81ed #6080ed #6180ee #627fee #637fee #647eef #657eef #667def #667eef #677df0 #687df0 #697cf0 #6a7cf0 #6b7bf1 #6b7cf1 #6c7bf1 #6cc0f4 #6d7bf1 #6e7af1 #6e7af2 #6f7af2 #7079f2 #7179f2 #7278f2 #7278f3 #7378f3 #7477f3 #7478f3 #7577f3 #7676f4 #7677f4 #768eb2 #7776f4 #7876f4 #7975f5 #7a75f5 #7b74f5 #7c74f5 #7c74f6 #7cd4f9 #7d73f6 #7e73f6 #7f72f6 #8072f7 #8171f7 #8172f7 #8271f7 #8371f7 #838ca1 #8470f8 #8570f8 #866ff8 #866ff9 #876ff9 #886ef9 #896ef9 #8a6dfa #8a6ef9 #8a94a8 #8b6dfa #8be9ff #8c6dfa #8d6cfa #8e6cfb #8f6bfb #906bfb #916afc #916bfb #926afc #936afc #9469fc #9569fd #9668fd #9768fd #9867fe #9967fe #9a66fe #9a9fa8 #9b66fe #9c65ff #9c66ff #9d65ff #a26efe #e6be28 #e6ecf5
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_mismatch_control_80x24][lab_mismatch_control_80x24]
+  '''
+  
+    1   2   3   4   5   6   7   8   9
+  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  ┏━ BACKTESTS  ──────────────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation
+   6 of 6 · sort last ▼
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 ·
+   reversion 1 · +1 more
+   split  validation 3 · train 2
+    Strategy           Family               S T V J  Status               Trials
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1
+    synth-legacy                            ✓ · · ·  · NO VERDICT         1
+    synth-prereg-only  reversion            ✓ · · ·  ○ DRAFT              0
+  
+  
+                                                               ▉
+   ↑↓ select · ↵ open · / filter · S sort ──────────────────────────────────────━┛
+  Shadow test · day 12 of 90  ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9    ↵    T    ?    ^P    Q quit         next due · read-only
+  ---
+  colours: #000000 #070b14 #0c1424 #131d31 #161e2e #19253c #1a2740 #23535e #468ce6 #468de6 #478ce6 #478fe6 #4790e6 #4892e6 #4894e7 #498be7 #4996e7 #4997e7 #4999e7 #4a9ae7 #4a9be7 #4a9de7 #4b9ee7 #4ba0e7 #4c8ae8 #4ca2e8 #4ca4e8 #4da5e8 #4da7e8 #4da8e8 #4e89e8 #4ea9e8 #4eabe8 #4eace8 #4faee8 #4fb0e9 #5088e9 #50b2e9 #50b3e9 #51b5e9 #51b7e9 #5287e9 #52b9e9 #52bae9 #53bce9 #53beea #53c0ea #5486ea #548fab #54c1ea #54c3ea #55c5ea #55c7ea #5692ac #56c8ea #56caea #5784eb #5785eb #57cceb #57ceeb #5895ad #58cfeb #58d1eb #5984eb #5a98ad #5b83ec #5c9aae #5d6575 #5d82ed #5e9daf #5f81ed #6280ee #647fef #667eef #687df0 #697cf0 #6a7cf0 #6d7bf1 #6f7af2 #7179f2 #7378f3 #7577f4 #768eb2 #7876f4 #7a75f5 #7c74f6 #7e73f6 #8072f7 #8371f7 #838ca1 #8570f8 #876ff9 #896ef9 #8a94a8 #8b6dfa #8c6dfa #8e6cfb #906bfb #926afc #9469fc #9668fd #9967fe #9a9fa8 #9b66fe #9d65ff #a26efe #e6be28 #e6ecf5
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_mismatch_neon_120x36][lab_mismatch_neon_120x36]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions             ● live · checked 14:00 · next 18:00 due  ◑ NEON
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  ┏━ BACKTESTS  ──────────────────────────────────────────────────────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation
+   6 of 6 · sort last ▼
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 · reversion 1 · +1 more
+   split  validation 3 · train 2
+    Strategy           Family               S T V J  Status               Trials  Fam.val  Last run ▼
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2       1/5      10-17 21:01
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3       1/5      10-17 21:00
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2       0/5      10-17 20:05                 ▃▃
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1       0/5      10-17 20:03
+   ↑↓ select · ↵ open · / filter · S sort ──────────────────────────────────────────────────────────────────────────────━┛
+  ┏━ STRATEGY  ──────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────── computed
+   synth-pullback  ▸ TRAIN PASS                                GATE                 Train  Valid  threshold
+   family pullback-in-uptrend                                  max_drawdown         PASS  ·   < 15%
+                                                               recovery_days        PASS  ·   < 90 days from a drawdown ≥
+   BRIEF                                                       8%
+   • Buy short pullbacks inside a daily uptrend.               profit_factor        PASS  ·   > 1.3
+                                                               ulcer_index          PASS  ·   < 10
+   RULES                                                       fee_share            PASS  ·   < 30% of gross P&L
+   No card with rules is committed.                            win_rate             PASS  ·   ≥ 30%
+                                                               dsr                  PASS  ·   ≥ 0.95
+   HYPOTHESIS                                                  pbo                  PASS  ·   ≤ 0.05
+   expects                                                     t_stat               PASS  ·   > 3.0
+   Not recorded.                                               trade_count          PASS  ·   ≥ 100
+   rejected if                                                 cost_stress          PASS  ·   still positive at x2.0
+   Not recorded.                                               positive_years       PASS  ·   share of years > 0.5
+                                                               bull_return          PASS  ·   positive in every bull
+   PARAMETERS                                                  stretch
+   signed parameters against as run ───────────────────────━┛  thresholds always · values only when shown ──────────────━┛
+  Shadow test · day 12 of 90  ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                      read-only
+  ---
+  colours: #000010 #00606f #00f0ff #02eeff #039fb3 #059db3 #05ebff #079bb3 #07e9ff #09e6ff #0a99b3 #0b0420 #0c96b3 #0ce4ff #0e94b3 #0ee1ff #1091b3 #10dfff #120731 #128fb3 #13dcff #148db3 #15daff #168bb3 #17d7ff #1888b3 #1ad5ff #1b133b #1cd2ff #1e1543 #1ed0ff #1f1646 #1fcfff #20cdff #22cbff #23cbff #25c8ff #27c6ff #2ac3ff #2cc1ff #2ebeff #31bcff #33b9ff #34186f #35b7ff #37b5ff #38b4ff #3ab2ff #3cafff #3daeff #3fadff #41aaff #43a8ff #45a6ff #468ce6 #46a5ff #48a3ff #4a2399 #4aa0ff #4d9eff #4f9bff #5199ff #5396ff #5397ff #5694ff #5891ff #5a8fff #5c8dff #5d8dff #5f8aff #6188ff #627099 #6485ff #6683ff #6880ff #6881ff #6b7eff #6d7bff #6e7aff #6f79ff #7276ff #7474ff #7671ff #796fff #798bb6 #7b6cff #7d6aff #8067ff #8265ff #8462ff #8760ff #87a7b3 #895dff #8a5cff #8b5cff #8d5bff #8f5bfe #8fa8d8 #915afe #935afe #9374ff #9559fe #9759fd #9958fd #9b58fd #9d57fd #9f57fc #a156fc #a355fc #a555fc #a754fb #a854fb #aa53fb #ac53fb #ae52fa #b052fa #b152fa #b251fa #b451fa #b650f9 #b850f9 #b950f9 #ba4ff9 #bc4ff9 #be4ef8 #c04ef8 #c24df8 #c44cf8 #c44df8 #c64cf7 #c84cf7 #c8fbff #ca4bf7 #cb4bf7 #cc4bf7 #ce4af6 #d049f6 #d04af6 #d249f6 #d448f6 #d648f5 #d847f5 #da47f5 #dc46f5 #de46f4 #e045f4 #e245f4 #e344f4 #e544f3 #e6be28 #e743f3 #e843f3 #e943f3 #eb42f3 #ed42f2 #ef41f2 #f141f2 #f340f2 #f540f1 #f73ff1 #f93ff1 #fb3ef1 #fd3ef0 #ff3df0
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_mismatch_neon_240x60][lab_mismatch_neon_240x60]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                               ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ NEON
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  ┏━ BACKTESTS  ────────────────────────────────────────────────────────────────────────────── computed  ┏━ STRATEGY  ───────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation                                   synth-pullback  ▸ TRAIN PASS                                         GATE                 Train  Valid  threshold
+   6 of 6 · sort last ▼                                                                                   family pullback-in-uptrend                                           max_drawdown         PASS  ·   < 15%
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more                                                                                                   recovery_days        PASS  ·   < 90 days from a drawdown ≥ 8%
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 · reversion 1 · +1 more         BRIEF                                                                profit_factor        PASS  ·   > 1.3
+   split  validation 3 · train 2                                                                          • Buy short pullbacks inside a daily uptrend.                        ulcer_index          PASS  ·   < 10
+    Strategy           Family               S T V J  Status               Trials  Fam.val  Last run ▼                                                                          fee_share            PASS  ·   < 30% of gross P&L
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2       1/5      10-17 21:01    RULES                                                                win_rate             PASS  ·   ≥ 30%
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3       1/5      10-17 21:00    No card with rules is committed.                                     dsr                  PASS  ·   ≥ 0.95
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2       0/5      10-17 20:05                                                                         pbo                  PASS  ·   ≤ 0.05
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1       0/5      10-17 20:03    HYPOTHESIS                                                           t_stat               PASS  ·   > 3.0
+    synth-legacy                            ✓ · · ·  · NO VERDICT         1                10-08 16:38    expects                                                              trade_count          PASS  ·   ≥ 100
+    synth-prereg-only  reversion            ✓ · · ·  ○ DRAFT              0       0/5                     Not recorded.                                                        cost_stress          PASS  ·   still positive at x2.0
+                                                                                                          rejected if                                                          positive_years       PASS  ·   share of years > 0.5
+                                                                                                          Not recorded.                                                        bull_return          PASS  ·   positive in every bull stretch
+                                                                                                                                                                               bear_return          PASS  ·   bounded in every bear stretch
+                                                                                                          PARAMETERS                                                           validation_vs_train  NA  ·   ratio ≥ 0.5
+                                                                                                          rsi_level              signed 35 · neighbours 30, 40 · as run 35,    neighbours           PASS  ·   Sharpe ratio ≥ 0.5
+                                                                                                          33 ⚠ differs from signed                                             correlation          PASS  ·   < 0.7
+                                                                                                                                                                               bh_survivor          ·
+                                                                                                                                                                               champion             ·
+  
+                                                                                                                                                                               RUNS
+                                                                                                                                                                               10-17 20:05 train      rsi_level=33       2020-09-01..2024-06-30
+                                                                                                                                                                               a1b2c3d4 #8c9a5f54 ⛓
+                                                                                                                                                                               10-17 20:04 train      base               2020-09-01..2024-06-30
+                                                                                                                                                                               a1b2c3d4 #634d0602 ⛓
+  
+                                                                                                                                                                               LINKS
+                                                                                                                                                                               batch    docs/experiments/synth-exp/batches/b1.md
+                                                                                                                                                                               card     —
+                                                                                                                                                                               verdicts verdicts/b1/
+                                                                                                                                                                               notebook docs/experiments/synth-exp/lab-notebook.md
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+   ↑↓ select · ↵ open · / filter · S sort ────────────────────────────────────────────────────────────━┛  signed parameters against as run ────────────────────────────────━┛  thresholds always · values only when shown ──────────────────────━┛
+  Shadow test · day 12 of 90  ███████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                                                                                                                                              read-only
+  ---
+  colours: #00f0ff #01efff #02eeff #039fb3 #03ecff #049fb3 #059db3 #05ebff #069db3 #06eaff #079bb3 #07e9ff #089bb3 #08e7ff #0999b3 #09e6ff #0ae5ff #0b0420 #0b97b3 #0c96b3 #0ce4ff #0d95b3 #0de2ff #0e94b3 #0ee1ff #0f93b3 #0fe0ff #1091b3 #1092b3 #10dfff #11ddff #120731 #128fb3 #1290b3 #12dcff #138eb3 #148db3 #14dbff #158cb3 #15daff #168bb3 #16d8ff #178ab3 #17d7ff #1888b3 #1889b3 #18d6ff #19d5ff #1a86b3 #1a88b3 #1b133b #1b3a6b #1bd4ff #1cd2ff #1dd1ff #1e1543 #1ed0ff #1f1646 #1fcfff #20cdff #21ccff #22cbff #23cbff #24caff #254c86 #25c8ff #26c7ff #27c6ff #28c5ff #2ac3ff #2bc2ff #2cc1ff #2dc0ff #2e5ea2 #2ebeff #2fbdff #31bcff #32bbff #33baff #34186f #34b8ff #35b7ff #36b6ff #37b5ff #3871bd #39b3ff #3ab2ff #3bb1ff #3cb0ff #3daeff #3eadff #40acff #4183d8 #41abff #42a9ff #43a8ff #44a7ff #45a6ff #468ce6 #46a4ff #48a3ff #49a2ff #4a2399 #4aa1ff #4b9fff #4c9eff #4d9dff #4e96e9 #4f9cff #509bff #5199ff #5298ff #5397ff #5496ff #5594ff #5793ff #5892ff #5991ff #5a8fff #5b8eff #5c8dff #5dabee #5e8cff #5f8aff #6089ff #6188ff #627099 #6287ff #6385ff #6484ff #6683ff #6782ff #6881ff #697fff #6a7eff #6b7dff #6cc0f4 #6d7cff #6e7aff #6f79ff #7078ff #7177ff #7275ff #7374ff #7573ff #7672ff #7770ff #786fff #796eff #798bb6 #7a6dff #7b6cff #7c6bff #7cd4f9 #7d6aff #7e69ff #7f68ff #8067ff #8165ff #8264ff #8463ff #8562ff #8660ff #875fff #87a7b3 #885eff #895dff #8a5cff #8b5cff #8be9ff #8c5bff #8d5bff #8e5bfe #8f5bfe #8fa8d8 #905afe #915afe #925afe #935afe #9374ff #9459fe #9559fe #9659fd #9758fd #9759fd #9858fd #9958fd #9a58fd #9b57fd #9c57fd #9d57fd #9e57fc #9f56fc #a056fc #a156fc #a256fc #a355fc #a455fc #a555fc #a655fb #a754fb #a854fb #a954fb #aa54fb #ab53fb #ac53fb #ad53fb #ae53fa #af52fa #b052fa #b152fa #b251fa #b351fa #b451fa #b551fa #b650f9 #b750f9 #b850f9 #b94ff9 #b950f9 #ba4ff9 #bb4ff9 #bc4ff9 #bd4ef8 #be4ef8 #bf4ef8 #c04ef8 #c14df8 #c24df8 #c34df8 #c44cf8 #c44df8 #c54cf7 #c64cf7 #c74cf7 #c84cf7 #c8fbff #c94bf7 #ca4bf7 #cb4bf7 #cc4af7 #cd4af6 #ce4af6 #cf4af6 #d049f6 #d149f6 #d249f6 #d349f6 #d448f6 #d548f5 #d648f5 #d748f5 #d847f5 #d947f5 #da47f5 #db47f5 #dc46f5 #dd46f4 #de46f4 #df46f4 #e045f4 #e145f4 #e245f4 #e345f4 #e444f4 #e544f3 #e644f3 #e6be28 #e743f3 #e843f3 #e943f3 #ea42f3 #eb42f3 #ec42f2 #ed42f2 #ee41f2 #ef41f2 #f041f2 #f141f2 #f240f2 #f340f2 #f440f1 #f540f1 #f63ff1 #f73ff1 #f83ff1 #f93ff1 #fa3ef1 #fb3ef1 #fc3ef0 #fd3ef0 #fe3df0 #ff3df0
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_mismatch_neon_80x24][lab_mismatch_neon_80x24]
+  '''
+  
+    1   2   3   4   5   6   7   8   9
+  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+    Backtests   Drafts  [ ] switch    ○ values hidden
+  ┏━ BACKTESTS  ──────────────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation
+   6 of 6 · sort last ▼
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 ·
+   reversion 1 · +1 more
+   split  validation 3 · train 2
+    Strategy           Family               S T V J  Status               Trials
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1
+    synth-legacy                            ✓ · · ·  · NO VERDICT         1
+    synth-prereg-only  reversion            ✓ · · ·  ○ DRAFT              0
+  
+  
+                                                               ▉
+   ↑↓ select · ↵ open · / filter · S sort ──────────────────────────────────────━┛
+  Shadow test · day 12 of 90  ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9    ↵    T    ?    ^P    Q quit         next due · read-only
+  ---
+  colours: #000010 #00606f #00f0ff #039fb3 #03ecff #079bb3 #07e9ff #0ae5ff #0b0420 #0b97b3 #0ee1ff #0f92b3 #11ddff #120731 #148eb3 #15daff #1889b3 #18d6ff #1b133b #1cd2ff #1f1646 #1fceff #23cbff #26c7ff #2ac3ff #2dbfff #31bcff #34186f #34b8ff #37b5ff #38b4ff #3bb0ff #3fadff #42a9ff #46a5ff #49a1ff #4a2399 #4d9eff #509aff #5397ff #5496ff #5792ff #5b8fff #5e8bff #627099 #6287ff #6583ff #6980ff #6c7cff #6e7aff #7078ff #7374ff #7771ff #798bb6 #7a6dff #7e69ff #8165ff #8562ff #87a7b3 #885eff #8a5cff #8b5cff #8e5bfe #8fa8d8 #915afe #9374ff #9459fe #9758fd #9a58fd #9d57fd #a056fc #a156fc #a355fc #a655fb #a954fb #ac53fb #af52fa #b251fa #b551f9 #b850f9 #b950f9 #bb4ff9 #be4ef8 #c14df8 #c44df8 #c74cf7 #c8fbff #ca4bf7 #cd4af6 #d049f6 #d04af6 #d349f6 #d648f5 #d847f5 #db46f5 #de46f4 #e145f4 #e444f3 #e6be28 #e743f3 #e843f3 #ea42f3 #ed42f2 #f041f2 #f340f2 #f63ff1 #f93ff1 #fc3ef0 #ff3df0
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_values_control_120x36][lab_values_control_120x36]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions     ● live · checked 14:00 · next 18:00 due  ◑ CONTROL ROOM
+    Backtests   Drafts  [ ] switch    ● values shown · V hides
+  ┏━ BACKTESTS  ──────────────────────────────────────────────────────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation
+   6 of 6 · sort last ▼
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 · reversion 1 · +1 more
+   split  validation 3 · train 2
+    Strategy           Family               S T V J  Status               Trials  Fam.val  Last run ▼
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2       1/5      10-17 21:01
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3       1/5      10-17 21:00
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2       0/5      10-17 20:05                 ▃▃
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1       0/5      10-17 20:03
+   ↑↓ select · ↵ open · / filter · S sort ──────────────────────────────────────────────────────────────────────────────━┛
+  ┏━ STRATEGY  ──────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────── computed
+   synth-daily-ma  ✗ FAIL · validation                         GATE                 Train  Valid  threshold
+   family daily-ma-trend                                       max_drawdown         PASS  PASS   < 15%
+                                                               recovery_days        PASS  PASS   < 90 days from a
+   BRIEF                                                       drawdown ≥ 8%
+   • Long after a daily close crosses above its average.       profit_factor        PASS  PASS   > 1.3
+                                                               ulcer_index          PASS  PASS   < 10
+   RULES                                                       fee_share            PASS  PASS   < 30% of gross P&L
+   No card with rules is committed.                            win_rate             PASS  PASS   ≥ 30%
+                                                               dsr                  PASS  FAIL   ≥ 0.95
+   HYPOTHESIS                                                  pbo                  PASS  PASS   ≤ 0.05
+   expects                                                     t_stat               PASS  FAIL   > 3.0
+   Not recorded.                                               trade_count          PASS  PASS   ≥ 100
+   rejected if                                                 cost_stress          PASS  PASS   still positive at x2.0
+   Not recorded.                                               positive_years       PASS  PASS   share of years > 0.5
+                                                               bull_return          PASS  PASS   positive in every bull
+   PARAMETERS                                                  stretch
+   signed parameters against as run ───────────────────────━┛  thresholds always · values only when shown ──────────────━┛
+  Shadow test · day 12 of 90  ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                      read-only
+  ---
+  colours: #000000 #070b14 #0c1424 #131d31 #161e2e #182338 #19253c #1a2740 #23535e #468ce6 #468de6 #468ee6 #478ce6 #478fe6 #4790e6 #4791e6 #488be7 #4892e6 #4894e7 #4895e7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a9ae7 #4a9ce7 #4a9de7 #4b8ae7 #4b9ee7 #4b9fe7 #4ba0e7 #4ca1e8 #4ca3e8 #4ca4e8 #4d89e8 #4da5e8 #4da6e8 #4da7e8 #4da8e8 #4e88e8 #4eaae8 #4eabe8 #4eace8 #4fade8 #4faee8 #4fafe9 #5088e9 #50b1e9 #50b2e9 #50b3e9 #50b4e9 #5187e9 #51b5e9 #51b6e9 #51b7e9 #5286ea #52b9e9 #52bae9 #52bbe9 #538fab #53bce9 #53bdea #53beea #53c0ea #5486ea #5490ab #54c0ea #54c1ea #54c2ea #54c3ea #5585ea #5591ab #55c4ea #55c5ea #55c7ea #5693ac #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57ceeb #57cfeb #5884eb #5896ad #58d0eb #58d1eb #5a83ec #5a97ad #5a98ad #5b82ec #5c82ec #5c9aae #5c9cae #5d6575 #5d82ed #5e81ed #5e9daf #6081ed #6180ee #637fee #647fef #657eef #677def #687df0 #697cf0 #6a7cf0 #6b7bf1 #6d7bf1 #6e7af2 #7079f2 #7179f2 #7278f2 #7378f3 #7477f3 #7676f4 #7677f4 #768eb2 #7776f4 #7875f4 #7a75f5 #7b74f5 #7d73f6 #7e73f6 #8072f7 #8171f7 #8371f7 #838ca1 #8470f8 #866ff8 #876ff9 #896ef9 #8a6ef9 #8a6efa #8a94a8 #8b6dfa #8c6dfa #8d6cfa #8e6cfb #906bfb #916afc #936afc #9469fc #9668fd #9768fd #9967fe #9a66fe #9a9fa8 #9c66ff #9d65ff #a26efe #e6be28 #e6ecf5 #f07814
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_values_control_160x45][lab_values_control_160x45]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                       ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
+    Backtests   Drafts  [ ] switch    ● values shown · V hides
+  ┏━ BACKTESTS  ─────────────────────────────────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation                            GATE                 Train  Valid  threshold
+   6 of 6 · sort last ▼                                                                            max_drawdown         PASS  PASS   < 15%
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more                       recovery_days        PASS  PASS   < 90 days from a drawdown ≥
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 · reversion 1 · +1       8%
+   more                                                                                            profit_factor        PASS  PASS   > 1.3
+   split  validation 3 · train 2                                                                   ulcer_index          PASS  PASS   < 10
+    Strategy           Family               S T V J  Status               Trials  Fam.val  Last    fee_share            PASS  PASS   < 30% of gross P&L
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2       1/5      10-17   win_rate             PASS  PASS   ≥ 30%
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3       1/5      10-17   dsr                  PASS  FAIL   ≥ 0.95
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2       0/5      10-17   pbo                  PASS  PASS   ≤ 0.05
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1       0/5      10-17   t_stat               PASS  FAIL   > 3.0
+    synth-legacy                            ✓ · · ·  · NO VERDICT         1                10-08   trade_count          PASS  PASS   ≥ 100
+    synth-prereg-only  reversion            ✓ · · ·  ○ DRAFT              0       0/5              cost_stress          PASS  PASS   still positive at x2.0
+                                                                                                   positive_years       PASS  PASS   share of years > 0.5
+                                                                                                   bull_return          PASS  PASS   positive in every bull
+                                                                                                   stretch
+                                                                                         ▌         bear_return          PASS  PASS   bounded in every bear
+   ↑↓ select · ↵ open · / filter · S sort ─────────────────────────────────────────────────────━┛  stretch
+  ┏━ STRATEGY  ──────────────────────────────────────────────────────────────────────── computed   validation_vs_train  NA  NA   ratio ≥ 0.5
+   synth-daily-ma  ✗ FAIL · validation                                                             neighbours           PASS  PASS   Sharpe ratio ≥ 0.5
+   family daily-ma-trend                                                                           correlation          PASS  PASS   < 0.7
+                                                                                                   bh_survivor          ·
+   BRIEF                                                                                           champion             FAIL
+   • Long after a daily close crosses above its average.
+                                                                                                   RUNS
+   RULES                                                                                           10-17 21:01 validation base
+   No card with rules is committed.                                                                2020-09-01..2024-06-30 a1b2c3d4 #c1d43f42 ⛓  dsr 0.427 sharpe
+                                                                                                   0.427
+   HYPOTHESIS                                                                                      10-17 20:02 train      base
+   expects                                                                                         2020-09-01..2024-06-30 a1b2c3d4 #7bf38fad ⛓  dsr 0.909 sharpe
+   Not recorded.                                                                                   0.909
+   rejected if
+   Not recorded.                                                                                   LINKS
+                                                                                                   batch    docs/experiments/synth-exp/batches/b1.md
+   PARAMETERS                                                                                      card     —
+   sma_period             signed 100 · neighbours 50, 150 · as run 100                             verdicts verdicts/b1/
+                                                                                                   notebook docs/experiments/synth-exp/lab-notebook.md
+   signed parameters against as run ───────────────────────────────────────────────────────────━┛  thresholds always · values only when shown ──────────────────━┛
+  Shadow test · day 12 of 90  █████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                                                              read-only
+  ---
+  colours: #000000 #070b14 #0c1424 #131d31 #161e2e #19253c #1a2740 #1b3a6b #23535e #254c86 #2e5ea2 #3871bd #4183d8 #468ce6 #468de6 #478ce6 #478ee6 #478fe6 #4790e6 #4791e6 #4792e6 #488be6 #4893e6 #4893e7 #4894e7 #4895e7 #498be7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a99e7 #4a9ae7 #4a9be7 #4a9ce7 #4a9de7 #4b8ae7 #4b9ee7 #4b9fe7 #4ba0e7 #4c89e8 #4ca1e8 #4ca2e8 #4ca3e8 #4ca4e8 #4ca5e8 #4d89e8 #4da6e8 #4da7e8 #4da8e8 #4e88e8 #4e96e9 #4ea9e8 #4eaae8 #4eabe8 #4eace8 #4eade8 #4f88e9 #4fade8 #4faee8 #4fafe9 #4fb0e9 #5087e9 #5088e9 #50b1e9 #50b2e9 #50b3e9 #5187e9 #51b4e9 #51b5e9 #51b6e9 #51b7e9 #51b8e9 #528dab #528fab #52b9e9 #52bae9 #52bbe9 #5386ea #53bce9 #53bdea #53beea #53bfea #53c0ea #5486ea #548fab #5490ab #54c0ea #54c1ea #54c2ea #54c3ea #5585ea #5591ab #55c4ea #55c5ea #55c6ea #55c7ea #5685eb #5692ac #5693ac #56c7ea #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57cdeb #57ceeb #5884eb #5895ad #5896ad #58cfeb #58d0eb #58d1eb #5983ec #5997ad #5a83ec #5a98ad #5b82ec #5b99ad #5c82ec #5c9aae #5c9bae #5d6575 #5d9caf #5dabee #5e81ed #5e9daf #5f81ed #6080ed #6180ee #627fee #637fee #647fef #657eef #667eef #677df0 #687df0 #697cf0 #6a7cf0 #6b7cf1 #6c7bf1 #6cc0f4 #6d7bf1 #6e7af1 #6f7af2 #7079f2 #7179f2 #7278f2 #7278f3 #7378f3 #7577f3 #7676f4 #7677f4 #768eb2 #7776f4 #7876f4 #7975f5 #7a75f5 #7b74f5 #7c74f6 #7cd4f9 #7d73f6 #7e73f6 #7f72f7 #8172f7 #8271f7 #8371f7 #838ca1 #8470f8 #8570f8 #866ff8 #876ff9 #886ef9 #896ef9 #8a6dfa #8a6ef9 #8a94a8 #8b6dfa #8be9ff #8c6dfa #8d6cfa #8e6cfb #8f6bfb #906bfb #916afc #926afc #9369fc #9469fc #9568fd #9668fd #9867fd #9967fe #9a66fe #9a9fa8 #9b66fe #9c65ff #9d65ff #a26efe #e6be28 #e6ecf5 #f07814
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_values_control_240x60][lab_values_control_240x60]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                       ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ CONTROL ROOM
+    Backtests   Drafts  [ ] switch    ● values shown · V hides
+  ┏━ BACKTESTS  ────────────────────────────────────────────────────────────────────────────── computed  ┏━ STRATEGY  ───────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation                                   synth-daily-ma  ✗ FAIL · validation                                  GATE                 Train  Valid  threshold
+   6 of 6 · sort last ▼                                                                                   family daily-ma-trend                                                max_drawdown         PASS  PASS   < 15%
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more                                                                                                   recovery_days        PASS  PASS   < 90 days from a drawdown ≥ 8%
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 · reversion 1 · +1 more         BRIEF                                                                profit_factor        PASS  PASS   > 1.3
+   split  validation 3 · train 2                                                                          • Long after a daily close crosses above its average.                ulcer_index          PASS  PASS   < 10
+    Strategy           Family               S T V J  Status               Trials  Fam.val  Last run ▼                                                                          fee_share            PASS  PASS   < 30% of gross P&L
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2       1/5      10-17 21:01    RULES                                                                win_rate             PASS  PASS   ≥ 30%
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3       1/5      10-17 21:00    No card with rules is committed.                                     dsr                  PASS  FAIL   ≥ 0.95
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2       0/5      10-17 20:05                                                                         pbo                  PASS  PASS   ≤ 0.05
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1       0/5      10-17 20:03    HYPOTHESIS                                                           t_stat               PASS  FAIL   > 3.0
+    synth-legacy                            ✓ · · ·  · NO VERDICT         1                10-08 16:38    expects                                                              trade_count          PASS  PASS   ≥ 100
+    synth-prereg-only  reversion            ✓ · · ·  ○ DRAFT              0       0/5                     Not recorded.                                                        cost_stress          PASS  PASS   still positive at x2.0
+                                                                                                          rejected if                                                          positive_years       PASS  PASS   share of years > 0.5
+                                                                                                          Not recorded.                                                        bull_return          PASS  PASS   positive in every bull stretch
+                                                                                                                                                                               bear_return          PASS  PASS   bounded in every bear stretch
+                                                                                                          PARAMETERS                                                           validation_vs_train  NA  NA   ratio ≥ 0.5
+                                                                                                          sma_period             signed 100 · neighbours 50, 150 · as run      neighbours           PASS  PASS   Sharpe ratio ≥ 0.5
+                                                                                                          100                                                                  correlation          PASS  PASS   < 0.7
+                                                                                                                                                                               bh_survivor          ·
+                                                                                                                                                                               champion             FAIL
+  
+                                                                                                                                                                               RUNS
+                                                                                                                                                                               10-17 21:01 validation base               2020-09-01..2024-06-30
+                                                                                                                                                                               a1b2c3d4 #c1d43f42 ⛓  dsr 0.427 sharpe 0.427
+                                                                                                                                                                               10-17 20:02 train      base               2020-09-01..2024-06-30
+                                                                                                                                                                               a1b2c3d4 #7bf38fad ⛓  dsr 0.909 sharpe 0.909
+  
+                                                                                                                                                                               LINKS
+                                                                                                                                                                               batch    docs/experiments/synth-exp/batches/b1.md
+                                                                                                                                                                               card     —
+                                                                                                                                                                               verdicts verdicts/b1/
+                                                                                                                                                                               notebook docs/experiments/synth-exp/lab-notebook.md
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+   ↑↓ select · ↵ open · / filter · S sort ────────────────────────────────────────────────────────────━┛  signed parameters against as run ────────────────────────────────━┛  thresholds always · values only when shown ──────────────────────━┛
+  Shadow test · day 12 of 90  ███████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                                                                                                                                              read-only
+  ---
+  colours: #070b14 #0c1424 #131d31 #161e2e #182338 #19253c #1a2740 #1b3a6b #254c86 #2e5ea2 #3871bd #4183d8 #468ce6 #468de6 #478ce6 #478ee6 #478fe6 #4790e6 #4791e6 #488be7 #4892e6 #4893e6 #4893e7 #4894e7 #4895e7 #4896e7 #498be7 #4996e7 #4997e7 #4998e7 #4999e7 #4a8ae7 #4a9ae7 #4a9be7 #4a9ce7 #4a9de7 #4b8ae7 #4b8ae8 #4b9ee7 #4b9fe7 #4ba0e7 #4ba1e8 #4c89e8 #4ca2e8 #4ca3e8 #4ca4e8 #4ca5e8 #4d89e8 #4da5e8 #4da6e8 #4da7e8 #4da8e8 #4da9e8 #4e88e8 #4e89e8 #4e96e9 #4ea9e8 #4eaae8 #4eabe8 #4eace8 #4f88e9 #4fade8 #4faee8 #4fafe9 #4fb0e9 #5088e9 #50b1e9 #50b2e9 #50b3e9 #50b4e9 #5187e9 #51b5e9 #51b6e9 #51b7e9 #51b8e9 #5287e9 #528dab #528eab #52b8e9 #52b9e9 #52bae9 #52bbe9 #52bce9 #5386ea #538fab #53bce9 #53bdea #53beea #53bfea #53c0ea #5486ea #548fab #5490ab #54c0ea #54c1ea #54c2ea #54c3ea #5585ea #5591ab #5592ab #55c4ea #55c5ea #55c6ea #55c7ea #5685ea #5685eb #5692ac #5693ac #56c8ea #56c9ea #56caea #56cbeb #5784eb #5794ac #57cceb #57cdeb #57ceeb #57cfeb #5884eb #5894ad #5895ad #5896ad #58cfeb #58d0eb #58d1eb #5983ec #5984eb #5996ad #5997ad #5a83ec #5a98ad #5a99ad #5b82ec #5b83ec #5b9aae #5c82ec #5c9aae #5c9bae #5d6575 #5d82ed #5d9caf #5dabee #5e81ed #5e9daf #5f81ed #6080ed #6180ee #627fee #637fee #647eef #657eef #667def #667eef #677df0 #687df0 #697cf0 #6a7cf0 #6b7bf1 #6b7cf1 #6c7bf1 #6cc0f4 #6d7bf1 #6e7af1 #6e7af2 #6f7af2 #7079f2 #7179f2 #7278f2 #7278f3 #7378f3 #7477f3 #7478f3 #7577f3 #7676f4 #7677f4 #768eb2 #7776f4 #7876f4 #7975f5 #7a75f5 #7b74f5 #7c74f5 #7c74f6 #7cd4f9 #7d73f6 #7e73f6 #7f72f6 #8072f7 #8171f7 #8172f7 #8271f7 #8371f7 #838ca1 #8470f8 #8570f8 #866ff8 #866ff9 #876ff9 #886ef9 #896ef9 #8a6dfa #8a6ef9 #8a94a8 #8b6dfa #8be9ff #8c6dfa #8d6cfa #8e6cfb #8f6bfb #906bfb #916afc #916bfb #926afc #936afc #9469fc #9569fd #9668fd #9768fd #9867fe #9967fe #9a66fe #9a9fa8 #9b66fe #9c65ff #9c66ff #9d65ff #a26efe #e6be28 #e6ecf5 #f07814
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_values_control_80x24][lab_values_control_80x24]
+  '''
+  
+    1   2   3   4   5   6   7   8   9
+  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+    Backtests   Drafts  [ ] switch    ● values shown · V hides
+  ┏━ BACKTESTS  ──────────────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation
+   6 of 6 · sort last ▼
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 ·
+   reversion 1 · +1 more
+   split  validation 3 · train 2
+    Strategy           Family               S T V J  Status               Trials
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1
+    synth-legacy                            ✓ · · ·  · NO VERDICT         1
+    synth-prereg-only  reversion            ✓ · · ·  ○ DRAFT              0
+  
+  
+                                                               ▉
+   ↑↓ select · ↵ open · / filter · S sort ──────────────────────────────────────━┛
+  Shadow test · day 12 of 90  ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9    ↵    T    ?    ^P    Q quit         next due · read-only
+  ---
+  colours: #000000 #070b14 #0c1424 #131d31 #161e2e #19253c #1a2740 #23535e #468ce6 #468de6 #478ce6 #478fe6 #4790e6 #4892e6 #4894e7 #498be7 #4996e7 #4997e7 #4999e7 #4a9ae7 #4a9be7 #4a9de7 #4b9ee7 #4ba0e7 #4c8ae8 #4ca2e8 #4ca4e8 #4da5e8 #4da7e8 #4da8e8 #4e89e8 #4ea9e8 #4eabe8 #4eace8 #4faee8 #4fb0e9 #5088e9 #50b2e9 #50b3e9 #51b5e9 #51b7e9 #5287e9 #52b9e9 #52bae9 #53bce9 #53beea #53c0ea #5486ea #548fab #54c1ea #54c3ea #55c5ea #55c7ea #5692ac #56c8ea #56caea #5784eb #5785eb #57cceb #57ceeb #5895ad #58cfeb #58d1eb #5984eb #5a98ad #5b83ec #5c9aae #5d6575 #5d82ed #5e9daf #5f81ed #6280ee #647fef #667eef #687df0 #697cf0 #6a7cf0 #6d7bf1 #6f7af2 #7179f2 #7378f3 #7577f4 #768eb2 #7876f4 #7a75f5 #7c74f6 #7e73f6 #8072f7 #8371f7 #838ca1 #8570f8 #876ff9 #896ef9 #8a94a8 #8b6dfa #8c6dfa #8e6cfb #906bfb #926afc #9469fc #9668fd #9967fe #9a9fa8 #9b66fe #9d65ff #a26efe #e6be28 #e6ecf5
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_values_neon_120x36][lab_values_neon_120x36]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions             ● live · checked 14:00 · next 18:00 due  ◑ NEON
+    Backtests   Drafts  [ ] switch    ● values shown · V hides
+  ┏━ BACKTESTS  ──────────────────────────────────────────────────────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation
+   6 of 6 · sort last ▼
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 · reversion 1 · +1 more
+   split  validation 3 · train 2
+    Strategy           Family               S T V J  Status               Trials  Fam.val  Last run ▼
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2       1/5      10-17 21:01
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3       1/5      10-17 21:00
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2       0/5      10-17 20:05                 ▃▃
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1       0/5      10-17 20:03
+   ↑↓ select · ↵ open · / filter · S sort ──────────────────────────────────────────────────────────────────────────────━┛
+  ┏━ STRATEGY  ──────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────── computed
+   synth-daily-ma  ✗ FAIL · validation                         GATE                 Train  Valid  threshold
+   family daily-ma-trend                                       max_drawdown         PASS  PASS   < 15%
+                                                               recovery_days        PASS  PASS   < 90 days from a
+   BRIEF                                                       drawdown ≥ 8%
+   • Long after a daily close crosses above its average.       profit_factor        PASS  PASS   > 1.3
+                                                               ulcer_index          PASS  PASS   < 10
+   RULES                                                       fee_share            PASS  PASS   < 30% of gross P&L
+   No card with rules is committed.                            win_rate             PASS  PASS   ≥ 30%
+                                                               dsr                  PASS  FAIL   ≥ 0.95
+   HYPOTHESIS                                                  pbo                  PASS  PASS   ≤ 0.05
+   expects                                                     t_stat               PASS  FAIL   > 3.0
+   Not recorded.                                               trade_count          PASS  PASS   ≥ 100
+   rejected if                                                 cost_stress          PASS  PASS   still positive at x2.0
+   Not recorded.                                               positive_years       PASS  PASS   share of years > 0.5
+                                                               bull_return          PASS  PASS   positive in every bull
+   PARAMETERS                                                  stretch
+   signed parameters against as run ───────────────────────━┛  thresholds always · values only when shown ──────────────━┛
+  Shadow test · day 12 of 90  ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                      read-only
+  ---
+  colours: #000010 #00606f #00f0ff #02eeff #039fb3 #059db3 #05ebff #079bb3 #07e9ff #09e6ff #0a99b3 #0b0420 #0c96b3 #0ce4ff #0e94b3 #0ee1ff #1091b3 #10dfff #120731 #128fb3 #13dcff #148db3 #15daff #168bb3 #17d7ff #1888b3 #1ad5ff #1b133b #1cd2ff #1e1543 #1ed0ff #1f1646 #1fcfff #20cdff #22cbff #23cbff #25c8ff #27c6ff #2ac3ff #2cc1ff #2ebeff #31bcff #33b9ff #34186f #35b7ff #37b5ff #38b4ff #3ab2ff #3cafff #3daeff #3fadff #41aaff #43a8ff #45a6ff #468ce6 #46a5ff #48a3ff #4a2399 #4aa0ff #4d9eff #4f9bff #5199ff #5396ff #5397ff #5694ff #5891ff #5a8fff #5c8dff #5d8dff #5f8aff #6188ff #627099 #6485ff #6683ff #6880ff #6881ff #6b7eff #6d7bff #6e7aff #6f79ff #7276ff #7474ff #7671ff #796fff #798bb6 #7b6cff #7d6aff #8067ff #8265ff #8462ff #8760ff #87a7b3 #895dff #8a5cff #8b5cff #8d5bff #8f5bfe #8fa8d8 #915afe #935afe #9374ff #9559fe #9759fd #9958fd #9b58fd #9d57fd #9f57fc #a156fc #a355fc #a555fc #a754fb #a854fb #aa53fb #ac53fb #ae52fa #b052fa #b152fa #b251fa #b451fa #b650f9 #b850f9 #b950f9 #ba4ff9 #bc4ff9 #be4ef8 #c04ef8 #c24df8 #c44cf8 #c44df8 #c64cf7 #c84cf7 #c8fbff #ca4bf7 #cb4bf7 #cc4bf7 #ce4af6 #d049f6 #d04af6 #d249f6 #d448f6 #d648f5 #d847f5 #da47f5 #dc46f5 #de46f4 #e045f4 #e245f4 #e344f4 #e544f3 #e6be28 #e743f3 #e843f3 #e943f3 #eb42f3 #ed42f2 #ef41f2 #f07814 #f141f2 #f340f2 #f540f1 #f73ff1 #f93ff1 #fb3ef1 #fd3ef0 #ff3df0
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_values_neon_240x60][lab_values_neon_240x60]
+  '''
+  
+    1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test · 7 Briefs · 8 System · 9 Logs
+  SHADOW · mainnet off  DEMO DATA · scenario ok-two-positions                                                                                                               ● live · checked 14:00 · next 18:00 due ▕██████████▏ 11:00:00  ◑ NEON
+    Backtests   Drafts  [ ] switch    ● values shown · V hides
+  ┏━ BACKTESTS  ────────────────────────────────────────────────────────────────────────────── computed  ┏━ STRATEGY  ───────────────────────────────────────────── computed  ┏━ RESULTS  ────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation                                   synth-daily-ma  ✗ FAIL · validation                                  GATE                 Train  Valid  threshold
+   6 of 6 · sort last ▼                                                                                   family daily-ma-trend                                                max_drawdown         PASS  PASS   < 15%
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more                                                                                                   recovery_days        PASS  PASS   < 90 days from a drawdown ≥ 8%
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 · reversion 1 · +1 more         BRIEF                                                                profit_factor        PASS  PASS   > 1.3
+   split  validation 3 · train 2                                                                          • Long after a daily close crosses above its average.                ulcer_index          PASS  PASS   < 10
+    Strategy           Family               S T V J  Status               Trials  Fam.val  Last run ▼                                                                          fee_share            PASS  PASS   < 30% of gross P&L
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2       1/5      10-17 21:01    RULES                                                                win_rate             PASS  PASS   ≥ 30%
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3       1/5      10-17 21:00    No card with rules is committed.                                     dsr                  PASS  FAIL   ≥ 0.95
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2       0/5      10-17 20:05                                                                         pbo                  PASS  PASS   ≤ 0.05
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1       0/5      10-17 20:03    HYPOTHESIS                                                           t_stat               PASS  FAIL   > 3.0
+    synth-legacy                            ✓ · · ·  · NO VERDICT         1                10-08 16:38    expects                                                              trade_count          PASS  PASS   ≥ 100
+    synth-prereg-only  reversion            ✓ · · ·  ○ DRAFT              0       0/5                     Not recorded.                                                        cost_stress          PASS  PASS   still positive at x2.0
+                                                                                                          rejected if                                                          positive_years       PASS  PASS   share of years > 0.5
+                                                                                                          Not recorded.                                                        bull_return          PASS  PASS   positive in every bull stretch
+                                                                                                                                                                               bear_return          PASS  PASS   bounded in every bear stretch
+                                                                                                          PARAMETERS                                                           validation_vs_train  NA  NA   ratio ≥ 0.5
+                                                                                                          sma_period             signed 100 · neighbours 50, 150 · as run      neighbours           PASS  PASS   Sharpe ratio ≥ 0.5
+                                                                                                          100                                                                  correlation          PASS  PASS   < 0.7
+                                                                                                                                                                               bh_survivor          ·
+                                                                                                                                                                               champion             FAIL
+  
+                                                                                                                                                                               RUNS
+                                                                                                                                                                               10-17 21:01 validation base               2020-09-01..2024-06-30
+                                                                                                                                                                               a1b2c3d4 #c1d43f42 ⛓  dsr 0.427 sharpe 0.427
+                                                                                                                                                                               10-17 20:02 train      base               2020-09-01..2024-06-30
+                                                                                                                                                                               a1b2c3d4 #7bf38fad ⛓  dsr 0.909 sharpe 0.909
+  
+                                                                                                                                                                               LINKS
+                                                                                                                                                                               batch    docs/experiments/synth-exp/batches/b1.md
+                                                                                                                                                                               card     —
+                                                                                                                                                                               verdicts verdicts/b1/
+                                                                                                                                                                               notebook docs/experiments/synth-exp/lab-notebook.md
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+  
+   ↑↓ select · ↵ open · / filter · S sort ────────────────────────────────────────────────────────────━┛  signed parameters against as run ────────────────────────────────━┛  thresholds always · values only when shown ──────────────────────━┛
+  Shadow test · day 12 of 90  ███████████████████████████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9 screens   ↵ detail   L logs   T theme   ? help   ^P palette   Q quit                                                                                                                                              read-only
+  ---
+  colours: #00f0ff #01efff #02eeff #039fb3 #03ecff #049fb3 #059db3 #05ebff #069db3 #06eaff #079bb3 #07e9ff #089bb3 #08e7ff #0999b3 #09e6ff #0ae5ff #0b0420 #0b97b3 #0c96b3 #0ce4ff #0d95b3 #0de2ff #0e94b3 #0ee1ff #0f93b3 #0fe0ff #1091b3 #1092b3 #10dfff #11ddff #120731 #128fb3 #1290b3 #12dcff #138eb3 #148db3 #14dbff #158cb3 #15daff #168bb3 #16d8ff #178ab3 #17d7ff #1888b3 #1889b3 #18d6ff #19d5ff #1a86b3 #1a88b3 #1b133b #1b3a6b #1bd4ff #1cd2ff #1dd1ff #1e1543 #1ed0ff #1f1646 #1fcfff #20cdff #21ccff #22cbff #23cbff #24caff #254c86 #25c8ff #26c7ff #27c6ff #28c5ff #2ac3ff #2bc2ff #2cc1ff #2dc0ff #2e5ea2 #2ebeff #2fbdff #31bcff #32bbff #33baff #34186f #34b8ff #35b7ff #36b6ff #37b5ff #3871bd #39b3ff #3ab2ff #3bb1ff #3cb0ff #3daeff #3eadff #40acff #4183d8 #41abff #42a9ff #43a8ff #44a7ff #45a6ff #468ce6 #46a4ff #48a3ff #49a2ff #4a2399 #4aa1ff #4b9fff #4c9eff #4d9dff #4e96e9 #4f9cff #509bff #5199ff #5298ff #5397ff #5496ff #5594ff #5793ff #5892ff #5991ff #5a8fff #5b8eff #5c8dff #5dabee #5e8cff #5f8aff #6089ff #6188ff #627099 #6287ff #6385ff #6484ff #6683ff #6782ff #6881ff #697fff #6a7eff #6b7dff #6cc0f4 #6d7cff #6e7aff #6f79ff #7078ff #7177ff #7275ff #7374ff #7573ff #7672ff #7770ff #786fff #796eff #798bb6 #7a6dff #7b6cff #7c6bff #7cd4f9 #7d6aff #7e69ff #7f68ff #8067ff #8165ff #8264ff #8463ff #8562ff #8660ff #875fff #87a7b3 #885eff #895dff #8a5cff #8b5cff #8be9ff #8c5bff #8d5bff #8e5bfe #8f5bfe #8fa8d8 #905afe #915afe #925afe #935afe #9374ff #9459fe #9559fe #9659fd #9758fd #9759fd #9858fd #9958fd #9a58fd #9b57fd #9c57fd #9d57fd #9e57fc #9f56fc #a056fc #a156fc #a256fc #a355fc #a455fc #a555fc #a655fb #a754fb #a854fb #a954fb #aa54fb #ab53fb #ac53fb #ad53fb #ae53fa #af52fa #b052fa #b152fa #b251fa #b351fa #b451fa #b551fa #b650f9 #b750f9 #b850f9 #b94ff9 #b950f9 #ba4ff9 #bb4ff9 #bc4ff9 #bd4ef8 #be4ef8 #bf4ef8 #c04ef8 #c14df8 #c24df8 #c34df8 #c44cf8 #c44df8 #c54cf7 #c64cf7 #c74cf7 #c84cf7 #c8fbff #c94bf7 #ca4bf7 #cb4bf7 #cc4af7 #cd4af6 #ce4af6 #cf4af6 #d049f6 #d149f6 #d249f6 #d349f6 #d448f6 #d548f5 #d648f5 #d748f5 #d847f5 #d947f5 #da47f5 #db47f5 #dc46f5 #dd46f4 #de46f4 #df46f4 #e045f4 #e145f4 #e245f4 #e345f4 #e444f4 #e544f3 #e644f3 #e6be28 #e743f3 #e843f3 #e943f3 #ea42f3 #eb42f3 #ec42f2 #ed42f2 #ee41f2 #ef41f2 #f041f2 #f07814 #f141f2 #f240f2 #f340f2 #f440f1 #f540f1 #f63ff1 #f73ff1 #f83ff1 #f93ff1 #fa3ef1 #fb3ef1 #fc3ef0 #fd3ef0 #fe3df0 #ff3df0
+  
+  '''
+# ---
+# name: test_lab_svg_snapshot[lab_values_neon_80x24][lab_values_neon_80x24]
+  '''
+  
+    1   2   3   4   5   6   7   8   9
+  SHADOW · mainnet off  DEMO DATA          ● live · checked 14:00 · next 18:00  ◑
+    Backtests   Drafts  [ ] switch    ● values shown · V hides
+  ┏━ BACKTESTS  ──────────────────────────────────────────────────────── computed
+    ⌕ type to filter…  family:breakout status:champion split:validation
+   6 of 6 · sort last ▼
+   status  champion 1 · draft 1 · fail-train 1 · fail-validation 1 · +2 more
+   family  breakout-ensemble 1 · daily-ma-trend 1 · pullback-in-uptrend 1 ·
+   reversion 1 · +1 more
+   split  validation 3 · train 2
+    Strategy           Family               S T V J  Status               Trials
+    synth-daily-ma     daily-ma-trend       ✓ ✓ ✗ ✗  ✗ FAIL · validation  2
+    synth-ensemble     breakout-ensemble    ✓ ✓ ✓ ★  ★ CHAMPION           3
+    synth-pullback     pullback-in-uptrend  ✓ ✓ · ·  ▸ TRAIN PASS         2
+    synth-slope        slope-trend          ✓ ✗ – ✗  ✗ FAIL · train       1
+    synth-legacy                            ✓ · · ·  · NO VERDICT         1
+    synth-prereg-only  reversion            ✓ · · ·  ○ DRAFT              0
+  
+  
+                                                               ▉
+   ↑↓ select · ↵ open · / filter · S sort ──────────────────────────────────────━┛
+  Shadow test · day 12 of 90  ██████░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  13%
+   D W M Y range   1-9    ↵    T    ?    ^P    Q quit         next due · read-only
+  ---
+  colours: #000010 #00606f #00f0ff #039fb3 #03ecff #079bb3 #07e9ff #0ae5ff #0b0420 #0b97b3 #0ee1ff #0f92b3 #11ddff #120731 #148eb3 #15daff #1889b3 #18d6ff #1b133b #1cd2ff #1f1646 #1fceff #23cbff #26c7ff #2ac3ff #2dbfff #31bcff #34186f #34b8ff #37b5ff #38b4ff #3bb0ff #3fadff #42a9ff #46a5ff #49a1ff #4a2399 #4d9eff #509aff #5397ff #5496ff #5792ff #5b8fff #5e8bff #627099 #6287ff #6583ff #6980ff #6c7cff #6e7aff #7078ff #7374ff #7771ff #798bb6 #7a6dff #7e69ff #8165ff #8562ff #87a7b3 #885eff #8a5cff #8b5cff #8e5bfe #8fa8d8 #915afe #9374ff #9459fe #9758fd #9a58fd #9d57fd #a056fc #a156fc #a355fc #a655fb #a954fb #ac53fb #af52fa #b251fa #b551f9 #b850f9 #b950f9 #bb4ff9 #be4ef8 #c14df8 #c44df8 #c74cf7 #c8fbff #ca4bf7 #cd4af6 #d049f6 #d04af6 #d349f6 #d648f5 #d847f5 #db46f5 #de46f4 #e145f4 #e444f3 #e6be28 #e743f3 #e843f3 #ea42f3 #ed42f2 #f041f2 #f340f2 #f63ff1 #f93ff1 #fc3ef0 #ff3df0
+  
+  '''
+# ---

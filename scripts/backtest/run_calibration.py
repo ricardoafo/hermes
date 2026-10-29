@@ -19,7 +19,8 @@ Phase 1 scope — deliberately narrow (see openspec change
   Train slice).
 - Fills synthesised directly from strategy signals (entry_px =
   bar.close, exit_px = exit-bar.close). No OrderRouter, no
-  SimulatedExchangeAdapter, no orderbook. Those wire in Phase 2.
+  fill kernel, no orderbook. Phase 2 (``run_calibration_full.py``)
+  wires them.
 - Report saved as JSON under $HERMES_DATA_DIR/backtests/mvp1-<ts>.json.
 
 Usage:
@@ -36,11 +37,8 @@ Exit codes:
     2 - usage error
 """
 
-from __future__ import annotations
-
 import argparse
 import asyncio
-import inspect
 import json
 import os
 import shutil
@@ -57,14 +55,14 @@ from hermes.adapters.fees.binance_history import load_binance_fee_history
 from hermes.adapters.market_data.binance_historical import BinanceHistoricalAdapter
 from hermes.adapters.trial_log.jsonl_file import JsonlTrialLog
 from hermes.application.calibration.harness import CalibrationHarness
-from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.strategy_protocol.pinned_dataset import (
     PinnedBars,
     assert_manifest_matches_preregistration,
     load_pinned_bars,
 )
-from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.application.strategy_protocol.strategy_factory import strategy_kind
 from hermes.application.strategy_protocol.trial_log import trial_split
+from hermes.domain.calibration.certification import CertificationState
 from hermes.domain.calibration.trial_record import DatasetRef, TrialRecord
 from hermes.domain.errors import DataManifestFormatError, DomainError, TrialLogError
 from hermes.domain.fees.fee_schedule_selector import (
@@ -76,7 +74,6 @@ from hermes.domain.market_data.dataset_manifest import DatasetManifest, DataSpli
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.risk.state import PortfolioState
 from hermes.domain.strategy.signal import SignalKind, StrategySignal
-from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.trading.fill import Fill
 from hermes.domain.trading.order import Order, OrderSide
 from hermes.domain.value_objects.currency import Currency
@@ -84,6 +81,7 @@ from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
+from hermes.infrastructure.project_root import load_pre_registration
 
 FEE_HISTORY_CSV = Path("docs/experiments/swing-mvp1/fee-history.csv")
 DATA_MANIFEST_JSON = Path("docs/experiments/swing-mvp1/data-manifest.json")
@@ -122,7 +120,7 @@ def _parse_iso_date(s: str) -> datetime:
 def _load_manifest(path: Path) -> DatasetManifest:
     """Load the data manifest and refuse it unless it matches the signed pre-registration."""
     manifest = JsonFileDatasetManifest(path).load()
-    pre_reg = PreRegistration()
+    pre_reg = load_pre_registration()
     assert_manifest_matches_preregistration(
         manifest, experiment_id=pre_reg.experiment_id(), windows=pre_reg.data_windows()
     )
@@ -147,8 +145,8 @@ def _synthesise_fill(
 ) -> Fill:
     """Build a Fill from a strategy signal at bar.close price.
 
-    Phase 1 shortcut — Phase 2 replaces this with the full OrderRouter
-    -> SimulatedExchangeAdapter pipeline that walks an orderbook.
+    Phase 1 shortcut — Phase 2 (``run_calibration_full.py``) replaces this
+    with the ``FillKernel`` pipeline (OrderRouter, orderbook walk).
 
     Sizing: 1% risk per trade against ATR-based stop distance, capped
     at 5% of equity per pre-reg §5.4. When the strategy signal doesn't
@@ -233,12 +231,8 @@ def _jsonify(obj: Any) -> Any:
 
 
 def _strategy_parameters() -> dict[str, Any]:
-    """Return every SwingStrategyAdapter parameter at its default, so the trial records what ran."""
-    return {
-        name: param.default
-        for name, param in inspect.signature(SwingStrategyAdapter.__init__).parameters.items()
-        if param.kind is inspect.Parameter.KEYWORD_ONLY
-    }
+    """Return every parameter of the strategy kind at its default, so the trial records what ran."""
+    return strategy_kind(None).default_parameters()
 
 
 def _git_state() -> tuple[str, bool]:
@@ -344,7 +338,7 @@ async def _run(args: argparse.Namespace) -> int:
     merged = _merge_by_close_time(bars_4h, bars_1d)
 
     parameters = _strategy_parameters()
-    strategy = SwingStrategyAdapter(**parameters)
+    strategy = strategy_kind(None).create(parameters)
     portfolio_state = PortfolioState(
         peak_value=_DEFAULT_STARTING_EQUITY_USD,
         current_value=_DEFAULT_STARTING_EQUITY_USD,

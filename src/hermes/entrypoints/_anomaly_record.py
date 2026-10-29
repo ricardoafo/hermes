@@ -11,8 +11,6 @@ line and never changes the alert, its delivery or the exit code. A missing
 ledger is never created. Nothing here pauses or gates trading.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from pathlib import Path
 from typing import TextIO

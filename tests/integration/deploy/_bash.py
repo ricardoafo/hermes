@@ -10,14 +10,14 @@ Git for Windows ships two of them. ``Git/bin/bash.exe`` is a launcher that puts
 is the bash it wraps and leaves ``PATH`` alone, so the launcher is swapped for it.
 """
 
-from __future__ import annotations
-
 import os
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+from tests.support.paths import REPO_ROOT
 
 
 def resolve_bash(configured: str | None) -> str:
@@ -46,7 +46,6 @@ BASH = resolve_bash(os.environ.get("HERMES_TEST_BASH"))
 RUN_ON_THIS_PLATFORM = sys.platform != "win32" or bool(os.environ.get("HERMES_TEST_BASH"))
 SKIP_REASON = "needs bash, GNU coreutils and real symlinks (set HERMES_TEST_BASH on Windows)"
 
-REPO_ROOT = Path(__file__).resolve().parents[3]
 SCRIPT_DIR = REPO_ROOT / "scripts" / "deploy"
 
 # Windows has no POSIX file modes, so tests that assert on them run on Linux only.

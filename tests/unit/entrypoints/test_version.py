@@ -11,8 +11,6 @@ Invariants protected here:
   print the plain report; the command exits 0 except 2 on bad usage.
 """
 
-from __future__ import annotations
-
 import io
 import json
 import platform
@@ -24,6 +22,7 @@ import pytest
 
 import hermes
 from hermes.adapters.ledger.migration_runner import MIGRATIONS_DIR, apply_migrations
+from hermes.entrypoints import _release as release_module
 from hermes.entrypoints import cli
 from hermes.entrypoints import version as version_module
 from hermes.entrypoints.commands import discover
@@ -72,14 +71,17 @@ def test_python_and_package_version_fields(tmp_path: Path) -> None:
     assert info.version == hermes.__version__
 
 
-def test_package_version_unknown_when_not_installed(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_package_version_unknown_when_not_installed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     """A missing distribution degrades to `unknown`."""
 
     def _missing(_name: str) -> str:
         raise metadata.PackageNotFoundError
 
-    monkeypatch.setattr(version_module.metadata, "version", _missing)
-    assert version_module._package_version() == "unknown"
+    monkeypatch.setattr(release_module.metadata, "version", _missing)
+    info = version_module.collect_info(db=tmp_path / "none.db", release_link=tmp_path / "c")
+    assert info.version == "unknown", "the shared lookup degrades instead of raising"
 
 
 def test_missing_ledger_reports_no_ledger(tmp_path: Path) -> None:

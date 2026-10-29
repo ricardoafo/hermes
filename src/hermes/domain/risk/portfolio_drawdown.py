@@ -9,8 +9,6 @@ Threshold (binding — pre-reg §10): drawdown ≥ 0.15 (15%) → HALT.
 Reference: SA-9 §5.5 RO-08; pre-reg §10; spec-8-risk-overlay change.md.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from hermes.domain.risk.state import MarketSnapshot, PortfolioState

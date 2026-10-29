@@ -13,10 +13,8 @@ and the portfolio are restored from the ledger as serve restores them. Only
 the day's bars then go through :func:`~hermes.application.backtest.replay.replay`.
 Everything is read: the ledger is never written.
 
-Reference: openspec/changes/358-parity-check/change.md.
+Reference: openspec/archive/358-parity-check/change.md.
 """
-
-from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -24,7 +22,7 @@ from datetime import UTC, date, datetime, timedelta
 
 from returns.result import Failure
 
-from hermes.application.backtest.replay import replay
+from hermes.application.backtest.replay import BacktestRun, replay
 from hermes.application.execution.kernel import FillKernel
 from hermes.application.parity.decisions import Decision, Outcome, ParityReport, compare
 from hermes.application.portfolio.tracker import PortfolioTracker
@@ -48,11 +46,21 @@ from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.ports.parity_source import ParitySourcePort
 from hermes.ports.strategy import StrategyPort
 
-__all__ = ["HistoryFetcher", "ParityDataError", "check_day", "day_window"]
+__all__ = [
+    "HistoryFetcher",
+    "ParityDataError",
+    "WindowReplay",
+    "check_day",
+    "day_window",
+    "replay_window",
+]
 
 _EXECUTION_WINDOW = interval_duration(KlineInterval.H4)
 """A fill belongs to a signal when it lands within one 4h bar after the signal time."""
 
+
+_FIRST_COUNTED = timedelta(microseconds=1)
+"""A bar closing exactly at day 0 is warm-up: the window holds bars closing after it."""
 
 _MAX_FETCH = 999
 """Most closed bars one public klines request returns."""
@@ -141,7 +149,7 @@ def check_day(
             far back the exchange read has to reach.
 
     Returns:
-        The :class:`ParityReport`.
+        The :class:`ParityReport`; a day with missed bars is not compared.
 
     Raises:
         ParityDataError: A stream has no stored bar on ``day``, too few
@@ -150,6 +158,11 @@ def check_day(
         hermes.domain.errors.LedgerError: A ledger read failed.
     """
     start, end = day_window(day)
+    missed = source.missed_bars_between(start, end)
+    if missed:
+        # An outage day differs from the replay by rule (ADR-024 §7): its
+        # missed entries stay unfilled and its exits fill late.
+        return ParityReport(day=day, matched=0, mismatches=(), missed_bars=missed)
     day_bars: list[Bar] = []
     warm_bars: list[Bar] = []
     for pair in pairs:
@@ -223,6 +236,111 @@ def check_day(
         fees_at=fees_at,
     )
     return compare(day, serve_decisions, replayed)
+
+
+@dataclass(frozen=True, slots=True)
+class WindowReplay:
+    """A whole-window replay and the stored bars it ran on."""
+
+    run: BacktestRun
+    bars: tuple[Bar, ...]
+    """The stored bars closing inside the window, in delivery order."""
+
+
+def replay_window(
+    *,
+    start: datetime,
+    end: datetime,
+    source: ParitySourcePort,
+    pairs: Sequence[Pair],
+    intervals: Sequence[KlineInterval],
+    warmup_bars: Mapping[KlineInterval, int],
+    min_warmup_bars: Mapping[KlineInterval, int],
+    seed: PortfolioSnapshot,
+    make_strategy: Callable[[], StrategyPort],
+    make_kernel: Callable[[PortfolioTracker], FillKernel],
+    fees_at: Callable[[datetime, Pair], FeeSchedule],
+    history: HistoryFetcher | None = None,
+    now: datetime | None = None,
+) -> WindowReplay:
+    """Replay the stored bars of ``(start, end]`` from flat in one continuous run (#965).
+
+    Unlike :func:`check_day`, nothing is restored from the ledger: the replay
+    starts from ``seed`` at ``start``, warmed up from the bars before it, so it
+    is independent of what serve did. Warm-up signals are not executed, so
+    the replay is flat at ``start`` as the counted shadow is (#723).
+
+    Args:
+        start: Day 0 of the shadow window.
+        end: Last bar close the window includes.
+        source: Read-only ledger view.
+        pairs: Pairs serve follows.
+        intervals: Intervals serve follows.
+        warmup_bars: Bars per interval serve warms up with.
+        min_warmup_bars: Fewest bars per interval that still warm the strategy up.
+        seed: The flat portfolio the shadow started from.
+        make_strategy: Builds one fresh strategy per pair.
+        make_kernel: Builds the fill kernel over the given portfolio tracker.
+        fees_at: Fee schedule for a pair at a time.
+        history: Source of closed bars to fill a warm-up shortfall; ``None``
+            uses stored bars only.
+        now: Current time, UTC-aware. Required with ``history``.
+
+    Returns:
+        The :class:`WindowReplay`.
+
+    Raises:
+        ParityDataError: A stream has no stored bar in the window or too few
+            bars before it to warm up.
+        hermes.domain.errors.LedgerError: A ledger read failed.
+    """
+    window: list[Bar] = []
+    warm: list[Bar] = []
+    for pair in pairs:
+        for interval in intervals:
+            span = interval_duration(interval) * warmup_bars[interval]
+            during = source.bars_closing_between(pair, interval, start, end)
+            if not during:
+                raise ParityDataError(
+                    f"no stored {pair} {interval.value} bars close after {start.isoformat()}"
+                )
+            before = source.bars_closing_between(pair, interval, start - span, start)
+            if len(before) < min_warmup_bars[interval] and history is not None:
+                before = _fill_gap(
+                    before,
+                    history=history,
+                    pair=pair,
+                    interval=interval,
+                    start=start,
+                    now=now,
+                    wanted=warmup_bars[interval],
+                )
+            if len(before) < min_warmup_bars[interval]:
+                raise ParityDataError(
+                    f"{pair} {interval.value}: {len(before)} bars before {start.isoformat()}, "
+                    f"{min_warmup_bars[interval]} needed to warm the strategy up"
+                )
+            warm.extend(before)
+            window.extend(during)
+
+    counter = 0
+
+    def next_id() -> str:
+        nonlocal counter
+        counter += 1
+        return f"01HZ{counter:022d}"
+
+    ordered = order_for_delivery(window)
+    run = replay(
+        [*order_for_delivery(warm), *ordered],
+        strategy={pair: make_strategy() for pair in pairs},
+        kernel=make_kernel(PortfolioTracker(seed)),
+        window_start=start + _FIRST_COUNTED,
+        window_end=end,
+        fees_at=fees_at,
+        correlation_id=next_id,
+    )
+    return WindowReplay(run=run, bars=ordered)
 
 
 def _fill_gap(

@@ -8,10 +8,8 @@ Rules:
   review is refused, and :func:`due` lists it as sealed without scoring it,
   so no review can reveal shadow P&L early (ruling 1, ADR-012 D-06).
 
-Reference: issue #363; openspec/changes/363-decision-journal.
+Reference: issue #363; openspec/archive/363-decision-journal.
 """
-
-from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass

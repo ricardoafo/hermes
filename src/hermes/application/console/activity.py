@@ -12,10 +12,8 @@
   sorts (issue #729): local time facets, coin, kind and text, never money, so
   the same rows suit every surface.
 
-Reference: openspec/changes/374-hermes-activity/change.md.
+Reference: openspec/archive/374-hermes-activity/change.md.
 """
-
-from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from datetime import date, datetime, timedelta, tzinfo

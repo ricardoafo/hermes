@@ -1,7 +1,5 @@
 """Unit tests for the circular block bootstrap CI on Sharpe (pre-registration §8.2)."""
 
-from __future__ import annotations
-
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
@@ -70,7 +68,7 @@ def test_confidence_outside_unit_interval_raises(confidence: float) -> None:
         block_bootstrap_sharpe_ci(_DRIFT, seed=0, confidence=confidence)
 
 
-@settings(max_examples=25, deadline=None)
+@settings(max_examples=25)
 @given(seed=st.integers(min_value=0, max_value=2**64 - 1))
 def test_lower_bound_never_exceeds_upper(seed: int) -> None:
     """For any seed the interval is ordered."""
@@ -83,4 +81,4 @@ def test_lower_bound_never_exceeds_upper(seed: int) -> None:
 def test_below_stays_in_range(n: int) -> None:
     """The block-start draw is always a valid index."""
     rng = _SplitMix64(n)
-    assert all(0 <= rng.below(n) < n for _ in range(20))
+    assert {rng.below(n) for _ in range(20)} <= set(range(n))

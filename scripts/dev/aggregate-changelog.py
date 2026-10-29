@@ -13,8 +13,9 @@ Behavior
 - An orphan's number is resolved at release time from the squash commit
   that added it (subject ending in ``(#<pr>)``). Unresolved orphans sort
   last, by slug.
-- Skips ``.gitkeep``, ``README.md``, and any other name, such as the
-  legacy ``wave-*.md`` placeholders (human-only fragments).
+- Skips ``.gitkeep`` and ``README.md``. Any other name is an error: a
+  file the aggregator skipped would be missing from every release's notes
+  (#1172).
 - Groups fragments by section and orders each group by number
   (ascending).
 - Emits a merged ``[Unreleased]`` block in Keep-a-Changelog order.
@@ -31,11 +32,10 @@ Exit codes
 - 0 — success (dry run or --apply completed).
 - 1 — no fragments found AND no existing [Unreleased] to preserve
   (nothing to do; probably a mistake).
-- 2 — invalid fragment filename (unknown type suffix) or CHANGELOG.md
-  missing when --apply is set.
+- 2 — invalid fragment filename (unknown name or type suffix), a fragment
+  that is not one top-level bullet, or CHANGELOG.md missing when --apply
+  is set.
 """
-
-from __future__ import annotations
 
 import argparse
 import re
@@ -109,13 +109,13 @@ def collect_fragments(
 
     Returns a mapping ``section-title -> [(number, body), ...]`` sorted by
     number ascending within each section. Orphan fragments take the number
-    ``resolve_pr`` returns, or :data:`UNRESOLVED`. Other names (legacy
-    ``wave-*`` placeholders) are skipped.
+    ``resolve_pr`` returns, or :data:`UNRESOLVED`.
 
     Raises
     ------
     ValueError
-        If a numeric-prefixed file has an unrecognised type suffix.
+        If a file matches neither fragment name, has an unrecognised type
+        suffix, or fails :func:`check_shape`.
     """
     by_section: dict[str, list[tuple[int, str]]] = {s: [] for s in SECTIONS}
     if not dir_path.is_dir():
@@ -131,8 +131,10 @@ def collect_fragments(
         numbered = FRAGMENT_RE.match(path.name)
         match = numbered or ORPHAN_RE.match(path.name)
         if match is None:
-            # Legacy placeholder — silently skip per convention.
-            continue
+            raise ValueError(
+                f"changelog.d/{path.name}: not a fragment name — "
+                "expected <number>-<type>.md or +<slug>.<type>.md"
+            )
         type_key = match.group("type")
         if type_key not in valid_types:
             raise ValueError(
@@ -141,12 +143,36 @@ def collect_fragments(
             )
         pr = int(numbered.group("pr")) if numbered else (resolve_pr(path) or UNRESOLVED)
         body = path.read_text(encoding="utf-8").rstrip() + "\n"
+        check_shape(path.name, body)
         section = valid_types[type_key]
         by_section[section].append((pr, body))
 
     for entries in by_section.values():
         entries.sort(key=lambda x: x[0])
     return by_section
+
+
+def check_shape(name: str, body: str) -> None:
+    """Refuse a fragment that is not exactly one top-level bullet.
+
+    A header inside a fragment would open a stray section in the release
+    notes, and a second top-level bullet hides one note inside another's
+    file (#1172).
+
+    Raises
+    ------
+    ValueError
+        If ``body`` does not start with ``- ``, holds a second top-level
+        bullet, or holds a Markdown header.
+    """
+    lines = body.splitlines()
+    bullets = sum(line.startswith("- ") for line in lines)
+    if not body.startswith("- ") or bullets != 1:
+        raise ValueError(
+            f"changelog.d/{name}: expected exactly one top-level '- ' bullet, found {bullets}"
+        )
+    if any(line.startswith("#") for line in lines):
+        raise ValueError(f"changelog.d/{name}: no headers; the type comes from the filename")
 
 
 def render_unreleased(by_section: dict[str, list[tuple[int, str]]]) -> str:

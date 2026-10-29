@@ -3,8 +3,6 @@
 Reference: ADR-016 decisions 2, 3, 6, 7, 8, 10 and 12.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -355,7 +353,7 @@ _sales = st.lists(
 )
 
 
-@settings(max_examples=15, deadline=None)
+@settings(max_examples=15)
 @given(
     sales=_sales,
     other_gains=st.decimals(min_value=-20000, max_value=20000, places=2, allow_nan=False),

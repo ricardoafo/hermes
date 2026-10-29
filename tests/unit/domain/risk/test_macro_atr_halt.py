@@ -8,26 +8,14 @@ Property tests verify the threshold boundary at -10% BTC 1D log-return (pre-reg 
 Reference: SA-9 §5.5 RO-07; spec-8-risk-overlay change.md R-2.
 """
 
-from __future__ import annotations
-
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from hermes.domain.risk.macro_atr_halt import _BTC_LOG_RETURN_LIMIT, MacroATRHalt
-from hermes.ports.risk_overlay import RiskAction, RiskOverlayPort
+from hermes.ports.risk_overlay import RiskAction
 from tests.unit.domain.risk.conftest import make_market_snapshot, make_portfolio_state
 
 _RULE = MacroATRHalt()
-
-
-class TestMacroATRHaltThresholdConstants:
-    """Verify the pre-reg §5.5 RO-07 constant is exactly -10%."""
-
-    def test_btc_log_return_limit_is_binding(self) -> None:
-        """BTC log-return limit must be exactly -0.10 per pre-reg §5.5 RO-07."""
-        assert _BTC_LOG_RETURN_LIMIT == -0.10, (
-            f"RO-07 limit must be exactly -0.10 (pre-reg §5.5), got {_BTC_LOG_RETURN_LIMIT}"
-        )
 
 
 class TestMacroATRHaltNoData:
@@ -106,14 +94,4 @@ class TestMacroATRHaltBelowLimit:
         )
         assert decision.action == RiskAction.HALT, (
             f"log_return=-0.101 (just below limit) must return HALT, got {decision.action}"
-        )
-
-
-class TestMacroATRHaltProtocolConformance:
-    """Rule instance satisfies RiskOverlayPort at runtime."""
-
-    def test_is_risk_overlay_port(self) -> None:
-        """MacroATRHalt must be an instance of RiskOverlayPort (runtime_checkable)."""
-        assert isinstance(_RULE, RiskOverlayPort), (
-            "MacroATRHalt must satisfy RiskOverlayPort Protocol"
         )

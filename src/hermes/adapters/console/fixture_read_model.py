@@ -7,10 +7,8 @@ every timestamp must carry an offset. Figures the views can derive (row net,
 change since entry, stop distance) are computed here rather than stored, so a
 scenario cannot contradict itself.
 
-Reference: openspec/changes/console-read-model/change.md (D-3, D-7).
+Reference: openspec/archive/console-read-model/change.md (D-3, D-7).
 """
-
-from __future__ import annotations
 
 import json
 from collections.abc import Mapping, Sequence
@@ -53,6 +51,7 @@ from hermes.application.console.views import (
     tax_amount,
 )
 from hermes.application.supervisor.briefing import BriefKind, publishable
+from hermes.domain.errors import InfraError
 
 __all__ = [
     "FixtureReadModel",
@@ -71,8 +70,13 @@ _SIGNAL_KINDS: Final = frozenset({"entry", "exit"})
 type _Json = Mapping[str, object]
 
 
-class ScenarioError(ValueError):
-    """A scenario file is missing a field or holds an invalid value."""
+class ScenarioError(InfraError, ValueError):
+    """A scenario file is missing a field or holds an invalid value.
+
+    An :class:`~hermes.domain.errors.InfraError` like every adapter I/O
+    failure (issue #1187); still a ``ValueError``, which the parsers' own
+    ``except ValueError`` re-wrapping relies on.
+    """
 
 
 class UnknownScenarioError(ScenarioError):

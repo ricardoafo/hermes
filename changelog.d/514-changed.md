@@ -1,1 +1,0 @@
-- Serve now runs the RO-01 correlation lock on the same 30-day correlations of the 1D closes as the backtest, and the daily parity check replays it; RO-02 and the live-phase recovery, single SA-9 and 30-trade Sharpe kills stay off in shadow (#514).

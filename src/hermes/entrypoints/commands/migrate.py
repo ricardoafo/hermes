@@ -1,7 +1,5 @@
 """``hermes migrate``: see :mod:`hermes.entrypoints.migrate`."""
 
-from __future__ import annotations
-
 from hermes.entrypoints import migrate as _impl
 from hermes.entrypoints.commands import Command
 

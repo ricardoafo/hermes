@@ -28,13 +28,10 @@ root wires dependencies at startup.
 Reference: spec-3-order-router change.md, pre-registration-v1.md §5.4 and §10.
 """
 
-from __future__ import annotations
-
 import re
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Union
 
 import structlog
 from returns.result import Failure
@@ -88,8 +85,7 @@ _RULE_LOG_REASONS: dict[str, str] = {
 }
 
 # OrderRouterResult discriminated union — callers pattern-match on isinstance.
-# Forward references (strings) are used because the classes are defined below.
-OrderRouterResult = Union[Fill, "RiskRejected", "KillCircuitBreaker"]
+type OrderRouterResult = Fill | RiskRejected | KillCircuitBreaker
 
 
 @dataclass(frozen=True, slots=True)

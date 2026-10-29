@@ -7,19 +7,17 @@ pinned dataset still hashes to its manifest entry, and, for the OOS split, the
 certification lifecycle allows the read.
 
 Reference: pre-registration-v1.md §4 and §7, ADR-014,
-openspec/changes/356-data-manifest/change.md D-3, D-4.
+openspec/archive/356-data-manifest/change.md D-3, D-4.
 """
-
-from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol
 
-from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.strategy_protocol.data_split_enforcer import is_certification_mode
 from hermes.application.strategy_protocol.preregistration import DataWindows
+from hermes.domain.calibration.certification import CertificationState
 from hermes.domain.errors import (
     DatasetHashMismatchError,
     DatasetNotPinnedError,

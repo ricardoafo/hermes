@@ -17,13 +17,11 @@ Invariants protected here (change ``309-serve-bar-loop``):
   stops the loop; SIGTERM while idle closes every resource and exits 0.
 """
 
-from __future__ import annotations
-
 import asyncio
 import dataclasses
 import json
 import sqlite3
-from collections.abc import AsyncIterator, Mapping, Sequence
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -43,15 +41,16 @@ from hermes.domain.errors import ExchangeError
 from hermes.domain.events.bar_processed import BarProcessed
 from hermes.domain.events.base import DomainEvent
 from hermes.domain.events.risk_halt_recorded import RiskHaltRecorded
+from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
-from hermes.domain.value_objects.pair import Pair
 from hermes.entrypoints import serve as serve_module
 from tests.support.serve_loop import (
     BTC,
     FakeClock,
     FakeFeed,
     RecordingChannel,
+    SteppingFeed,
     build,
     d1_bar,
     events,
@@ -467,7 +466,11 @@ def test_shutdown_set_before_start_returns_zero_without_touching_the_feed(
 
 
 def test_crash_between_signal_row_and_cursor_row_does_not_notify_twice(tmp_path: Path) -> None:
-    """A bar re-evaluated after a crash finds its signal in the ledger and stays silent."""
+    """A bar re-evaluated after a crash finds its signal in the ledger and pushes no signal.
+
+    Bars 11 and 12 are re-handled after their live window, so the restart
+    report (#1078) is the one alert that goes out.
+    """
     db = tmp_path / "ledger.sqlite3"
     boot1 = FakeFeed(warm=history(10), live_bars=live(11, 12))
     run_once(build(db, boot1, _after(12)), boot1)
@@ -484,7 +487,8 @@ def test_crash_between_signal_row_and_cursor_row_does_not_notify_twice(tmp_path:
 
     code = run_once(build(db, boot2, _after(12), telegram=telegram), boot2)
 
-    assert (code, [k for k, _ in _signals(db)], telegram.seen) == (0, ["entry"], [])
+    pushed = [e for e in telegram.seen if isinstance(e, SignalEmitted)]
+    assert (code, [k for k, _ in _signals(db)], pushed) == (0, ["entry"], [])
 
 
 def _live_bar_rows(db: Path) -> list[tuple[str, str, str]]:
@@ -567,36 +571,19 @@ def _stop_rows(db: Path) -> list[tuple[str, str, str, str, str, str | None, int 
         connection.close()
 
 
-class _SteppingFeed(FakeFeed):
-    """Feed whose clock reads one second after each bar it delivers, as a live feed does.
+def _one_second_late(clock: FakeClock) -> Callable[[Bar], None]:
+    """Return a feed step that sets the clock one second after each close, as live does."""
 
-    A fixed clock after the last bar makes every earlier book stale, so RO-04
-    refuses the entry and no position is ever held (#707).
-    """
+    def step(bar: Bar) -> None:
+        clock.current = bar.close_time + timedelta(seconds=1)
 
-    def __init__(self, clock: FakeClock, warm: list[Bar], live_bars: list[Bar]) -> None:
-        """Script the feed and keep the clock it steps."""
-        super().__init__(warm=warm, live_bars=live_bars)
-        self.clock = clock
-
-    async def stream_closed_bars(
-        self,
-        pairs: Sequence[Pair],
-        intervals: Sequence[KlineInterval],
-        *,
-        resume_after: Mapping[tuple[Pair, KlineInterval], datetime] | None = None,
-    ) -> AsyncIterator[Bar]:
-        """Step the clock to each bar's delivery time, then yield it."""
-        stream = super().stream_closed_bars(pairs, intervals, resume_after=resume_after)
-        async for bar in stream:
-            self.clock.current = bar.close_time + timedelta(seconds=1)
-            yield bar
+    return step
 
 
 def _stepping_run(db: Path, *, warm_upto: int, live_from: int, live_to: int) -> None:
     """Run one boot whose bars each arrive one second after they close."""
     clock = FakeClock(_after(warm_upto))
-    feed = _SteppingFeed(clock, history(warm_upto), live(live_from, live_to))
+    feed = SteppingFeed(_one_second_late(clock), history(warm_upto), live(live_from, live_to))
     run_once(build(db, feed, clock.now(), clock=clock), feed)
 
 

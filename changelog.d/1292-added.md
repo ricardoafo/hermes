@@ -1,0 +1,1 @@
+- The Market panel shows each coin's order-book depth and whether the book is fresh or stale, and the status row shows the exchange's round-trip time.

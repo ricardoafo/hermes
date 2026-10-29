@@ -17,8 +17,6 @@ Invariants (backtest-driver-mvp1-phase2 change.md R-1.2, R-2, A-4.4):
   from them reproduces the backtest's cash, realized PnL and positions.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -30,13 +28,11 @@ from hermes.application.backtest.replay import BacktestRun, replay
 from hermes.application.calibration.harness import CalibrationHarness
 from hermes.application.execution.kernel import FillKernel
 from hermes.application.portfolio.tracker import PortfolioTracker
-from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.trading.order import OrderSide
-from hermes.domain.value_objects.pair import Pair
-from tests.support.fill_kernel import BTC_USDT, STRATEGY, fees, kernel, seed
+from tests.support.fill_kernel import BTC_USDT, STRATEGY, fees_at, kernel, seed
 
 pytestmark = pytest.mark.integration
 
@@ -105,11 +101,6 @@ def _bars(days: int = 260) -> list[Bar]:
     return sorted(bars, key=lambda b: (b.close_time, b.interval != KlineInterval.D1))
 
 
-def _fees_at(at: datetime, pair: Pair) -> FeeSchedule:
-    _ = at
-    return fees(pair)
-
-
 def _replay(k: FillKernel) -> BacktestRun:
     ids = iter(f"01HZ{i:022d}" for i in range(10_000))
     return replay(
@@ -118,7 +109,7 @@ def _replay(k: FillKernel) -> BacktestRun:
         kernel=k,
         window_start=_WINDOW_START,
         window_end=_WINDOW_END,
-        fees_at=_fees_at,
+        fees_at=fees_at,
         correlation_id=lambda: next(ids),
     )
 

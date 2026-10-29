@@ -11,9 +11,11 @@ Each rule is in one of three states:
 - ``gap``: not wired into serve yet; names the open issue that tracks it.
 - ``outside``: not an engine behaviour (a certification step, a procedure,
   or the live phase, which MVP1 does not run); says which.
-"""
 
-from __future__ import annotations
+A rule the Code Owner replaced with a §11 deviation is proved by tests of the
+replacement behaviour, and its ``deviation`` names the lab-notebook entry that
+approved it.
+"""
 
 from dataclasses import dataclass
 
@@ -28,6 +30,12 @@ _RISK = _S + "test_risk_limits.py::"
 _FAULTS = _S + "test_market_data_faults.py::"
 _RESTART = _S + "test_restart.py::test_a_restart_with_a_position_open_keeps_it_until_its_exit"
 _UNIT = "tests/unit/"
+_EXEC_QUALITY = "tests/integration/entrypoints/test_serve_execution_quality.py::"
+_SHADOW = _UNIT + "application/execution/test_shadow.py::"
+_SHADOW_CHECKS = _UNIT + "application/strategy_protocol/test_shadow_checks.py::"
+_SERVE_FILLS = "tests/integration/entrypoints/test_serve_fills.py::"
+_PREREG_BOOK = _UNIT + "application/execution/test_prereg_book.py::"
+_TAX_GUARD = "tests/integration/entrypoints/test_serve_tax_guard.py::"
 
 
 @dataclass(frozen=True)
@@ -40,6 +48,9 @@ class Rule:
         proved_by: Test node ids that fail when the rule breaks.
         gap: ``issue #N``, and what is missing, when the rule is not wired yet.
         outside: Why the rule is not an engine behaviour.
+        deviation: The heading, without ``### ``, of the lab-notebook entry
+            whose approved §11 deviation replaces the rule; ``proved_by``
+            then proves the replacement.
 
     """
 
@@ -47,6 +58,7 @@ class Rule:
     proved_by: tuple[str, ...] = ()
     gap: str = ""
     outside: str = ""
+    deviation: str = ""
 
 
 PRE_REGISTERED: dict[str, tuple[Rule, ...]] = {
@@ -102,9 +114,13 @@ PRE_REGISTERED: dict[str, tuple[Rule, ...]] = {
         ),
         Rule(
             "Exit: **on-exchange stop-market**",
-            gap=(
-                "issue #785: shadow sells at market on the bar after the stop is touched; "
-                "no resting stop, no clamp under the close"
+            proved_by=(
+                _ENTRY + "test_the_exit_sells_the_whole_position_into_the_live_book",
+                _FAULTS + "test_an_exit_while_the_depth_endpoint_is_down_fills_on_the_model_book",
+            ),
+            deviation=(
+                "2026-10-18T15:46:01Z | shadow | operator | §11 deviation: v1 stop exits "
+                "in the shadow sell at market at the bar's close (issue #1157)"
             ),
         ),
     ),
@@ -136,7 +152,12 @@ PRE_REGISTERED: dict[str, tuple[Rule, ...]] = {
         ),
         Rule(
             "**Correlation lock",
-            gap="issue #514: serve has no 30-day pair correlations, so RO-01 is not applied",
+            proved_by=(
+                _SHADOW + "test_serve_refuses_a_third_entry_correlated_with_two_held_pairs",
+                _SHADOW
+                + "test_serve_does_not_lock_the_third_entry_when_the_closes_cover_under_30_returns",
+                _SHADOW + "test_serve_and_the_backtest_replay_read_the_same_correlations",
+            ),
         ),
         Rule(
             "**Total exposure cap**",
@@ -205,19 +226,27 @@ PRE_REGISTERED: dict[str, tuple[Rule, ...]] = {
         Rule(
             "Max drawdown ≥ 15% during train+val",
             proved_by=(
-                _UNIT + "application/strategy_protocol/test_h1_acceptance_gate.py"
-                "::TestH1AcceptanceGateIndividualFailures::test_max_drawdown_at_threshold_fails",
+                _UNIT + "application/calibration/test_certification_gates.py"
+                "::TestSection9Checks::test_each_row_fails_at_its_boundary",
             ),
         ),
     ),
     "10 shadow": (
         Rule(
             "Sim-vs-live PnL divergence",
-            gap="issue #358: the nightly parity check that measures the divergence",
+            proved_by=(
+                _SHADOW_CHECKS + "test_a_drift_median_above_30_bps_breaches_without_killing",
+                _SHADOW_CHECKS + "test_the_drift_rule_ignores_direction",
+                _SHADOW_CHECKS + "test_v1_exits_stay_out_of_the_drift_median_and_are_counted",
+            ),
         ),
         Rule(
             "Any SA-9 shock overlay rule fires 3+",
-            gap="issue #514: serve keeps no history of halts to count",
+            proved_by=(
+                _SHADOW_CHECKS + "test_one_overlay_rule_halting_three_times_in_30_days_kills",
+                _SERVE_FILLS
+                + "test_a_daily_sa9_repeat_kill_is_recorded_alerted_and_stops_every_entry",
+            ),
         ),
         Rule(
             "Shadow Sharpe < 0.3",
@@ -237,7 +266,13 @@ PRE_REGISTERED: dict[str, tuple[Rule, ...]] = {
         ),
         Rule(
             "Time-to-recovery > 90 days",
-            gap="issue #514: serve feeds days since the equity high as 0",
+            proved_by=(
+                _SHADOW + "test_ninety_one_days_without_a_new_high_kill_the_live_entry",
+                _UNIT + "application/test_live_risk_inputs.py"
+                "::test_recovery_days_count_from_the_high_after_an_eight_percent_drawdown",
+                _UNIT + "application/test_live_risk_inputs.py"
+                "::test_a_drawdown_under_eight_percent_never_counts_recovery_days",
+            ),
         ),
         Rule("30 rolling trades OOS Sharpe", outside="live phase; MVP1 runs shadow only"),
         Rule("Any SA-9 P0 rule violation", outside="live phase; MVP1 runs shadow only"),
@@ -280,8 +315,16 @@ IN_CODE: tuple[Rule, ...] = (
         ),
     ),
     Rule(
-        "Chandelier stop clamped under the close",
-        gap="issue #785: the clamp the engine docstring describes is not implemented",
+        "Execution-quality breaches are alerted only: no decision, size or fill changes",
+        proved_by=(
+            _EXEC_QUALITY
+            + "test_signals_fills_and_halts_are_the_same_whether_the_charts_breach_or_not",
+            _EXEC_QUALITY + "test_the_slippage_breach_is_alerted_once_on_every_channel",
+        ),
+    ),
+    Rule(
+        "Chandelier stop not clamped: a bar opening under the stop exits from the open",
+        proved_by=(_PREREG_BOOK + "test_a_bar_opening_under_the_stop_sells_from_the_open",),
     ),
     Rule(
         "RO-03 slippage halt",
@@ -302,8 +345,24 @@ IN_CODE: tuple[Rule, ...] = (
             "::TestPortfolioDrawdownHalt::test_at_or_above_threshold_returns_halt",
         ),
     ),
-    Rule("RO-02 spread spike", gap="issue #514: serve has no one-hour median spread"),
-    Rule("RO-05 and RO-06 depeg", gap="issue #514: serve passes no stablecoin price"),
+    Rule(
+        "RO-02 spread spike",
+        proved_by=(
+            _SHADOW + "test_ro02_halts_a_live_entry_on_a_spread_ten_times_its_median",
+            _UNIT + "application/test_live_risk_inputs.py"
+            "::test_median_covers_only_the_pairs_samples_of_the_last_hour",
+            _UNIT + "entrypoints/test_serve_live_risk_inputs.py"
+            "::test_real_money_hands_the_executor_live_inputs_and_runs_ro02",
+        ),
+    ),
+    Rule(
+        "RO-05 and RO-06 depeg",
+        proved_by=(
+            _SHADOW + "test_a_usdt_four_percent_off_its_peg_halts_the_live_entry",
+            _UNIT + "entrypoints/test_serve_live_risk_inputs.py"
+            "::test_real_money_polls_the_usdt_price_at_start",
+        ),
+    ),
     Rule(
         "Late or missing bar: serve never handles a bar out of order",
         proved_by=(
@@ -321,5 +380,24 @@ IN_CODE: tuple[Rule, ...] = (
     Rule(
         "A notification outage never blocks a fill",
         proved_by=(_OUTAGES + "test_a_telegram_outage_does_not_stop_trading",),
+    ),
+    Rule(
+        "ADR-002 Decision 6 tax guard: a breach on a daily close is recorded and alerted",
+        proved_by=(
+            _TAX_GUARD
+            + "test_one_trade_past_the_ceiling_records_one_critical_row_at_the_daily_close",
+            _TAX_GUARD + "test_one_trade_past_the_ceiling_is_alerted_once_on_the_routed_channel",
+            _TAX_GUARD + "test_a_window_exactly_at_the_ceiling_records_and_alerts_nothing",
+        ),
+    ),
+    Rule(
+        "ADR-002 Decision 6 tax guard: a breach changes no decision or fill",
+        proved_by=(
+            _SERVE_FILLS + "test_a_tax_guard_breach_is_recorded_and_changes_no_decision_or_fill",
+        ),
+    ),
+    Rule(
+        "ADR-002 Decision 6 tax guard: a breach pauses new signals",
+        gap="issue #136: the pause is the Code Owner's decision; serve records and alerts only",
     ),
 )

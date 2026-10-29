@@ -9,10 +9,8 @@ dataset is detected before it is used.
 The hash is over a canonical text serialisation of :class:`Bar` values, not
 over archive files, so it does not depend on the storage format.
 
-Reference: pre-registration-v1.md §4, openspec/changes/356-data-manifest/change.md D-1, D-2.
+Reference: pre-registration-v1.md §4, openspec/archive/356-data-manifest/change.md D-1, D-2.
 """
-
-from __future__ import annotations
 
 import hashlib
 import re

@@ -10,16 +10,13 @@ A buy whose lot the sale itself consumed is not a repurchase and never flags.
 Reference: ADR-016 decision 8, change ``tax-estimates`` D-4.
 """
 
-from __future__ import annotations
-
-import calendar
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Final
-from zoneinfo import ZoneInfo
 
+from hermes.domain.tax.tax_calendar import add_months, madrid_date
 from hermes.domain.tax.year_position import Disposal
 
 __all__ = [
@@ -27,11 +24,12 @@ __all__ = [
     "Acquisition",
     "TwoMonthFlag",
     "add_months",
+    "in_repurchase_window",
+    "repurchase_window",
     "two_month_flags",
 ]
 
 REPURCHASE_WINDOW_MONTHS: Final[int] = 2
-_MADRID: Final = ZoneInfo("Europe/Madrid")
 _ZERO: Final[Decimal] = Decimal(0)
 
 
@@ -69,20 +67,38 @@ class TwoMonthFlag:
     bought_on: date
 
 
-def add_months(day: date, months: int) -> date:
-    """Shift ``day`` by whole calendar months, clamping to the month's last day.
+def repurchase_window(sold_at: datetime) -> tuple[date, date]:
+    """Return the first and last Madrid date a repurchase of a sale can fall on.
+
+    The window is two calendar months either side of the sale's Madrid date,
+    both ends included; the time of day never matters (Code Owner, 18 Oct:
+    the rule counts Madrid calendar dates).
 
     Args:
-        day: Start date.
-        months: Months to add; negative goes back.
+        sold_at: Timezone-aware time of the sale.
 
     Returns:
-        The shifted date (31 March minus one month is 28 or 29 February).
+        ``(earliest, latest)``, the day clamped to each month's end.
     """
-    index = day.year * 12 + (day.month - 1) + months
-    year, month = divmod(index, 12)
-    last = calendar.monthrange(year, month + 1)[1]
-    return date(year, month + 1, min(day.day, last))
+    sold_on = madrid_date(sold_at)
+    return (
+        add_months(sold_on, -REPURCHASE_WINDOW_MONTHS),
+        add_months(sold_on, REPURCHASE_WINDOW_MONTHS),
+    )
+
+
+def in_repurchase_window(sold_at: datetime, bought_at: datetime) -> bool:
+    """Return whether a buy falls within the repurchase window of a sale.
+
+    Args:
+        sold_at: Timezone-aware time of the sale.
+        bought_at: Timezone-aware time of the buy.
+
+    Returns:
+        True when the buy's Madrid date is within :func:`repurchase_window`.
+    """
+    earliest, latest = repurchase_window(sold_at)
+    return earliest <= madrid_date(bought_at) <= latest
 
 
 def two_month_flags(
@@ -102,15 +118,13 @@ def two_month_flags(
     for sale in sorted(disposals, key=lambda d: d.at):
         if sale.gain >= _ZERO:
             continue
-        sold_on = sale.at.astimezone(_MADRID).date()
-        earliest = add_months(sold_on, -REPURCHASE_WINDOW_MONTHS)
-        latest = add_months(sold_on, REPURCHASE_WINDOW_MONTHS)
+        sold_on = madrid_date(sale.at)
         in_window = [
-            bought_on
+            madrid_date(buy.at)
             for buy in buys
             if buy.asset == sale.asset
             and buy.ref not in sale.consumed_refs
-            and earliest <= (bought_on := buy.at.astimezone(_MADRID).date()) <= latest
+            and in_repurchase_window(sale.at, buy.at)
         ]
         if in_window:
             nearest = min(in_window, key=lambda d: (abs((d - sold_on).days), d))

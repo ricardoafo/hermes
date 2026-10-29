@@ -1,7 +1,7 @@
 # Prod systemd unit for the hermes main process (`hermes serve`).
 #
 # Installed to /etc/systemd/system/hermes.service by the CD deploy.
-# Layout this unit assumes (see openspec/changes/306-serve-systemd-boot):
+# Layout this unit assumes (see openspec/archive/306-serve-systemd-boot):
 #   /opt/hermes/current            -> versions/<version>  (atomic symlink)
 #   /opt/hermes/current/.venv      per-release virtualenv (console script `hermes`)
 #   /opt/hermes/current/config     per-release non-secret YAML
@@ -13,8 +13,10 @@
 
 [Unit]
 Description=Hermes trading engine (hermes serve)
-After=network-online.target
-Wants=network-online.target
+# A restart reads the clock to tell missed bars from live ones (#1078): with
+# systemd-time-wait-sync enabled, time-sync.target waits for the first NTP sync.
+After=network-online.target time-sync.target
+Wants=network-online.target time-sync.target
 # Crash-loop guard: at most 5 starts in 10 min, then the unit stays failed.
 # Each start re-fetches warm-up history, so an endless loop would hammer the
 # market-data API. 5 x RestartSec (30s) = 150s, well inside the 10 min window.
@@ -72,6 +74,23 @@ ProtectSystem=strict
 # stays readable.
 ProtectHome=true
 ReadWritePaths=/var/lib/hermes
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+UMask=0027
 
 [Install]
 WantedBy=multi-user.target

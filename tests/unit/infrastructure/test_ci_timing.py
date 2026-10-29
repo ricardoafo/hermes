@@ -9,18 +9,16 @@ Protects the report's invariants:
 - Queue wait is the time from job creation to a runner picking it up.
 """
 
-from __future__ import annotations
-
 import importlib.util
 import sys
-from pathlib import Path
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
-_REPO = Path(__file__).resolve().parents[3]
-_SCRIPT_PATH = _REPO / "scripts" / "dev" / "ci-timing.py"
+from tests.support.paths import REPO_ROOT
+
+_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev" / "ci-timing.py"
 _spec = importlib.util.spec_from_file_location("ci_timing", _SCRIPT_PATH)
 assert _spec is not None and _spec.loader is not None
 ci_timing = importlib.util.module_from_spec(_spec)

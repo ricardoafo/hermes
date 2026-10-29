@@ -13,7 +13,8 @@ Gates:
   except the OOS-only trade count and bootstrap CI, plus at least one
   calibration fill.
 - ``BACKTEST_CERTIFIED → SHADOW_CERTIFIED``: 90+ shadow days, sim-vs-live drift
-  p50 below 30 bps, no §10 shadow kill fired.
+  p50 below 30 bps, no §10 shadow kill fired, and M-09 and M-10 passed over
+  the whole shadow window (ADR-021 Done rule 3, #965).
 - ``SHADOW_CERTIFIED → OOS_CERTIFIED``: one-shot H1 test (§1, §9) on the OOS
   window, not before 2027-01-01 (§4). Refused, consuming nothing, when evidence
   is incomplete or the shot was already taken.
@@ -27,32 +28,29 @@ guardrail), a shadow drift breach does the same (§7), and a shadow or live
 kill is DEAD.
 
 Reference: pre-registration-v1.md §1, §4, §7, §9, §10; ADR-014;
-openspec/changes/355-certification-gates/change.md.
+openspec/archive/355-certification-gates/change.md.
 """
-
-from __future__ import annotations
 
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field, fields, replace
+from dataclasses import dataclass, fields, replace
 from datetime import datetime
 from decimal import Decimal
 
-from hermes.application.calibration.lifecycle import CertificationState
+from hermes.application.calibration.shadow_parity import MetricStatus
 from hermes.application.strategy_protocol.preregistration import H1Thresholds, PreRegistration
+from hermes.domain.calibration.certification import CertificationRecord, CertificationState
 from hermes.domain.strategy.swing.adapter import swing_parameters
 
 __all__ = [
     "LIVE_APPROVAL_PHRASE",
-    "CertificationRecord",
     "GateCheck",
     "GateEvidence",
     "GateReport",
     "LiveEvidence",
     "OperatorSignOff",
     "ShadowEvidence",
-    "Transition",
     "WindowMetrics",
     "apply_guardrails",
     "evaluate_next_gate",
@@ -109,6 +107,10 @@ class ShadowEvidence:
     drift_p50_bps: float | None = None
     kill_fired: bool | None = None
     drift_breached: bool | None = None
+    m09: MetricStatus | None = None
+    """M-09 P&L correlation over the window (``hermes parity window``); status only."""
+    m10: MetricStatus | None = None
+    """M-10 Sharpe match over the window; status only."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -185,51 +187,6 @@ class GateReport:
     def failed_checks(self) -> tuple[str, ...]:
         """Names of the checks that failed, in evaluation order."""
         return tuple(check.name for check in self.checks if not check.passed)
-
-
-@dataclass(frozen=True, slots=True)
-class Transition:
-    """One recorded state change."""
-
-    from_state: CertificationState
-    to_state: CertificationState
-    at: datetime
-    reason: str
-    evidence_sha256: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class CertificationRecord:
-    """Persisted certification state for one strategy.
-
-    ``parameter_fingerprint`` is the fingerprint the last passed gate saw.
-    ``oos_evaluated_at`` is set once the one-shot OOS test has run and is never
-    cleared for this pre-registration.
-    """
-
-    strategy_id: str
-    state: CertificationState = CertificationState.UNTRUSTED
-    parameter_fingerprint: str | None = None
-    oos_evaluated_at: datetime | None = None
-    transitions: tuple[Transition, ...] = field(default=())
-
-    def moved_to(
-        self,
-        state: CertificationState,
-        *,
-        at: datetime,
-        reason: str,
-        fingerprint: str | None,
-        evidence_sha256: str | None = None,
-    ) -> CertificationRecord:
-        """Return a copy in ``state`` with the transition appended."""
-        transition = Transition(self.state, state, at, reason, evidence_sha256)
-        return replace(
-            self,
-            state=state,
-            parameter_fingerprint=fingerprint,
-            transitions=(*self.transitions, transition),
-        )
 
 
 # ---------------------------------------------------------------------------
@@ -408,6 +365,16 @@ def _backtest_gate(sid: str, evidence: GateEvidence, pre_reg: PreRegistration) -
     )
 
 
+def _parity_check(name: str, metric: str, status: MetricStatus | None) -> GateCheck:
+    """Pass only on ``pass``: insufficient evidence fails, as a missing file does (#965)."""
+    return GateCheck(
+        name,
+        f"{metric} {MetricStatus.OK}",
+        "not computed (--shadow-parity)" if status is None else str(status),
+        status is MetricStatus.OK,
+    )
+
+
 def _shadow_gate(sid: str, evidence: GateEvidence, pre_reg: PreRegistration) -> GateReport:
     schedule = pre_reg.certification_schedule()
     shadow = evidence.shadow or ShadowEvidence()
@@ -433,6 +400,8 @@ def _shadow_gate(sid: str, evidence: GateEvidence, pre_reg: PreRegistration) -> 
             _NOT_COMPUTED if kill is None else ("fired" if kill else "none fired"),
             kill is False,
         ),
+        _parity_check("shadow_m09", "M-09 P&L correlation", shadow.m09),
+        _parity_check("shadow_m10", "M-10 Sharpe match", shadow.m10),
     )
     return GateReport(
         sid, CertificationState.BACKTEST_CERTIFIED, CertificationState.SHADOW_CERTIFIED, checks

@@ -6,8 +6,6 @@ and carry the changelog lines those commits added. The tests build a
 scratch git repository; nothing is mocked.
 """
 
-from __future__ import annotations
-
 import importlib.util
 import re
 import subprocess
@@ -17,14 +15,15 @@ from types import ModuleType
 
 import pytest
 
-_ROOT = Path(__file__).resolve().parents[3]
+from tests.support.paths import REPO_ROOT
+
 _REPO = "owner/hermes"
 
 
 def _load() -> ModuleType:
     """Import the script module (not a package)."""
     spec = importlib.util.spec_from_file_location(
-        "release_notes", _ROOT / "scripts" / "deploy" / "release_notes.py"
+        "release_notes", REPO_ROOT / "scripts" / "deploy" / "release_notes.py"
     )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -192,7 +191,7 @@ def test_telegram_message_caps_the_list_and_links_the_release(repo: Repo) -> Non
 
 def _with_version(repo: Repo, version: str) -> str:
     """Commit a pyproject with ``version`` beside the real release-name mapping."""
-    mapping = (_ROOT / "src" / "hermes" / "release_version.py").read_text(encoding="utf-8")
+    mapping = (REPO_ROOT / "src" / "hermes" / "release_version.py").read_text(encoding="utf-8")
     return repo.commit(
         f"chore(release): {version}",
         files={
@@ -236,3 +235,30 @@ def test_unknown_release_exits_2(repo: Repo, capsys: pytest.CaptureFixture[str])
 
     assert code == 2
     assert "git failed" in capsys.readouterr().err
+
+
+def test_the_computed_version_overrides_the_committed_one(
+    repo: Repo, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """ADR-030 §4: the repo keeps the last release; the message names what CD stamped."""
+    release = _with_version(repo, "0.2.0")
+
+    code = NOTES.main(
+        [
+            "--release",
+            release,
+            "--repo",
+            _REPO,
+            "--root",
+            str(repo.path),
+            "--format",
+            "telegram",
+            "--version",
+            "0.3.0",
+        ]
+    )
+
+    assert code == 0
+    assert capsys.readouterr().out.startswith(
+        f"hermes v0.3.0 ({release[:12]}) is live on hermes-01.\n"
+    )

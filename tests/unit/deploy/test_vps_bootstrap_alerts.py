@@ -8,8 +8,6 @@ out of the real script and run them under bash with ``systemctl`` and
 ``install`` replaced by recorders (both need root on a real systemd host).
 """
 
-from __future__ import annotations
-
 import os
 import shutil
 import subprocess
@@ -18,9 +16,10 @@ from pathlib import Path
 import pytest
 import yaml
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_SCRIPT = _REPO_ROOT / "scripts" / "deploy" / "vps_bootstrap.sh"
-_WORKFLOW = _REPO_ROOT / ".github" / "workflows" / "vps-bootstrap.yml"
+from tests.support.paths import REPO_ROOT
+
+_SCRIPT = REPO_ROOT / "scripts" / "deploy" / "vps_bootstrap.sh"
+_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "vps-bootstrap.yml"
 _BASH = shutil.which("bash")
 
 _needs_bash = pytest.mark.skipif(_BASH is None, reason="the bootstrap script needs bash")

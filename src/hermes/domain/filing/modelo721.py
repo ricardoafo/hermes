@@ -14,16 +14,14 @@ Both amounts come from ``config/filing.yaml`` through :class:`Modelo721Rules`.
 Year-end units come from the trades; the date shown per coin is the opening
 time of the oldest lot still open, found by the existing FIFO replay.
 
-Reference: openspec/changes/36-modelo-100-721/change.md D-7, D-8.
+Reference: openspec/archive/36-modelo-100-721/change.md D-7, D-8.
 """
-
-from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
-from decimal import Decimal, localcontext
+from decimal import Decimal
 from enum import StrEnum
 from typing import Final
 
@@ -34,6 +32,7 @@ from hermes.domain.filing.tax_year import tax_year_bounds
 from hermes.domain.lots.eur_fifo import EurTrade, exact_sum, replay_fifo_eur
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.precision import exact
 
 __all__ = [
     "HoldingLine",
@@ -49,7 +48,6 @@ __all__ = [
 ]
 
 _ZERO: Final[Decimal] = Decimal("0")
-_PRECISION: Final[int] = 100
 
 
 class Modelo721Origin(StrEnum):
@@ -283,8 +281,7 @@ def build_modelo721(
         price = prices_eur.get(position.asset)
         value = None
         if price is not None:
-            with localcontext() as ctx:
-                ctx.prec = _PRECISION
+            with exact():
                 value = position.units * price
         lines.append(
             HoldingLine(

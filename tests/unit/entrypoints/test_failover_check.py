@@ -8,8 +8,6 @@ endpoints is covered by ``tests/contract/test_kraken_public_klines.py`` and the
 operator's monthly drill run (docs/runbook/failover-to-kraken.md).
 """
 
-from __future__ import annotations
-
 import io
 import json
 from collections.abc import Callable, Iterable
@@ -26,8 +24,9 @@ from hermes.domain.value_objects.price import Price
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.entrypoints import cli
 from hermes.entrypoints import failover_check as module
+from tests.support.paths import REPO_ROOT
 
-_PROJECT_CONFIG = Path(__file__).resolve().parents[3] / "config"
+_PROJECT_CONFIG = REPO_ROOT / "config"
 _NOW = datetime(2026, 10, 4, 2, 40, tzinfo=UTC)
 _UNTIL = datetime(2026, 10, 4, tzinfo=UTC)
 _H4 = timedelta(hours=4)
@@ -182,7 +181,7 @@ def test_bad_config_exits_3(tmp_path: Path) -> None:
         err=err,
     )
     assert (code, out.getvalue()) == (3, "")
-    assert err.getvalue().startswith("ERROR: config:")
+    assert err.getvalue().startswith("ERROR: config load failed:")
 
 
 def test_daily_interval_uses_day_boundaries() -> None:

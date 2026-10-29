@@ -13,8 +13,6 @@ adapter concerns hidden behind the port.
 Reference: code-conventions.md §5 (Ports as Protocols).
 """
 
-from __future__ import annotations
-
 from datetime import date
 from typing import Protocol, runtime_checkable
 

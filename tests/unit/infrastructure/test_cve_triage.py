@@ -10,8 +10,6 @@ Protects the #37 triage invariants:
 - The link points at the GHSA advisory when one exists, else OSV.
 """
 
-from __future__ import annotations
-
 import importlib.util
 import json
 import sys
@@ -20,8 +18,9 @@ from pathlib import Path
 from hypothesis import given
 from hypothesis import strategies as st
 
-_REPO = Path(__file__).resolve().parents[3]
-_SCRIPT_PATH = _REPO / "scripts" / "dev" / "cve-triage.py"
+from tests.support.paths import REPO_ROOT
+
+_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev" / "cve-triage.py"
 _spec = importlib.util.spec_from_file_location("cve_triage", _SCRIPT_PATH)
 assert _spec is not None and _spec.loader is not None
 triage = importlib.util.module_from_spec(_spec)

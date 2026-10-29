@@ -1,0 +1,1 @@
+- `HomeApp` hands the System tab's reads, cursor and service pane to a `SystemTabController`; no visible change (#1184).

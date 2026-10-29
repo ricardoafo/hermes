@@ -1,26 +1,27 @@
-"""The Neon window bar's live-feed pulse and next-bar countdown (issue #713).
+"""The text-free window bar, and the feed pulse and clock on the status row (issues #713, #1097).
 
-Code Owner decision 2026-10-06: the decorative binary strip is gone; in its
-place the bar shows one glyph per recent ticker poll ("●" live colour for a
-good poll, "○" dim for a failed one, newest on the right, 16 wide), or, with
-no ticker, the time to the next 4h check. Every app here uses synthetic demo
-data, a frozen clock and no network.
+Code Owner decision 2026-10-06: the feed shows one glyph per recent ticker
+poll ("●" live colour for a good poll, "○" dim for a failed one, newest on the
+right, 16 wide). Code Owner decision 2026-10-17: the window bar leads every
+theme as one row of the ``chrome`` gradient with no characters; the feed pulse
+and the clock sit on the status row, and the next-bar countdown is dropped
+because the status row's countdown already says it. Every app here uses
+synthetic demo data, a frozen clock and no network.
 """
-
-from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from decimal import Decimal
 
+import pytest
+from rich.text import Text
 from textual.color import Color
 from textual.pilot import Pilot
 
 from hermes.adapters.console import FixtureReadModel
-from hermes.application.console import Heartbeat, HeartbeatState
 from hermes.application.console.live import TickOutcome
-from hermes.entrypoints.tui import HomeApp, next_bar_text
+from hermes.entrypoints.tui import HomeApp
 from hermes.entrypoints.tui_settings import ThemeChoice
 from hermes.entrypoints.tui_theme import (
     CONTROL_ROOM,
@@ -28,9 +29,10 @@ from hermes.entrypoints.tui_theme import (
     MOTION,
     NEON,
     NIGHT,
+    Tokens,
     blend,
 )
-from hermes.entrypoints.tui_widgets import WindowBar, feed_pulse
+from hermes.entrypoints.tui_widgets import WindowBar, feed_pulse, window_bar_text
 
 # The fixture's read time: 14:12 Madrid, next check 18:00 Madrid.
 _DAY = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
@@ -55,6 +57,7 @@ def _run[T](
     motion: bool = False,
     theme: ThemeChoice = ThemeChoice.NEON,
     clock: Callable[[], datetime] = lambda: _DAY,
+    width: int = 120,
 ) -> T:
     async def drive() -> T:
         app = HomeApp(
@@ -64,15 +67,34 @@ def _run[T](
             theme=theme,
             refresh_seconds=3600,
         )
-        async with app.run_test(size=(120, 36)) as pilot:
+        async with app.run_test(size=(width, 36)) as pilot:
             await pilot.pause()
             return await probe(app, pilot)
 
     return asyncio.run(drive())
 
 
+_THEMES = (
+    (ThemeChoice.NEON, _DAY, NEON),
+    (ThemeChoice.CONTROL, _DAY, CONTROL_ROOM),
+    (ThemeChoice.AUTO, _NIGHT, NIGHT),
+)
+_THEME_IDS = ("neon", "control", "night")
+
+
 def _first_row(app: HomeApp) -> str:
-    return app.screen._compositor.render_strips()[0].text.rstrip()
+    return app.screen._compositor.render_strips()[0].text
+
+
+def _slot(app: HomeApp, widget_id: str) -> Text:
+    content = app._content.get(widget_id, Text(""))
+    assert isinstance(content, Text)
+    return content
+
+
+def _newest_is_bold(app: HomeApp) -> bool:
+    feed = _slot(app, "feed")
+    return bool(feed.spans) and str(feed.spans[-1].style).startswith("bold ")
 
 
 def test_feed_pulse_draws_one_glyph_per_poll_newest_right() -> None:
@@ -95,59 +117,114 @@ def test_bright_newest_glyph_is_bold_and_whiter() -> None:
     assert styles == [NEON.live, f"bold {blend(NEON.live, '#FFFFFF', 0.5)}"]
 
 
-def test_next_bar_text_counts_down_to_the_check() -> None:
-    """1h 12m 05s before the check reads ``next bar 01:12:05``; after it ``next bar due``."""
-    check = datetime(2026, 10, 3, 16, 0, tzinfo=UTC)
-    ok = Heartbeat(HeartbeatState.OK, check, check, check)
-    late = Heartbeat(HeartbeatState.LATE, check, check, check)
-    assert [
-        next_bar_text(ok, check - timedelta(hours=1, minutes=12, seconds=5)),
-        next_bar_text(ok, check + timedelta(seconds=1)),
-        next_bar_text(late, check),
-        next_bar_text(None, check),
-    ] == ["next bar 01:12:05", "next bar due", "", ""]
+def test_window_bar_text_is_blank_cells_on_the_chrome_gradient() -> None:
+    """The bar is ``width`` spaces whose background runs from the first chrome stop to the last."""
+    bar = window_bar_text(30, NEON)
+    first, last = bar.spans[0].style, bar.spans[-1].style
+    assert (bar.plain, bar.cell_len, str(first).split(" on ")[1], str(last).split(" on ")[1]) == (
+        " " * 30,
+        30,
+        NEON.chrome[0],
+        NEON.chrome[-1],
+    )
 
 
-def test_without_a_ticker_the_bar_shows_the_next_bar_countdown() -> None:
-    """No ticker: at 14:12 Madrid with the check at 18:00 the bar reads ``next bar 03:48:00``."""
+@pytest.mark.parametrize(("theme", "now", "tokens"), _THEMES, ids=_THEME_IDS)
+def test_window_bar_leads_every_theme_with_no_text(
+    theme: ThemeChoice, now: datetime, tokens: Tokens
+) -> None:
+    """In Neon, Control room and night, row 0 is the window bar: shown, no characters, chrome."""
 
-    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, tuple[bool, ...]]:
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[bool, str, Color | None]:
         del pilot
-        return _first_row(app), app.feed
+        bar = app.query_one(WindowBar)
+        strip = app.screen._compositor.render_strips()[0]
+        first = next(iter(strip))
+        background = first.style.bgcolor if first.style is not None else None
+        colour = None if background is None else Color.from_rich_color(background)
+        return bar.display, _first_row(app).strip(), colour
 
-    row, feed = _run(probe)
-    assert (row.split("CONSOLE")[1].split()[:3], feed) == (["next", "bar", "03:48:00"], ())
+    assert _run(probe, theme=theme, clock=lambda: now) == (
+        True,
+        "",
+        Color.parse(tokens.chrome[0]),
+    )
 
 
-def test_polls_replace_the_countdown_with_the_feed_pulse() -> None:
-    """Two good polls and one with SOL failed: the bar shows ``●●○`` and no countdown."""
+def test_without_a_ticker_the_status_row_has_no_feed() -> None:
+    """No ticker: no feed glyphs, and the countdown alone tells the time to the next bar."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, tuple[bool, ...], str]:
+        del pilot
+        return _slot(app, "feed").plain, app.feed, app.plain_text("countdown").strip()
+
+    assert _run(probe, width=160) == ("", (), "in 3h 48m 00s")
+
+
+def test_polls_show_the_feed_pulse_on_the_status_row() -> None:
+    """Two good polls and one with SOL failed: the status row's feed reads ``●●○``."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[tuple[bool, ...], str]:
         for outcomes in (_outcomes(), _outcomes(), _outcomes(failed="SOL")):
             app.apply_ticks(outcomes)
         app._tick()
         await pilot.pause()
-        return app.feed, _first_row(app)
+        return app.feed, _slot(app, "feed").plain.strip()
 
-    feed, row = _run(probe)
-    assert (feed, row.split("CONSOLE ")[1].strip()[:3], "next bar" in row) == (
-        (True, True, False),
-        "●●○",
-        False,
-    )
+    assert _run(probe, width=160) == ((True, True, False), "●●○")
+
+
+def test_wide_status_row_shows_the_feed_then_the_clock() -> None:
+    """At 200 columns the feed pulse and then the Madrid clock sit before the theme chip."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> str:
+        app.apply_ticks(_outcomes())
+        app._tick()
+        await pilot.pause()
+        row = app.screen._compositor.render_strips()[2].text
+        return row.split("▏")[1].split("◑")[0].strip()
+
+    assert _run(probe, width=200) == "● 14:12:00"
+
+
+def test_a_narrow_status_row_drops_the_clock_before_the_feed() -> None:
+    """At 160 columns the feed still fits after the countdown meter but the clock does not."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str, str]:
+        app.apply_ticks(_outcomes())
+        app._tick()
+        await pilot.pause()
+        return (
+            _slot(app, "feed").plain.strip(),
+            _slot(app, "clock").plain,
+            app.plain_text("countdown").strip(),
+        )
+
+    assert _run(probe, width=160) == ("●", "", "in 3h 48m 00s")
+
+
+def test_compact_status_row_has_neither_feed_nor_clock() -> None:
+    """At 80 columns the heartbeat keeps the row: no feed pulse and no clock."""
+
+    async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str]:
+        app.apply_ticks(_outcomes())
+        app._tick()
+        await pilot.pause()
+        return _slot(app, "feed").plain, _slot(app, "clock").plain
+
+    assert _run(probe, width=80) == ("", "")
 
 
 def test_motion_on_brightens_the_newest_glyph_then_dims_it() -> None:
     """With motion on a poll brightens the newest glyph; after ``MOTION.flash`` it is plain."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[bool, bool]:
-        bar = app.query_one(WindowBar)
         app.apply_ticks(_outcomes())
-        right_after = bar.bright
+        right_after = _newest_is_bold(app)
         await pilot.pause(MOTION.flash + 0.3)
-        return right_after, bar.bright
+        return right_after, _newest_is_bold(app)
 
-    assert _run(probe, motion=True) == (True, False)
+    assert _run(probe, motion=True, width=160) == (True, False)
 
 
 def test_motion_off_never_brightens_the_feed() -> None:
@@ -156,9 +233,9 @@ def test_motion_off_never_brightens_the_feed() -> None:
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[bool, tuple[bool, ...]]:
         del pilot
         app.apply_ticks(_outcomes())
-        return app.query_one(WindowBar).bright, app.feed
+        return _newest_is_bold(app), app.feed
 
-    assert _run(probe, motion=False) == (False, (True,))
+    assert _run(probe, motion=False, width=160) == (False, (True,))
 
 
 def test_whole_window_is_the_theme_void() -> None:

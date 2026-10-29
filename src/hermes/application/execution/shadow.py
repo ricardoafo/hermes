@@ -18,7 +18,10 @@ The executor does what the backtest replay does around the
   :data:`SLIPPAGE_WINDOW` and the portfolio. The live-phase §10 recovery,
   single SA-9 and 30-trade Sharpe kills get neutral inputs, as in the
   backtest (#514, the shadow set): the drawdown kill and the shadow-phase
-  kills are the ones that act.
+  kills are the ones that act. With real money serve passes ``live_inputs``
+  (#1158): RO-02 then reads the 1-hour median spread, RO-05 and RO-06 the
+  stablecoin price, and the recovery kill the days since the equity high
+  (:func:`live_risk_engine` adds RO-02).
 - **Records** (D-4): the fill goes to the ledger through the trade recorder
   (``TradeExecuted`` v2 with ``strategy_id``), with one
   :class:`~hermes.domain.events.fill_quality_recorded.FillQualityRecorded`
@@ -30,10 +33,8 @@ The executor does what the backtest replay does around the
 The executor performs no logging and reads no wall clock of its own; the
 caller logs from the returned :class:`ShadowExecution`.
 
-Reference: openspec/changes/353-fill-kernel-in-serve/change.md D-1..D-5.
+Reference: openspec/archive/353-fill-kernel-in-serve/change.md D-1..D-5.
 """
-
-from __future__ import annotations
 
 import math
 from collections import deque
@@ -67,6 +68,7 @@ from hermes.domain.risk.depeg_warn import DepegWarn
 from hermes.domain.risk.macro_atr_halt import MacroATRHalt
 from hermes.domain.risk.max_slippage import MaxSlippage
 from hermes.domain.risk.portfolio_drawdown import PortfolioDrawdown
+from hermes.domain.risk.spread_spike import SpreadSpike
 from hermes.domain.risk.stale_book import StaleBook
 from hermes.domain.risk.state import MarketSnapshot
 from hermes.domain.strategy.signal import SignalKind, StrategySignal
@@ -83,7 +85,9 @@ from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.ports.clock import ClockPort
 from hermes.ports.fill_model import FillModelPort
 from hermes.ports.ledger import ExecutionLedgerPort
+from hermes.ports.live_risk_inputs import LiveRiskInputsPort
 from hermes.ports.orderbook_snapshot import OrderbookSnapshotPort
+from hermes.ports.risk_overlay import RiskOverlayPort
 
 __all__ = [
     "LIVE_BOOK_WINDOW",
@@ -94,6 +98,7 @@ __all__ = [
     "ShadowExecution",
     "ShadowExecutor",
     "ShadowOutcome",
+    "live_risk_engine",
     "shadow_risk_engine",
 ]
 
@@ -127,17 +132,32 @@ def shadow_risk_engine() -> RiskEngine:
     Returns:
         An engine with RO-01, RO-03, RO-04, RO-05, RO-06, RO-07 and RO-08.
     """
-    return RiskEngine(
-        rules=[
-            CorrelationLock(),
-            MaxSlippage(),
-            StaleBook(),
-            DepegWarn(),
-            DepegHalt(),
-            MacroATRHalt(),
-            PortfolioDrawdown(),
-        ]
-    )
+    return RiskEngine(rules=_shadow_rules())
+
+
+def live_risk_engine() -> RiskEngine:
+    """Return the risk overlay serve applies to entries with real money (#1158).
+
+    The shadow set plus RO-02 (spread spike), which reads the 1-hour median
+    spread the executor's ``live_inputs`` supply.
+
+    Returns:
+        An engine with RO-01 through RO-08.
+    """
+    return RiskEngine(rules=[*_shadow_rules(), SpreadSpike()])
+
+
+def _shadow_rules() -> list[RiskOverlayPort]:
+    """Return a fresh instance of each shadow-set rule (D-3)."""
+    return [
+        CorrelationLock(),
+        MaxSlippage(),
+        StaleBook(),
+        DepegWarn(),
+        DepegHalt(),
+        MacroATRHalt(),
+        PortfolioDrawdown(),
+    ]
 
 
 class FillRecorder(Protocol):
@@ -198,6 +218,8 @@ class ShadowExecutor:
         live_window: Oldest bar close a live book may stand in for.
         not_before: Earliest time a fill may be stamped with: the capital
             seed's date, so the quote-asset FIFO always has the seed lot.
+        live_inputs: The live-phase RO-02, depeg and recovery inputs; ``None``
+            in shadow, where they stay neutral as in the backtest.
     """
 
     def __init__(
@@ -214,6 +236,7 @@ class ShadowExecutor:
         model: ExecutionModel | None = None,
         live_window: timedelta = LIVE_BOOK_WINDOW,
         not_before: datetime | None = None,
+        live_inputs: LiveRiskInputsPort | None = None,
     ) -> None:
         """Bind the collaborators and load the recorded fill slippages.
 
@@ -232,6 +255,7 @@ class ShadowExecutor:
         self._daily_closes = DailyCloses()
         self._live_window = live_window
         self._not_before = not_before
+        self._live_inputs = live_inputs
         self._macro_closes: deque[tuple[datetime, Decimal]] = deque(maxlen=_MACRO_WINDOW)
         self._killed_by = ""
         self._slippages: deque[tuple[datetime, Decimal]] = deque(
@@ -276,14 +300,28 @@ class ShadowExecutor:
         self._macro_closes.append((bar.close_time, bar.close))
 
     async def execute(
-        self, signal: StrategySignal, bar: Bar, *, correlation_id: str
+        self,
+        signal: StrategySignal,
+        bar: Bar,
+        *,
+        correlation_id: str,
+        price_bar: Bar | None = None,
     ) -> ShadowExecution:
         """Execute one signal of ``bar`` and record its fill.
+
+        A ``price_bar`` marks ``bar`` as missed: it closed while serve was down
+        (issue #1078). The order then fills at the price of now, never at the
+        old bar's: on a live book taken now, or on the §6.2 book of
+        ``price_bar`` (the pair's newest closed bar) stamped now when no live
+        snapshot can be had. Serve passes only exits here; an entry on a
+        missed bar is never filled.
 
         Args:
             signal: The strategy signal.
             bar: The bar that produced it.
             correlation_id: Stamped on the trade and its quality row.
+            price_bar: The pair's newest closed bar when ``bar`` was missed;
+                ``None`` for a bar handled in its live window.
 
         Returns:
             What happened; see :class:`ShadowExecution`.
@@ -297,12 +335,14 @@ class ShadowExecutor:
         if prior is not None:
             return ShadowExecution(outcome=AlreadyFilled(trade=prior))
         now = self._clock.now()
-        book, source, error = await self._book(signal, bar, now)
-        at = (
-            book.snapshot_time
-            if book is not None and source is BookSource.LIVE
-            else signal.signal_time
-        )
+        priced = bar if price_bar is None else price_bar
+        book, source, error = await self._book(signal, priced, now, missed=price_bar is not None)
+        if book is not None and source is BookSource.LIVE:
+            at = book.snapshot_time
+        elif price_bar is not None:
+            at = now
+        else:
+            at = signal.signal_time
         if self._not_before is not None and at < self._not_before:
             at = self._not_before
         fees = self._fees_at(at, pair)
@@ -312,8 +352,8 @@ class ShadowExecutor:
             orderbook=book,
             fees=fees,
             at=at,
-            market_snapshot=self._market_snapshot(pair, book, bar, now),
-            experiment_state=self._experiment_state(),
+            market_snapshot=self._market_snapshot(pair, book, priced, now),
+            experiment_state=self._experiment_state(now),
             correlations=(
                 self._daily_closes.correlations() if signal.kind is SignalKind.ENTRY else {}
             ),
@@ -327,7 +367,7 @@ class ShadowExecutor:
             quality = self._quality(
                 outcome.fill,
                 signal=signal,
-                bar=bar,
+                bar=priced,
                 book=book,
                 source=source,
                 fees=fees,
@@ -342,6 +382,23 @@ class ShadowExecutor:
             outcome=outcome, book_source=source, quality=quality, snapshot_error=error
         )
 
+    def prior_fill(self, signal: StrategySignal, pair: Pair) -> TradeExecuted | None:
+        """Return the trade that already filled ``signal``, or ``None``.
+
+        Serve asks before passing over an entry on a missed bar (#1078): a bar
+        re-evaluated after a crash may have filled before the crash, and the
+        strategy must then stay in the position it holds.
+
+        Args:
+            signal: The strategy's signal.
+            pair: The pair it is for.
+
+        Returns:
+            A recorded trade of the signal's pair and side at or after its time.
+        """
+        side = TradeSide.BUY if signal.kind is SignalKind.ENTRY else TradeSide.SELL
+        return self._traded_since(pair, side, signal.signal_time)
+
     def _traded_since(self, pair: Pair, side: TradeSide, since: datetime) -> TradeExecuted | None:
         """Return a recorded trade of ``pair`` and ``side`` at or after ``since``."""
         for trade in self._ledger.trade_events(self._strategy_id):
@@ -350,11 +407,14 @@ class ShadowExecutor:
         return None
 
     async def _book(
-        self, signal: StrategySignal, bar: Bar, now: datetime
+        self, signal: StrategySignal, bar: Bar, now: datetime, *, missed: bool
     ) -> tuple[Orderbook | None, BookSource, str | None]:
-        """Return the book to fill against, where it came from and any snapshot error."""
+        """Return the book to fill against, where it came from and any snapshot error.
+
+        A missed bar's order fills now, so a live book is always worth trying.
+        """
         error = None
-        if now - bar.close_time <= self._live_window:
+        if missed or now - bar.close_time <= self._live_window:
             try:
                 return await self._books.snapshot(bar.pair), BookSource.LIVE, None
             except InfraError as exc:
@@ -364,17 +424,23 @@ class ShadowExecutor:
     def _market_snapshot(
         self, pair: Pair, book: Orderbook | None, bar: Bar, now: datetime
     ) -> MarketSnapshot:
-        """Build the risk overlay inputs (D-3)."""
+        """Build the risk overlay inputs (D-3); live ones only with ``live_inputs`` (#1158)."""
         spread = book_spread(book) if book is not None else _ZERO
         book_time = book.snapshot_time if book is not None else bar.close_time
+        median = spread
+        stable_price = None
+        if self._live_inputs is not None:
+            # No recent sample reads as a zero median, which RO-02 halts on.
+            median = self._live_inputs.median_spread_1h(pair, now) or _ZERO
+            stable_price = self._live_inputs.stable_price(now)
         return MarketSnapshot(
             pair=pair,
             current_spread=spread,
-            median_spread_1h=spread,
+            median_spread_1h=median,
             orderbook_age_seconds=max(0.0, (now - book_time).total_seconds()),
             orderbook_timestamp=book_time,
             realized_slippage_last=self._slippages[-1][1] if self._slippages else _ZERO,
-            stable_price=None,
+            stable_price=stable_price,
             btc_log_return_1d=self._btc_log_return_1d(),
             candidate_pair=pair,
         )
@@ -388,14 +454,19 @@ class ShadowExecutor:
             return None
         return math.log(latest / previous)
 
-    def _experiment_state(self) -> ExperimentState:
-        """Build the kill inputs (D-3): drawdown from the tracker, any held shadow kill (#796)."""
+    def _experiment_state(self, now: datetime) -> ExperimentState:
+        """Build the kill inputs (D-3): drawdown from the tracker, any held shadow kill (#796).
+
+        The recovery days are real only with ``live_inputs`` (#1158).
+        """
         snapshot = self._kernel.tracker.snapshot
         peak = snapshot.peak_equity
         drawdown = _ZERO if peak <= 0 else max(_ZERO, (peak - snapshot.equity) / peak)
         return ExperimentState(
             max_drawdown=float(drawdown),
-            days_since_equity_high=0.0,
+            days_since_equity_high=(
+                0.0 if self._live_inputs is None else self._live_inputs.days_since_equity_high(now)
+            ),
             sa9_halt=False,
             killed_by=self._killed_by,
         )

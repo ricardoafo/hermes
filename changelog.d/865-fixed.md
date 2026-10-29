@@ -1,1 +1,0 @@
-- A migration snapshot taken in the same second as an earlier one gets its own name instead of overwriting it, so every rollback point stays restorable (issue #865).

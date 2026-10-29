@@ -5,10 +5,8 @@ The port has no update or delete operation on purpose: pre-registration §8.1
 needs every trial counted.
 
 Reference: code-conventions.md §5 (Ports as Protocols),
-openspec/changes/357-trial-log/change.md.
+openspec/archive/357-trial-log/change.md.
 """
-
-from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 

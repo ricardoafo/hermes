@@ -5,13 +5,11 @@ Reads the ledger read-only, builds the year's transmissions (Modelo 100) and
 ``--out DIR`` it also writes ``report.md`` and the CSV files there. It never
 submits anything and never reads the taxpayer profile.
 
-Exit codes: 0 complete, 1 ledger failure, 2 usage, 3 config error,
+Exit codes: 0 complete, 1 ledger read failure, 2 usage, 3 config error or no ledger,
 4 incomplete (a sale with pending EUR values or a coin with no year-end price).
 
-Reference: openspec/changes/36-modelo-100-721/change.md.
+Reference: openspec/archive/36-modelo-100-721/change.md.
 """
-
-from __future__ import annotations
 
 import argparse
 import os
@@ -36,11 +34,16 @@ from hermes.domain.errors import LedgerError
 from hermes.domain.fx.eur_pricing import fill_date_madrid
 from hermes.domain.value_objects.currency import Currency
 from hermes.entrypoints import fx as fx_module
-from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints._cli import (
+    EXIT_NO_LEDGER,
+    add_config_dir_arg,
+    add_db_arg,
+    config_or_exit,
+    require_ledger,
+)
 from hermes.entrypoints._streams import resolve_err
-from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.filing import load_filing_config, load_modelo721_history
-from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
+from hermes.infrastructure.config.loader import load_config
 from hermes.infrastructure.time import now_utc
 
 __all__ = ["EXIT_INCOMPLETE", "main"]
@@ -61,7 +64,8 @@ _USAGE = (
     "                  ~/.config/hermes/modelo721.yaml or $HERMES_MODELO721_HISTORY)\n"
     "  --live          the ledger holds real fills (drops the shadow label)\n"
     "\n"
-    "Exit codes: 0 complete, 1 ledger failure, 2 usage, 3 config, 4 incomplete.\n"
+    "Exit codes: 0 complete, 1 ledger read failure, 2 usage, 3 config or no ledger,\n"
+    "4 incomplete.\n"
 )
 
 
@@ -124,13 +128,20 @@ def _build(
     err: TextIO,
 ) -> FilingPack | int:
     """Load config, read the ledger and build the pack; an exit code on failure."""
-    try:
-        config = load_config(parsed.config_dir)
-        filing = load_filing_config(parsed.config_dir, env=env)
-        history = load_modelo721_history(parsed.history, env=env)
-    except ConfigError as exc:
-        err.write(f"ERROR: config load failed: {exc}\n")
-        return 3
+    configs = config_or_exit(
+        lambda: (
+            load_config(parsed.config_dir),
+            load_filing_config(parsed.config_dir, env=env),
+            load_modelo721_history(parsed.history, env=env),
+        ),
+        err,
+    )
+    if isinstance(configs, int):
+        return configs
+    config, filing, history = configs
+    missing = require_ledger(parsed.db, err)
+    if missing is not None:
+        return missing
 
     fx = fx_factory(config.frankfurter)
     try:
@@ -148,7 +159,7 @@ def _build(
             )
     except FileNotFoundError:
         err.write(f"ERROR: no ledger at {parsed.db}\n")
-        return 1
+        return EXIT_NO_LEDGER
     except LedgerError as exc:
         err.write(f"ERROR: {exc}\n")
         return 1
@@ -176,8 +187,8 @@ def _parse(argv: list[str], stream: TextIO, err: TextIO) -> argparse.Namespace |
         return 2
     parser = argparse.ArgumentParser(prog="hermes tax-filing", add_help=False)
     parser.add_argument("--year", type=int)
-    parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
-    parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
+    add_db_arg(parser)
+    add_config_dir_arg(parser)
     parser.add_argument("--out", type=Path)
     parser.add_argument("--price", action="append", default=[])
     parser.add_argument("--history", type=Path)

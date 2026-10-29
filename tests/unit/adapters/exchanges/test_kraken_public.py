@@ -12,42 +12,37 @@ Every test protects one invariant of the Kraken public-adapter contract:
 - Malformed / non-JSON body → :class:`KrakenPublicError`.
 - Missing pair key in response → :class:`KrakenPublicError`.
 - Pair-symbol mapping handles the X/Z legacy prefixes for BTC/ETH/USD.
-- Port conformance for FeeScheduleProviderPort and KlinesFetcherPort.
-- Fee-schedule cache hits within TTL, refetches after expiry.
+- Port conformance for KlinesFetcherPort.
 - create() factory + close() idempotency.
 
 Reference: docs/guides/ai-authored-tests.md,
 docs/decisions/2026-08-24-kraken-public-adapter.md.
 """
 
-from __future__ import annotations
-
+import inspect
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from typing import Any
+from typing import Any, get_type_hints
 
 import httpx
 import pytest
 import respx
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.exchanges.kraken_public import (
     KrakenPublicAdapter,
     KrakenPublicConfig,
     _pair_to_kraken_symbol,
 )
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.domain.errors import InfraError, KrakenPublicError
-from hermes.domain.fees import FeeSchedule
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.market_data.orderbook import Orderbook
 from hermes.domain.market_data.ticker import Ticker
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
-from hermes.ports.fees import FeeScheduleProviderPort
 from hermes.ports.klines import KlinesFetcherPort
 
 _BASE_URL = "https://api.kraken.com"
-_ASSET_PAIRS_URL = f"{_BASE_URL}/0/public/AssetPairs"
 _OHLC_URL = f"{_BASE_URL}/0/public/OHLC"
 _DEPTH_URL = f"{_BASE_URL}/0/public/Depth"
 _TICKER_URL = f"{_BASE_URL}/0/public/Ticker"
@@ -56,50 +51,13 @@ _BTC_USDT = Pair(base=Currency.BTC, quote=Currency.USDT)
 _ETH_USDT = Pair(base=Currency.ETH, quote=Currency.USDT)
 
 
-class _CounterClock:
-    """Deterministic monotonic clock for cache-TTL testing.
-
-    Not thread-safe — tests are single-threaded. Callers can advance the
-    clock manually via :meth:`advance`.
-    """
-
-    def __init__(self, start: float = 0.0) -> None:
-        """Initialise the clock at ``start`` seconds."""
-        self.now = start
-
-    def __call__(self) -> float:
-        """Return the current fake time — matches ``time.monotonic`` shape."""
-        return self.now
-
-    def advance(self, seconds: float) -> None:
-        """Move the clock forward by ``seconds``."""
-        self.now += seconds
-
-
-def _make_adapter(
-    *,
-    fees_ttl: int = 86_400,
-    clock: _CounterClock | None = None,
-) -> KrakenPublicAdapter:
-    """Build an adapter with a plain httpx.Client (respx patches transport globally).
-
-    Args:
-        fees_ttl: TTL for the in-memory fee-schedule cache.
-        clock: Optional deterministic clock — required for cache-TTL tests
-            because the limiter's clock also seeds the cache timestamps.
-
-    """
+def _make_adapter() -> KrakenPublicAdapter:
+    """Build an adapter with a plain httpx.Client (respx patches transport globally)."""
     config = KrakenPublicConfig(
         rate_limit=RateLimitConfig(max_weight=100, window_seconds=1),
-        fees_cache_ttl_seconds=fees_ttl,
     )
     client = httpx.Client(base_url=_BASE_URL, timeout=5.0)
-    if clock is not None:
-        limiter = RateLimiter.for_testing(
-            config=config.rate_limit, clock=clock, sleep=lambda _s: None
-        )
-    else:
-        limiter = RateLimiter(config=config.rate_limit)
+    limiter = RateLimiter(config=config.rate_limit)
     return KrakenPublicAdapter(config=config, client=client, limiter=limiter)
 
 
@@ -158,132 +116,13 @@ class TestConfigValidation:
         with pytest.raises(ValueError, match="timeout_sec"):
             KrakenPublicConfig(timeout_sec=0)
 
-    def test_negative_cache_ttl_rejected(self) -> None:
-        """A negative cache TTL is nonsensical — rejected at config layer."""
-        with pytest.raises(ValueError, match="fees_cache_ttl_seconds"):
-            KrakenPublicConfig(fees_cache_ttl_seconds=-1)
-
 
 # ---------------------------------------------------------------------------
-# get_pair_fees — happy path
+# Kraken envelope and transport errors
 # ---------------------------------------------------------------------------
 
 
-_FEES_PAYLOAD = _kraken_ok(
-    {
-        "XBTUSDT": {
-            "fees": [
-                [0, 0.26],
-                [50000, 0.24],
-                [100000, 0.22],
-            ],
-            "fees_maker": [
-                [0, 0.16],
-                [50000, 0.14],
-                [100000, 0.12],
-            ],
-        }
-    }
-)
-
-
-class TestGetPairFeesHappyPath:
-    """AssetPairs endpoint returns a well-formed FeeSchedule."""
-
-    def test_get_pair_fees_hits_asset_pairs_with_pair_param(self) -> None:
-        """The request URL is /0/public/AssetPairs with pair=XBTUSDT for BTC/USDT."""
-        adapter = _make_adapter()
-        try:
-            with respx.mock(assert_all_called=True) as router:
-                route = router.get(_ASSET_PAIRS_URL).mock(
-                    return_value=httpx.Response(200, json=_FEES_PAYLOAD)
-                )
-                adapter.get_pair_fees(_BTC_USDT)
-                request = route.calls[0].request
-                assert request.url.params["pair"] == "XBTUSDT"
-        finally:
-            adapter.close()
-
-    def test_get_pair_fees_parses_all_tiers(self) -> None:
-        """All three tiers land in the schedule with correct bps values."""
-        adapter = _make_adapter()
-        try:
-            with respx.mock() as router:
-                router.get(_ASSET_PAIRS_URL).mock(
-                    return_value=httpx.Response(200, json=_FEES_PAYLOAD)
-                )
-                schedule = adapter.get_pair_fees(_BTC_USDT)
-                assert isinstance(schedule, FeeSchedule)
-                assert len(schedule.tiers) == 3
-                assert schedule.tiers[0].volume_threshold_usd == Decimal("0")
-                assert schedule.tiers[0].maker_bps == 16
-                assert schedule.tiers[0].taker_bps == 26
-                assert schedule.tiers[1].maker_bps == 14
-                assert schedule.tiers[2].taker_bps == 22
-        finally:
-            adapter.close()
-
-    def test_get_pair_fees_returns_schedule_pair_matches_input(self) -> None:
-        """The returned schedule's pair equals the requested pair."""
-        adapter = _make_adapter()
-        try:
-            with respx.mock() as router:
-                router.get(_ASSET_PAIRS_URL).mock(
-                    return_value=httpx.Response(200, json=_FEES_PAYLOAD)
-                )
-                schedule = adapter.get_pair_fees(_BTC_USDT)
-                assert schedule.pair == _BTC_USDT
-        finally:
-            adapter.close()
-
-
-# ---------------------------------------------------------------------------
-# get_pair_fees — cache behaviour
-# ---------------------------------------------------------------------------
-
-
-class TestGetPairFeesCache:
-    """The 24 h in-memory cache short-circuits duplicate lookups within TTL."""
-
-    def test_second_call_within_ttl_does_not_hit_wire(self) -> None:
-        """A second get_pair_fees call within TTL returns cached and skips the request."""
-        clock = _CounterClock(start=1000.0)
-        adapter = _make_adapter(fees_ttl=3600, clock=clock)
-        try:
-            with respx.mock() as router:
-                route = router.get(_ASSET_PAIRS_URL).mock(
-                    return_value=httpx.Response(200, json=_FEES_PAYLOAD)
-                )
-                adapter.get_pair_fees(_BTC_USDT)
-                clock.advance(100.0)  # well inside TTL
-                adapter.get_pair_fees(_BTC_USDT)
-                assert route.call_count == 1
-        finally:
-            adapter.close()
-
-    def test_call_after_ttl_refetches_from_wire(self) -> None:
-        """After TTL expiry the adapter re-hits the wire for a fresh schedule."""
-        clock = _CounterClock(start=1000.0)
-        adapter = _make_adapter(fees_ttl=3600, clock=clock)
-        try:
-            with respx.mock() as router:
-                route = router.get(_ASSET_PAIRS_URL).mock(
-                    return_value=httpx.Response(200, json=_FEES_PAYLOAD)
-                )
-                adapter.get_pair_fees(_BTC_USDT)
-                clock.advance(3600.0 + 1.0)  # past TTL
-                adapter.get_pair_fees(_BTC_USDT)
-                assert route.call_count == 2
-        finally:
-            adapter.close()
-
-
-# ---------------------------------------------------------------------------
-# get_pair_fees — error paths
-# ---------------------------------------------------------------------------
-
-
-class TestGetPairFeesErrors:
+class TestWireErrors:
     """Every documented failure mode surfaces as KrakenPublicError."""
 
     def test_non_empty_kraken_error_array_raises(self) -> None:
@@ -291,14 +130,14 @@ class TestGetPairFeesErrors:
         adapter = _make_adapter()
         try:
             with respx.mock() as router:
-                router.get(_ASSET_PAIRS_URL).mock(
+                router.get(_TICKER_URL).mock(
                     return_value=httpx.Response(
                         200,
                         json={"error": ["EQuery:Unknown asset pair"], "result": {}},
                     )
                 )
                 with pytest.raises(KrakenPublicError, match="Unknown asset pair"):
-                    adapter.get_pair_fees(_BTC_USDT)
+                    adapter.get_ticker(_BTC_USDT)
         finally:
             adapter.close()
 
@@ -307,11 +146,11 @@ class TestGetPairFeesErrors:
         adapter = _make_adapter()
         try:
             with respx.mock() as router:
-                router.get(_ASSET_PAIRS_URL).mock(
+                router.get(_TICKER_URL).mock(
                     return_value=httpx.Response(500, text="Internal Server Error")
                 )
                 with pytest.raises(KrakenPublicError, match="500"):
-                    adapter.get_pair_fees(_BTC_USDT)
+                    adapter.get_ticker(_BTC_USDT)
         finally:
             adapter.close()
 
@@ -320,11 +159,11 @@ class TestGetPairFeesErrors:
         adapter = _make_adapter()
         try:
             with respx.mock() as router:
-                route = router.get(_ASSET_PAIRS_URL).mock(
+                route = router.get(_TICKER_URL).mock(
                     return_value=httpx.Response(429, text="Too Many Requests")
                 )
                 with pytest.raises(KrakenPublicError, match="429"):
-                    adapter.get_pair_fees(_BTC_USDT)
+                    adapter.get_ticker(_BTC_USDT)
                 assert route.call_count == 1
         finally:
             adapter.close()
@@ -334,9 +173,9 @@ class TestGetPairFeesErrors:
         adapter = _make_adapter()
         try:
             with respx.mock() as router:
-                router.get(_ASSET_PAIRS_URL).mock(side_effect=httpx.ConnectError("DNS failed"))
+                router.get(_TICKER_URL).mock(side_effect=httpx.ConnectError("DNS failed"))
                 with pytest.raises(KrakenPublicError, match="transport failure"):
-                    adapter.get_pair_fees(_BTC_USDT)
+                    adapter.get_ticker(_BTC_USDT)
         finally:
             adapter.close()
 
@@ -345,11 +184,11 @@ class TestGetPairFeesErrors:
         adapter = _make_adapter()
         try:
             with respx.mock() as router:
-                router.get(_ASSET_PAIRS_URL).mock(
+                router.get(_TICKER_URL).mock(
                     return_value=httpx.Response(200, content=b"<html>outage</html>")
                 )
                 with pytest.raises(KrakenPublicError, match="non-JSON"):
-                    adapter.get_pair_fees(_BTC_USDT)
+                    adapter.get_ticker(_BTC_USDT)
         finally:
             adapter.close()
 
@@ -358,37 +197,14 @@ class TestGetPairFeesErrors:
         adapter = _make_adapter()
         try:
             with respx.mock() as router:
-                router.get(_ASSET_PAIRS_URL).mock(
+                router.get(_TICKER_URL).mock(
                     return_value=httpx.Response(
                         200,
                         json=_kraken_ok({"XETHZUSD": {"fees": [], "fees_maker": []}}),
                     )
                 )
                 with pytest.raises(KrakenPublicError, match="no entry for pair 'XBTUSDT'"):
-                    adapter.get_pair_fees(_BTC_USDT)
-        finally:
-            adapter.close()
-
-    def test_mismatched_tier_lengths_raises(self) -> None:
-        """Fees vs fees_maker length mismatch raises KrakenPublicError."""
-        adapter = _make_adapter()
-        try:
-            with respx.mock() as router:
-                router.get(_ASSET_PAIRS_URL).mock(
-                    return_value=httpx.Response(
-                        200,
-                        json=_kraken_ok(
-                            {
-                                "XBTUSDT": {
-                                    "fees": [[0, 0.26], [50000, 0.24]],
-                                    "fees_maker": [[0, 0.16]],  # short
-                                }
-                            }
-                        ),
-                    )
-                )
-                with pytest.raises(KrakenPublicError, match="length mismatch"):
-                    adapter.get_pair_fees(_BTC_USDT)
+                    adapter.get_ticker(_BTC_USDT)
         finally:
             adapter.close()
 
@@ -397,21 +213,21 @@ class TestGetPairFeesErrors:
         adapter = _make_adapter()
         try:
             with respx.mock() as router:
-                router.get(_ASSET_PAIRS_URL).mock(
+                router.get(_TICKER_URL).mock(
                     return_value=httpx.Response(
                         200,
                         json={"error": "not-a-list", "result": {}},
                     )
                 )
                 with pytest.raises(KrakenPublicError, match="'error' field must be a list"):
-                    adapter.get_pair_fees(_BTC_USDT)
+                    adapter.get_ticker(_BTC_USDT)
         finally:
             adapter.close()
 
     def test_error_inherits_from_infra_error(self) -> None:
         """KrakenPublicError caught by 'except InfraError' satisfies the base contract."""
-        err = KrakenPublicError(msg="bad")
-        assert isinstance(err, InfraError)
+        with pytest.raises(InfraError, match="bad"):
+            raise KrakenPublicError(msg="bad")
 
 
 # ---------------------------------------------------------------------------
@@ -794,6 +610,67 @@ class TestGetTicker:
             adapter.close()
 
 
+def _usd_book(symbol: str, bid: str, ask: str) -> dict[str, Any]:
+    """Return a Ticker envelope holding one stablecoin USD book."""
+    return _kraken_ok(
+        {symbol: {"a": [ask, "1", "1.000"], "b": [bid, "1", "1.000"], "c": [bid, "1"]}}
+    )
+
+
+class TestGetUsdPrice:
+    """The depeg rules read the mid of a stablecoin's USD book (#1158)."""
+
+    def test_usdt_asks_for_the_usdtzusd_book(self) -> None:
+        """USDT is priced on the book Kraken keys ``USDTZUSD``."""
+        adapter = _make_adapter()
+        try:
+            with respx.mock(assert_all_called=True) as router:
+                route = router.get(_TICKER_URL).mock(
+                    return_value=httpx.Response(200, json=_usd_book("USDTZUSD", "0.9990", "0.9994"))
+                )
+                adapter.get_usd_price(Currency.USDT)
+                assert route.calls[0].request.url.params["pair"] == "USDTZUSD"
+        finally:
+            adapter.close()
+
+    def test_price_is_the_mid_of_bid_and_ask(self) -> None:
+        """The price is ``(bid + ask) / 2``, not the last trade."""
+        adapter = _make_adapter()
+        try:
+            with respx.mock() as router:
+                router.get(_TICKER_URL).mock(
+                    return_value=httpx.Response(200, json=_usd_book("USDCUSD", "0.9990", "0.9994"))
+                )
+                assert adapter.get_usd_price(Currency.USDC) == Decimal("0.9992")
+        finally:
+            adapter.close()
+
+    def test_crossed_book_raises(self) -> None:
+        """A bid above the ask is refused rather than read as a price."""
+        adapter = _make_adapter()
+        try:
+            with respx.mock() as router:
+                router.get(_TICKER_URL).mock(
+                    return_value=httpx.Response(200, json=_usd_book("USDTZUSD", "1.0010", "1.0000"))
+                )
+                with pytest.raises(KrakenPublicError, match="crossed or empty"):
+                    adapter.get_usd_price(Currency.USDT)
+        finally:
+            adapter.close()
+
+    def test_coin_without_a_usd_book_raises_before_any_request(self) -> None:
+        """BTC has no stablecoin USD book here; no request is sent."""
+        adapter = _make_adapter()
+        try:
+            with respx.mock(assert_all_called=False) as router:
+                route = router.get(_TICKER_URL)
+                with pytest.raises(ValueError, match="no Kraken USD book for BTC"):
+                    adapter.get_usd_price(Currency.BTC)
+                assert not route.called
+        finally:
+            adapter.close()
+
+
 # ---------------------------------------------------------------------------
 # Port conformance + factory
 # ---------------------------------------------------------------------------
@@ -802,25 +679,21 @@ class TestGetTicker:
 class TestPortConformance:
     """The adapter class satisfies the runtime-checkable Protocols."""
 
-    def test_adapter_satisfies_fee_schedule_provider_port(self) -> None:
-        """Isinstance against the runtime_checkable FeeScheduleProviderPort returns True."""
-        adapter = _make_adapter()
-        try:
-            assert isinstance(adapter, FeeScheduleProviderPort)
-        finally:
-            adapter.close()
+    def test_fetch_klines_takes_the_klines_port_parameters(self) -> None:
+        """``fetch_klines`` mirrors the port's ``fetch`` parameters.
 
-    def test_adapter_satisfies_klines_fetcher_port(self) -> None:
-        """The adapter has a fetch_klines method — Kraken port shape mirrors Binance."""
-        adapter = _make_adapter()
-        try:
-            # KlinesFetcherPort's protocol method is `fetch`; Kraken exposes
-            # `fetch_klines` because it also owns other endpoints. Wire-up
-            # code adapts the two names. Assert method exists + callable.
-            assert callable(adapter.fetch_klines)
-            _ = KlinesFetcherPort  # keep the import used
-        finally:
-            adapter.close()
+        Kraken exposes ``fetch_klines`` because it also owns other endpoints;
+        the wiring code adapts the two names.
+        """
+        adapter_method = KrakenPublicAdapter.fetch_klines
+        port_method = KlinesFetcherPort.fetch
+
+        assert [
+            (p.name, p.kind) for p in inspect.signature(adapter_method).parameters.values()
+        ] == [(p.name, p.kind) for p in inspect.signature(port_method).parameters.values()]
+        assert {
+            name: hint for name, hint in get_type_hints(adapter_method).items() if name != "return"
+        } == {name: hint for name, hint in get_type_hints(port_method).items() if name != "return"}
 
 
 class TestCreateFactoryAndClose:
@@ -849,7 +722,9 @@ class TestCreateFactoryAndClose:
             adapter.close()
 
     def test_close_is_idempotent(self) -> None:
-        """close() called twice does not raise (second call is a no-op)."""
+        """Closing twice does not raise and leaves the client closed."""
         adapter = KrakenPublicAdapter.create()
         adapter.close()
-        adapter.close()  # must not raise
+        adapter.close()
+
+        assert adapter.client.is_closed is True

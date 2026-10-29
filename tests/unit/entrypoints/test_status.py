@@ -12,8 +12,6 @@ The rendered views are pinned with syrupy snapshots (plain text and a
 terminal render) so a layout change shows up in review.
 """
 
-from __future__ import annotations
-
 import io
 import json
 import os
@@ -39,6 +37,7 @@ from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints import cli
 from hermes.entrypoints import status as status_module
 from hermes.entrypoints.status_view import render_status
+from tests.support.paths import REPO_ROOT
 from tests.support.status_ledger import (
     ETH,
     INTERVALS,
@@ -50,9 +49,8 @@ from tests.support.status_ledger import (
     write_ledger,
 )
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
-_CONFIG = _PROJECT_ROOT / "config"
-_NO_LINK = _PROJECT_ROOT / "no-such-release-link"
+_CONFIG = REPO_ROOT / "config"
+_NO_LINK = REPO_ROOT / "no-such-release-link"
 _FLIPPED_AT = datetime(2026, 10, 3, 12, 22, tzinfo=UTC)
 # Fixed so the snapshots do not change at every release cut.
 _PACKAGE_VERSION = "1.0.0a1"
@@ -175,6 +173,53 @@ def test_bad_arguments_exit_two() -> None:
 
     assert (code, out) == (2, "")
     assert "Usage: hermes status" in err
+
+
+def _probed_units(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, extra: list[str]
+) -> tuple[int, list[str]]:
+    """Run status with the default probe replaced by a recorder; return the code and units asked."""
+    asked: list[str] = []
+
+    def probe(run: object = None, unit: str = "") -> UnitState:
+        asked.append(unit)
+        return UnitState.RUNNING
+
+    monkeypatch.setattr(status_module, "systemd_unit_state", probe)
+    code = status_module.main(
+        ["--config-dir", str(_CONFIG), "--db", str(_ledger(tmp_path)), *extra],
+        stream=io.StringIO(),
+        now=NOW,
+        bot_state=lambda: UnitState.UNKNOWN,
+        release_link=_NO_LINK,
+        package_version=_PACKAGE_VERSION,
+    )
+    return code, asked
+
+
+def test_status_asks_systemd_about_hermes_service_by_default(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Without --unit the verdict reads prod's unit, as every existing caller expects."""
+    assert _probed_units(monkeypatch, tmp_path, []) == (0, ["hermes.service"])
+
+
+def test_status_asks_systemd_about_the_unit_named_by_unit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A lab shadow's ping asks about its own instance, not prod's unit (#1079)."""
+    result = _probed_units(monkeypatch, tmp_path, ["--unit", "hermes-shadow@swing-b2.service"])
+
+    assert result == (0, ["hermes-shadow@swing-b2.service"])
+
+
+@pytest.mark.parametrize("unit", ["--json", "hermes-shadow@x", "-x.service", "a b.service", ""])
+def test_a_unit_that_is_not_a_service_name_is_a_usage_error(unit: str) -> None:
+    """Anything but a plain ``*.service`` name never reaches systemctl's argv."""
+    code, out, err = _run_split([f"--unit={unit}"])
+
+    assert (code, out) == (2, "")
+    assert "--unit must name a systemd service" in err
 
 
 def test_human_view_shows_utc_and_madrid_times(tmp_path: Path) -> None:

@@ -1,0 +1,785 @@
+name: Backtest batch
+
+# A signed research batch runs by itself when it lands on main (ADR-026 §2, §3):
+# check -> one Train job per candidate -> Train judge -> one Validation job per
+# candidate that passed Train -> champion judge. Single pre-registrations keep
+# backtest.yml. The commands and files each step uses are the research funnel
+# interface contract (issue #1060).
+#
+# The jobs share the `backtest` concurrency group with backtest.yml: one
+# backtest at a time on the one runner (ADR-023 §1, §8). Job summaries hold
+# PASS/FAIL lines only; values stay in the artifacts (ADR-023 §7).
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/experiments/*/batches/**'
+
+concurrency:
+  group: backtest
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  HERMES_DATA_DIR: /srv/hermes-data
+  UV_PIN: "0.12.5"
+
+jobs:
+  # Proceeds only for a batch the Code Owner merged, whose hash and bound code
+  # match (ADR-026 §2). A bot push, a PR branch or an edited file starts nothing.
+  check:
+    name: Check the signed batch
+    runs-on: [self-hosted, hermes-backtest]
+    timeout-minutes: 20
+    outputs:
+      batch_file: ${{ steps.batch.outputs.file }}
+      batch_id: ${{ steps.batch.outputs.batch_id }}
+      experiment: ${{ steps.batch.outputs.experiment }}
+      candidates: ${{ steps.check.outputs.candidates }}
+      draft: ${{ steps.check.outputs.draft }}
+    steps:
+      - name: Code Owner merged this
+        env:
+          OWNER: ${{ github.repository_owner }}
+          ACTOR: ${{ github.actor }}
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$REF" != refs/heads/main ]; then
+            echo "::error::batches run from main only, not $REF"
+            exit 1
+          fi
+          if [ "$ACTOR" != "$OWNER" ]; then
+            echo "::error::a batch starts only from a merge by $OWNER, not $ACTOR (ADR-026 §2)"
+            exit 1
+          fi
+          echo "Merged by $OWNER"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: The one batch this push changed
+        id: batch
+        env:
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$BEFORE" =~ ^0+$ ]] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+            echo "::error::the previous main commit is unknown, so the changed batch cannot be named"
+            exit 1
+          fi
+          mapfile -t files < <(git diff --name-only --diff-filter=AM "$BEFORE" "$SHA" -- 'docs/experiments/*/batches/*.md')
+          if [ "${#files[@]}" -ne 1 ]; then
+            echo "::error::a batch run needs exactly one added or changed batch document, found ${#files[@]}"
+            exit 1
+          fi
+          file="${files[0]}"
+          experiment=$(cut -d/ -f3 <<< "$file")
+          batch_id=$(basename "$file" .md)
+          echo "Batch: $batch_id of $experiment"
+          {
+            echo "file=$file"
+            echo "batch_id=$batch_id"
+            echo "experiment=$experiment"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: uv
+        run: |
+          set -euo pipefail
+          have=$(uv --version 2>/dev/null | cut -d' ' -f2 || true)
+          if [ "$have" != "$UV_PIN" ]; then
+            curl -LsSf "https://github.com/astral-sh/uv/releases/download/${UV_PIN}/uv-installer.sh" \
+              | env UV_INSTALL_DIR="$HOME/.local/bin" sh
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: uv sync
+        run: uv sync --frozen
+
+      # A draft is the precursor the signed batch's content hash is computed
+      # from, so it merges to main first and a signing PR follows. It runs
+      # nothing and ends green. Any other status, or none, is checked as a
+      # signed batch: `hermes batch check` recomputes the content hash with git,
+      # compares the cards and the code binding, and refuses an unsigned batch
+      # (ADR-026 §1).
+      - name: Batch check
+        id: check
+        env:
+          FILE: ${{ steps.batch.outputs.file }}
+        run: |
+          set -uo pipefail
+          status=$(awk '/^---[ \t]*$/{n++; next} n==1 && /^status:/{sub(/^status:[ \t]*/, ""); gsub(/["\047 \t]/, ""); print; exit}' "$FILE")
+          if [ "$status" = DRAFT ]; then
+            echo "::notice::draft batch, nothing runs until it is signed"
+            {
+              echo "candidates=[]"
+              echo "draft=true"
+            } >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "draft=false" >> "$GITHUB_OUTPUT"
+          mkdir -p "$RUNNER_TEMP/check"
+          code=0
+          uv run hermes batch check "$FILE" --require-signed \
+            --candidates-out "$RUNNER_TEMP/check/candidates.json" > "$RUNNER_TEMP/check/check.txt" || code=$?
+          awk '/^(PASS|FAIL|NA) /{print $1, $2}' "$RUNNER_TEMP/check/check.txt" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" -ne 0 ]; then
+            echo "::error::hermes batch check exited $code, so no candidate runs"
+            exit 1
+          fi
+          # Each candidate carries its position: the first one starts the trial log chain.
+          candidates=$(jq -c '[.candidates | to_entries[] | .value + {index: .key}]' "$RUNNER_TEMP/check/candidates.json")
+          echo "candidates=$candidates" >> "$GITHUB_OUTPUT"
+
+  # One Train touch per candidate, in batch order, each on the log the previous
+  # job produced so the hash chain stays linear (ADR-026 §2). A candidate that
+  # errors stops the batch; the lines already appended still count.
+  train:
+    name: Train ${{ matrix.candidate.strategy_id }}
+    needs: check
+    if: ${{ needs.check.outputs.draft != 'true' }}
+    runs-on: [self-hosted, hermes-backtest]
+    environment: backtest-train
+    timeout-minutes: 120
+    strategy:
+      max-parallel: 1
+      fail-fast: true
+      matrix:
+        candidate: ${{ fromJSON(needs.check.outputs.candidates) }}
+    env:
+      BATCH_FILE: ${{ needs.check.outputs.batch_file }}
+      EXPERIMENT: ${{ needs.check.outputs.experiment }}
+      CANDIDATE: ${{ matrix.candidate.strategy_id }}
+      CANDIDATE_INDEX: ${{ matrix.candidate.index }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Window from the manifest
+        id: window
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$REF" != refs/heads/main ]; then
+            echo "::error::backtests run from main only, not $REF"
+            exit 1
+          fi
+          manifest="docs/experiments/${EXPERIMENT}/data-manifest.json"
+          start=$(jq -er '.splits.train.start[0:10]' "$manifest")
+          end=$(jq -er '.splits.train.end[0:10]' "$manifest")
+          oos_start=$(jq -er '.splits.oos.start[0:10]' "$manifest")
+          if [[ ! "$end" < "$oos_start" ]]; then
+            echo "::error::window end $end reaches the OOS start $oos_start"
+            exit 1
+          fi
+          echo "Window: $start -> $end (train)"
+          {
+            echo "start=$start"
+            echo "end=$end"
+            echo "manifest=$manifest"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Download the trial log chain
+        if: ${{ matrix.candidate.index != 0 }}
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: trial-log-chain
+          path: ${{ runner.temp }}/chain
+
+      # The first candidate starts from the committed log. Every later one
+      # starts from the previous job's copy, which must begin with the
+      # committed bytes, so no line is lost or reordered.
+      - name: Trial log to extend
+        run: |
+          set -euo pipefail
+          src="docs/experiments/${EXPERIMENT}/trial-log.jsonl"
+          if [ ! -f "$src" ]; then
+            echo "::error::$src is not committed. Every earlier trial counts toward the DSR (ADR-023 §6)."
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/chain" "$RUNNER_TEMP/out/$CANDIDATE"
+          if [ "$CANDIDATE_INDEX" = 0 ]; then
+            cp "$src" "$RUNNER_TEMP/chain/trial-log.jsonl"
+          fi
+          if ! cmp -s -n "$(stat -c %s "$src")" "$src" "$RUNNER_TEMP/chain/trial-log.jsonl"; then
+            echo "::error::the trial log chain does not start with the committed log"
+            exit 1
+          fi
+          echo "Chain: $(wc -l < "$RUNNER_TEMP/chain/trial-log.jsonl") lines before $CANDIDATE"
+
+      - name: uv
+        run: |
+          set -euo pipefail
+          have=$(uv --version 2>/dev/null | cut -d' ' -f2 || true)
+          if [ "$have" != "$UV_PIN" ]; then
+            curl -LsSf "https://github.com/astral-sh/uv/releases/download/${UV_PIN}/uv-installer.sh" \
+              | env UV_INSTALL_DIR="$HOME/.local/bin" sh
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: uv sync
+        run: uv sync --frozen
+
+      - name: Fill and verify the pinned data
+        timeout-minutes: 30
+        env:
+          MANIFEST: ${{ steps.window.outputs.manifest }}
+        run: |
+          uv run python scripts/data/prepare_backtest_data.py \
+            --split train --manifest "$MANIFEST" --data-dir "$HERMES_DATA_DIR"
+
+      # Also on failure: the driver may have logged a trial before failing,
+      # and the chain upload below must carry it.
+      - name: Backtest
+        env:
+          START: ${{ steps.window.outputs.start }}
+          END: ${{ steps.window.outputs.end }}
+          MANIFEST: ${{ steps.window.outputs.manifest }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/out/$CANDIDATE"
+          uv run python scripts/backtest/run_portfolio_backtest.py \
+            --start "$START" --end "$END" \
+            --manifest "$MANIFEST" \
+            --config-dir config \
+            --batch "$BATCH_FILE" --candidate "$CANDIDATE" \
+            --trial-log "$RUNNER_TEMP/chain/trial-log.jsonl" \
+            --output "$out/report.json" \
+            --performance-out "$out/performance.json" \
+            --funnel-evidence-out "$out/funnel-evidence.json"
+          jq -e '{backtest: {calibration_fill_count: .fills_count}}' "$out/report.json" > "$out/evidence.json"
+
+      - name: Upload the extended trial log chain
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: trial-log-chain
+          path: ${{ runner.temp }}/chain/
+          overwrite: true
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Upload the candidate's evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: evidence-train-${{ matrix.candidate.strategy_id }}
+          path: |
+            ${{ runner.temp }}/out/${{ matrix.candidate.strategy_id }}/performance.json
+            ${{ runner.temp }}/out/${{ matrix.candidate.strategy_id }}/evidence.json
+            ${{ runner.temp }}/out/${{ matrix.candidate.strategy_id }}/funnel-evidence.json
+          retention-days: 90
+          if-no-files-found: error
+
+  # Judged at the end, not candidate by candidate: every candidate faces the
+  # same N (ADR-026 §4). Exit 1 is "no candidate goes on", a valid outcome.
+  judge-train:
+    name: Judge Train
+    needs: [check, train]
+    runs-on: [self-hosted, hermes-backtest]
+    environment: backtest-train
+    timeout-minutes: 30
+    outputs:
+      validation_candidates: ${{ steps.judge.outputs.validation_candidates }}
+      validation_count: ${{ steps.judge.outputs.validation_count }}
+    env:
+      BATCH_FILE: ${{ needs.check.outputs.batch_file }}
+      BATCH_ID: ${{ needs.check.outputs.batch_id }}
+      CANDIDATES: ${{ needs.check.outputs.candidates }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: uv
+        run: |
+          set -euo pipefail
+          have=$(uv --version 2>/dev/null | cut -d' ' -f2 || true)
+          if [ "$have" != "$UV_PIN" ]; then
+            curl -LsSf "https://github.com/astral-sh/uv/releases/download/${UV_PIN}/uv-installer.sh" \
+              | env UV_INSTALL_DIR="$HOME/.local/bin" sh
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: uv sync
+        run: uv sync --frozen
+
+      - name: Download the trial log chain
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: trial-log-chain
+          path: ${{ runner.temp }}/chain
+
+      - name: Download the candidates' evidence
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: evidence-train-*
+          path: ${{ runner.temp }}/evidence-by-artifact
+
+      - name: Judge the batch on Train
+        id: judge
+        run: |
+          set -uo pipefail
+          root="$RUNNER_TEMP/evidence-by-artifact"
+          evidence="$RUNNER_TEMP/evidence"
+          out="$RUNNER_TEMP/judge"
+          mkdir -p "$evidence" "$out"
+          for dir in "$root"/evidence-train-*; do
+            [ -d "$dir" ] || continue
+            mv "$dir" "$evidence/${dir##*/evidence-train-}"
+          done
+          code=0
+          uv run hermes funnel --batch "$BATCH_FILE" --stage train \
+            --evidence-dir "$evidence" --trial-log "$RUNNER_TEMP/chain/trial-log.jsonl" \
+            --out "$out" > "$out/stdout.txt" || code=$?
+          case "$code" in
+            0|1) ;;
+            *) echo "::error::hermes funnel --batch exited $code (usage, data or evidence error)"; exit "$code" ;;
+          esac
+          {
+            echo "## Train: $BATCH_ID"
+            echo
+            echo '```text'
+            awk '/^(PASS|FAIL|NA) /{print $1, $2, $3} /^CANDIDATES /{print}' "$out/stdout.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          list=$(jq -c '.candidates' "$out/validation-candidates.json")
+          # Keep each candidate's position so Validation chains in batch order.
+          picked=$(jq -c --argjson ids "$list" '[.[] | select(.strategy_id as $s | $ids | index($s))]' <<< "$CANDIDATES")
+          echo "validation_candidates=$picked" >> "$GITHUB_OUTPUT"
+          echo "validation_count=$(jq 'length' <<< "$picked")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload the Train verdicts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: batch-${{ needs.check.outputs.batch_id }}-${{ github.run_id }}-train
+          path: |
+            ${{ runner.temp }}/judge/verdicts/
+            ${{ runner.temp }}/judge/validation-candidates.json
+            ${{ runner.temp }}/judge/funnel-batch.txt
+          retention-days: 90
+          if-no-files-found: warn
+
+  # The signed batch is the Code Owner's OK for its Validation touches
+  # (ADR-026 §3). Agents never dispatch these, and a rerun is refused.
+  validation:
+    name: Validation ${{ matrix.candidate.strategy_id }}
+    needs: [check, judge-train]
+    if: ${{ needs.judge-train.outputs.validation_count != '0' }}
+    runs-on: [self-hosted, hermes-backtest]
+    environment: backtest-validation
+    timeout-minutes: 120
+    strategy:
+      max-parallel: 1
+      fail-fast: true
+      matrix:
+        candidate: ${{ fromJSON(needs.judge-train.outputs.validation_candidates) }}
+    env:
+      BATCH_FILE: ${{ needs.check.outputs.batch_file }}
+      EXPERIMENT: ${{ needs.check.outputs.experiment }}
+      CANDIDATE: ${{ matrix.candidate.strategy_id }}
+    steps:
+      - name: First attempt of a batch run
+        env:
+          ATTEMPT: ${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          if [ "$ATTEMPT" != 1 ]; then
+            echo "::error::a Validation touch is not rerun; a job that died before reading data is the Code Owner's call (ADR-026 §3)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: Window from the manifest
+        id: window
+        env:
+          REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          if [ "$REF" != refs/heads/main ]; then
+            echo "::error::backtests run from main only, not $REF"
+            exit 1
+          fi
+          manifest="docs/experiments/${EXPERIMENT}/data-manifest.json"
+          start=$(jq -er '.splits.train.start[0:10]' "$manifest")
+          end=$(jq -er '.splits.validation.end[0:10]' "$manifest")
+          oos_start=$(jq -er '.splits.oos.start[0:10]' "$manifest")
+          if [[ ! "$end" < "$oos_start" ]]; then
+            echo "::error::window end $end reaches the OOS start $oos_start"
+            exit 1
+          fi
+          echo "Window: $start -> $end (validation)"
+          {
+            echo "start=$start"
+            echo "end=$end"
+            echo "manifest=$manifest"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Download the trial log chain
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: trial-log-chain
+          path: ${{ runner.temp }}/chain
+
+      - name: uv
+        run: |
+          set -euo pipefail
+          have=$(uv --version 2>/dev/null | cut -d' ' -f2 || true)
+          if [ "$have" != "$UV_PIN" ]; then
+            curl -LsSf "https://github.com/astral-sh/uv/releases/download/${UV_PIN}/uv-installer.sh" \
+              | env UV_INSTALL_DIR="$HOME/.local/bin" sh
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: uv sync
+        run: uv sync --frozen
+
+      # The family's touches come from the trial log, so a candidate cannot
+      # spend more than the ADR-021 §5 budget of 5, however it was started.
+      - name: Family Validation budget
+        run: |
+          set -uo pipefail
+          code=0
+          uv run python scripts/backtest/validation_budget.py \
+            --trial-log "$RUNNER_TEMP/chain/trial-log.jsonl" \
+            --batch "$BATCH_FILE" --candidate "$CANDIDATE" | tee -a "$GITHUB_STEP_SUMMARY" \
+            || code=${PIPESTATUS[0]}
+          if [ "$code" -ne 0 ]; then
+            echo "::error::$CANDIDATE's family has no Validation touch left (exit $code)"
+            exit 1
+          fi
+
+      - name: Fill and verify the pinned data
+        timeout-minutes: 30
+        env:
+          MANIFEST: ${{ steps.window.outputs.manifest }}
+        run: |
+          uv run python scripts/data/prepare_backtest_data.py \
+            --split validation --manifest "$MANIFEST" --data-dir "$HERMES_DATA_DIR"
+
+      - name: Backtest
+        env:
+          START: ${{ steps.window.outputs.start }}
+          END: ${{ steps.window.outputs.end }}
+          MANIFEST: ${{ steps.window.outputs.manifest }}
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/out/$CANDIDATE"
+          mkdir -p "$out"
+          uv run python scripts/backtest/run_portfolio_backtest.py \
+            --start "$START" --end "$END" \
+            --manifest "$MANIFEST" \
+            --config-dir config \
+            --batch "$BATCH_FILE" --candidate "$CANDIDATE" \
+            --trial-log "$RUNNER_TEMP/chain/trial-log.jsonl" \
+            --output "$out/report.json" \
+            --performance-out "$out/performance.json" \
+            --funnel-evidence-out "$out/funnel-evidence.json"
+          jq -e '{backtest: {calibration_fill_count: .fills_count}}' "$out/report.json" > "$out/evidence.json"
+
+      - name: Upload the extended trial log chain
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: trial-log-chain
+          path: ${{ runner.temp }}/chain/
+          overwrite: true
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Upload the candidate's evidence
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: evidence-validation-${{ matrix.candidate.strategy_id }}
+          path: |
+            ${{ runner.temp }}/out/${{ matrix.candidate.strategy_id }}/performance.json
+            ${{ runner.temp }}/out/${{ matrix.candidate.strategy_id }}/evidence.json
+            ${{ runner.temp }}/out/${{ matrix.candidate.strategy_id }}/funnel-evidence.json
+          retention-days: 90
+          if-no-files-found: error
+
+  # The champion comes from the rule signed with the batch (ADR-026 §5).
+  # Exit 1 is "no champion", a valid outcome.
+  judge-validation:
+    name: Pick the champion
+    needs: [check, judge-train, validation]
+    runs-on: [self-hosted, hermes-backtest]
+    environment: backtest-validation
+    timeout-minutes: 30
+    env:
+      BATCH_FILE: ${{ needs.check.outputs.batch_file }}
+      BATCH_ID: ${{ needs.check.outputs.batch_id }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: uv
+        run: |
+          set -euo pipefail
+          have=$(uv --version 2>/dev/null | cut -d' ' -f2 || true)
+          if [ "$have" != "$UV_PIN" ]; then
+            curl -LsSf "https://github.com/astral-sh/uv/releases/download/${UV_PIN}/uv-installer.sh" \
+              | env UV_INSTALL_DIR="$HOME/.local/bin" sh
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: uv sync
+        run: uv sync --frozen
+
+      - name: Download the trial log chain
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: trial-log-chain
+          path: ${{ runner.temp }}/chain
+
+      - name: Download the candidates' evidence
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: evidence-validation-*
+          path: ${{ runner.temp }}/evidence-by-artifact
+
+      - name: Judge the batch on Validation
+        run: |
+          set -uo pipefail
+          root="$RUNNER_TEMP/evidence-by-artifact"
+          evidence="$RUNNER_TEMP/evidence"
+          out="$RUNNER_TEMP/judge"
+          mkdir -p "$evidence" "$out"
+          for dir in "$root"/evidence-validation-*; do
+            [ -d "$dir" ] || continue
+            mv "$dir" "$evidence/${dir##*/evidence-validation-}"
+          done
+          code=0
+          uv run hermes funnel --batch "$BATCH_FILE" --stage validation \
+            --evidence-dir "$evidence" --trial-log "$RUNNER_TEMP/chain/trial-log.jsonl" \
+            --out "$out" > "$out/stdout.txt" || code=$?
+          case "$code" in
+            0|1) ;;
+            *) echo "::error::hermes funnel --batch exited $code (usage, data or evidence error)"; exit "$code" ;;
+          esac
+          {
+            echo "## Validation: $BATCH_ID"
+            echo
+            echo '```text'
+            awk '/^(PASS|FAIL|NA) /{print $1, $2, $3} /^CHAMPION /{print}' "$out/stdout.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the Validation verdicts
+        if: ${{ always() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: batch-${{ needs.check.outputs.batch_id }}-${{ github.run_id }}-validation
+          path: |
+            ${{ runner.temp }}/judge/verdicts/
+            ${{ runner.temp }}/judge/selection.json
+            ${{ runner.temp }}/judge/funnel-batch.txt
+          retention-days: 90
+          if-no-files-found: warn
+
+  # Opens the PR that commits the batch's trial lines and PASS/FAIL records, so
+  # no AI session downloads an artifact or handles a value (ADR-026 §6). It runs
+  # after a failed batch too: lines already appended still count. Its token is a
+  # dedicated App's, minted here, scoped to pull requests and contents of this
+  # repository, and the backtest jobs above hold none (ADR-019).
+  results:
+    name: Open the results PR
+    needs: [check, train, judge-train, validation, judge-validation]
+    if: ${{ !cancelled() && needs.check.result == 'success' && needs.train.result != 'skipped' }}
+    runs-on: [self-hosted, hermes-backtest]
+    environment: backtest-results
+    timeout-minutes: 20
+    env:
+      BATCH_ID: ${{ needs.check.outputs.batch_id }}
+      EXPERIMENT: ${{ needs.check.outputs.experiment }}
+      RUN_ID: ${{ github.run_id }}
+      COMMIT: ${{ github.sha }}
+      # Fixed here, never taken from the batch: the App may only push below this prefix.
+      BRANCH_PREFIX: batch-results/
+    steps:
+      - name: Results App configured
+        id: gate
+        env:
+          APP_ID: ${{ vars.HERMES_RESULTS_APP_ID }}
+        run: |
+          set -euo pipefail
+          if [ -z "$APP_ID" ]; then
+            echo "::notice::HERMES_RESULTS_APP_ID is not set, so no results PR is opened; the trial lines stay in the run's artifacts for 90 days"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ ! "$BATCH_ID" =~ ^[a-z0-9][a-z0-9-]*$ || ! "$EXPERIMENT" =~ ^[a-z0-9][a-z0-9-]*$ ]]; then
+            echo "::error::the batch id and experiment must be plain lowercase names"
+            exit 1
+          fi
+          echo "configured=true" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: ${{ steps.gate.outputs.configured == 'true' }}
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+
+      - name: uv
+        if: ${{ steps.gate.outputs.configured == 'true' }}
+        run: |
+          set -euo pipefail
+          have=$(uv --version 2>/dev/null | cut -d' ' -f2 || true)
+          if [ "$have" != "$UV_PIN" ]; then
+            curl -LsSf "https://github.com/astral-sh/uv/releases/download/${UV_PIN}/uv-installer.sh" \
+              | env UV_INSTALL_DIR="$HOME/.local/bin" sh
+            echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: uv sync
+        if: ${{ steps.gate.outputs.configured == 'true' }}
+        run: uv sync --frozen
+
+      - name: Download the trial log chain
+        if: ${{ steps.gate.outputs.configured == 'true' }}
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: trial-log-chain
+          path: ${{ runner.temp }}/chain
+
+      - name: Download the verdicts
+        if: ${{ steps.gate.outputs.configured == 'true' }}
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: batch-${{ needs.check.outputs.batch_id }}-${{ github.run_id }}-*
+          path: ${{ runner.temp }}/verdict-artifacts
+
+      - name: Assemble the results
+        id: assemble
+        if: ${{ steps.gate.outputs.configured == 'true' }}
+        run: |
+          set -euo pipefail
+          args=(--repo-root . --experiment "$EXPERIMENT" --batch-id "$BATCH_ID"
+                --run-id "$RUN_ID" --commit "$COMMIT" --notes-out "$RUNNER_TEMP/notes.md"
+                --require-chain)
+          if [ -f "$RUNNER_TEMP/chain/trial-log.jsonl" ]; then
+            args+=(--chain "$RUNNER_TEMP/chain/trial-log.jsonl")
+          fi
+          for dir in "$RUNNER_TEMP"/verdict-artifacts/*/verdicts; do
+            [ -d "$dir" ] && args+=(--verdicts "$dir")
+          done
+          selection="$RUNNER_TEMP/verdict-artifacts/batch-${BATCH_ID}-${RUN_ID}-validation/selection.json"
+          if [ -f "$selection" ]; then
+            args+=(--selection "$selection")
+          fi
+          uv run python scripts/backtest/assemble_results.py "${args[@]}"
+          if git diff --quiet && [ -z "$(git ls-files --others --exclude-standard)" ]; then
+            echo "::notice::the batch produced nothing to commit"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Mint the results App token
+        id: app-token
+        if: ${{ steps.assemble.outputs.changed == 'true' }}
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          app-id: ${{ vars.HERMES_RESULTS_APP_ID }}
+          private-key: ${{ secrets.HERMES_RESULTS_APP_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Commit and push the results branch
+        if: ${{ steps.assemble.outputs.changed == 'true' }}
+        env:
+          TOKEN: ${{ steps.app-token.outputs.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          branch="${BRANCH_PREFIX}${BATCH_ID}-${RUN_ID}"
+          git config user.name "hermes-results[bot]"
+          git config user.email "hermes-results[bot]@users.noreply.github.com"
+          git checkout -q -b "$branch"
+          git add docs/experiments
+          git commit -q -m "docs(experiment): record batch ${BATCH_ID} results (run ${RUN_ID})"
+          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+            push -q "https://github.com/${REPO}.git" "HEAD:refs/heads/${branch}"
+          echo "BRANCH=$branch" >> "$GITHUB_ENV"
+
+      - name: Open the PR
+        if: ${{ steps.assemble.outputs.changed == 'true' }}
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
+        env:
+          NOTES_FILE: ${{ runner.temp }}/notes.md
+        with:
+          github-token: ${{ steps.app-token.outputs.token }}
+          script: |
+            const fs = require('fs');
+            const { owner, repo } = context.repo;
+            const notes = fs.readFileSync(process.env.NOTES_FILE, 'utf8');
+            const batch = process.env.BATCH_ID;
+            const run = process.env.RUN_ID;
+            const body = [
+              '## Summary',
+              '',
+              `Before: batch ${batch} ran on server-01 and its trial lines and verdicts exist only in run ${run}'s artifacts.`,
+              '',
+              `After: the run's new trial lines, one verdict record per candidate and stage, and one lab notebook entry per verdict are committed. PASS/FAIL only; no metric value is written (ADR-012 D-06, ADR-023 §7).`,
+              '',
+              notes,
+              '## Related',
+              '',
+              '- ADR: ADR-026 §6, ADR-023 §6',
+              `- Issue: Refs #1061. Run: https://github.com/${owner}/${repo}/actions/runs/${run}`,
+              '',
+              '## Testing',
+              '',
+              'Opened by the batch workflow. The trial lines are appended byte for byte after a check that the chain starts with the committed log.',
+              '',
+              'Test tiers touched: none (experiment records only)',
+              '',
+              '## Zero-warnings compliance',
+              '',
+              'No code changed. Markdown follows the notebook entry format the lab notebook writer produces.',
+              '',
+              '## Risk',
+              '',
+              'None: records only. A reviewer checks the trial lines continue the log and the verdict records hold no value.',
+              '',
+            ].join('\n');
+            const { data: pr } = await github.rest.pulls.create({
+              owner, repo,
+              title: `docs(experiment): record batch ${batch} results`,
+              head: process.env.BRANCH,
+              base: 'main',
+              body,
+            });
+            core.notice(`Opened PR #${pr.number}`);
+            // The PR exists now; a renamed label or a closed milestone must not turn the run red.
+            try {
+              await github.rest.issues.update({
+                owner, repo, issue_number: pr.number,
+                labels: ['type:docs', 'p1', 'area:docs', 'size:s'],
+                assignees: ['rafo-claude-bot'],
+                milestone: 5,
+              });
+              await github.rest.pulls.requestReviewers({
+                owner, repo, pull_number: pr.number, reviewers: [owner],
+              });
+            } catch (error) {
+              core.warning(`PR #${pr.number} is open, but its metadata could not be set: ${error.message}`);
+            }

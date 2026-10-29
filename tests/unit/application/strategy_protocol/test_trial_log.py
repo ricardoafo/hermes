@@ -1,13 +1,11 @@
 """Unit tests for trial split classification and the log-backed summary.
 
-Invariants under test (openspec/changes/357-trial-log/change.md R-1, R-3):
+Invariants under test (openspec/archive/357-trial-log/change.md R-1, R-3):
 
 - A window touching Validation at all counts as a Validation touch.
 - A window touching OOS cannot be a trial.
 - The DSR summary is read from the trial log itself.
 """
-
-from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path

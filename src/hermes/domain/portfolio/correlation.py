@@ -20,10 +20,7 @@ RO-01 reads the coefficients of :class:`DailyCloses`, in the backtest replay
 Reference: pre-registration v1 §5.5; GitHub issues #514, #835.
 """
 
-from __future__ import annotations
-
-import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -31,6 +28,7 @@ from itertools import combinations, pairwise
 from typing import Final
 
 from hermes.domain.market_data.bar import Bar
+from hermes.domain.statistics.correlation import pearson
 from hermes.domain.value_objects.pair import Pair
 
 __all__ = [
@@ -38,7 +36,6 @@ __all__ = [
     "DailyCloses",
     "PairCorrelation",
     "aligned_daily_returns",
-    "pearson",
 ]
 
 CORRELATION_WINDOW_DAYS: Final[int] = 30
@@ -46,44 +43,6 @@ CORRELATION_WINDOW_DAYS: Final[int] = 30
 
 _ONE_DAY: Final[timedelta] = timedelta(days=1)
 _MIN_POINTS: Final[int] = 2
-
-
-def pearson(xs: Sequence[float], ys: Sequence[float]) -> float | None:
-    """Return Pearson's correlation of two equal-length series.
-
-    Args:
-        xs: First series.
-        ys: Second series, the same length as ``xs``.
-
-    Returns:
-        The coefficient in ``[-1, 1]``, or ``None`` when it is undefined:
-        fewer than two points or a series with no variance.
-
-    Raises:
-        ValueError: The series differ in length.
-    """
-    if len(xs) != len(ys):
-        raise ValueError(f"series differ in length: {len(xs)} vs {len(ys)}")
-    n = len(xs)
-    # A flat series is checked on its values: its float mean can differ from
-    # the value by one ulp, which would leave a tiny variance and a noise result.
-    if n < _MIN_POINTS or min(xs) == max(xs) or min(ys) == max(ys):
-        return None
-    mean_x = math.fsum(xs) / n
-    mean_y = math.fsum(ys) / n
-    dx = [x - mean_x for x in xs]
-    dy = [y - mean_y for y in ys]
-    var_x = math.fsum(d * d for d in dx)
-    var_y = math.fsum(d * d for d in dy)
-    if var_x == 0 or var_y == 0:
-        return None
-    covariance = math.fsum(a * b for a, b in zip(dx, dy, strict=True))
-    # Each root is taken on its own: the product of two tiny variances can
-    # underflow to zero although neither is zero.
-    scale = math.sqrt(var_x) * math.sqrt(var_y)
-    if scale == 0:
-        return None
-    return max(-1.0, min(1.0, covariance / scale))
 
 
 def aligned_daily_returns(

@@ -8,38 +8,18 @@ included (ADR-016 decision 3, computed upstream by the EUR FIFO replay).
 Reference: ADR-016 decisions 2, 3 and 6.
 """
 
-from __future__ import annotations
-
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 from typing import Final
-from zoneinfo import ZoneInfo
 
-from hermes.domain.tax.precision import exact
+from hermes.domain.tax.tax_calendar import tax_year_of
+from hermes.domain.value_objects.precision import exact
 
 __all__ = ["Disposal", "YearPosition", "tax_year_of"]
 
-_MADRID: Final = ZoneInfo("Europe/Madrid")
 _ZERO: Final[Decimal] = Decimal(0)
-
-
-def tax_year_of(at: datetime) -> int:
-    """Return the tax year of an instant: its Europe/Madrid calendar year.
-
-    Args:
-        at: Timezone-aware instant.
-
-    Returns:
-        The Madrid calendar year.
-
-    Raises:
-        ValueError: When ``at`` is naive.
-    """
-    if at.tzinfo is None:
-        raise ValueError(f"tax_year_of needs a timezone-aware datetime, got {at!r}")
-    return at.astimezone(_MADRID).year
 
 
 @dataclass(frozen=True, slots=True)

@@ -18,8 +18,6 @@ Seams: the integration test at the HTTP boundary lives in
 ``tests/integration/adapters/market_data/test_binance_live_klines_replay.py``.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -33,8 +31,8 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 import hermes.adapters.market_data.binance_live_klines as klines_module
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.clock import SimulatedClock
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.market_data.binance_live_klines import BinanceLiveKlinesAdapter
 from hermes.domain.errors import ExchangeError, NetworkError
 from hermes.domain.market_data.bar_schedule import interval_duration
@@ -92,7 +90,7 @@ class TestDelivery:
         assert keys(run.bars) == _reference_keys()
 
     @pytest.mark.timeout(120)  # each example simulates two days of polling
-    @settings(max_examples=12, deadline=None)
+    @settings(max_examples=12)
     @given(start_offset_minutes=st.integers(min_value=0, max_value=24 * 60))
     def test_emitted_close_times_are_monotonic(self, start_offset_minutes: int) -> None:
         """Close times never go backwards, wherever in the day the stream starts."""
@@ -134,7 +132,7 @@ class TestOutageBackfill:
     """A source outage is healed by the cursor: no gap, no duplicate, same order."""
 
     @pytest.mark.timeout(180)  # each example polls through an outage on a 5 s cadence
-    @settings(max_examples=10, deadline=None)
+    @settings(max_examples=10)
     @given(
         outage_start_minutes=st.integers(min_value=0, max_value=30 * 60),
         outage_minutes=st.integers(min_value=1, max_value=5 * 60),
@@ -771,7 +769,7 @@ class TestWireEdgeCases:
         ("row", "message"),
         [
             ([0, "abc", "1", "1", "1", "1", 14_399_999], "not a decimal"),
-            ([0, True, "1", "1", "1", "1", 14_399_999], "not string or numeric"),
+            ([0, True, "1", "1", "1", "1", 14_399_999], "is not numeric"),
             ([0, "1", "1", "2", "1", "1", 14_399_999], "domain invariants"),
             ([1, "1", "1", "1", "1", "1", 14_400_000], "aligned"),
         ],

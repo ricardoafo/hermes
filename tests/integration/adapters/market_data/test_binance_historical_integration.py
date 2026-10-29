@@ -1,7 +1,7 @@
 """Integration tests for :class:`BinanceHistoricalAdapter`.
 
 These tests verify the full adapter + fixture Parquet/CSV → bars/trades
-roundtrip, including multi-file scenarios and the consolidator integration.
+roundtrip, including multi-file scenarios and the aggregate-trade stream.
 
 The fixtures are in-memory ZIP files written to a temporary directory —
 no real network, no real filesystem mounts, but the full adapter code path
@@ -9,8 +9,6 @@ is exercised (including ZIP iteration, CSV parsing, domain construction).
 
 Test pyramid: integration tier (marker: ``integration``).
 """
-
-from __future__ import annotations
 
 import csv
 import io
@@ -22,7 +20,6 @@ import anyio
 import pytest
 
 from hermes.adapters.market_data.binance_historical import BinanceHistoricalAdapter
-from hermes.adapters.market_data.consolidator import BarConsolidator
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
@@ -176,8 +173,8 @@ def test_stream_bars_multiple_zip_files_merged_in_order(tmp_path: Path) -> None:
 
 
 @pytest.mark.integration
-def test_adapter_to_consolidator_pipeline(tmp_path: Path) -> None:
-    """Integration: historical adapter → consolidator pipeline produces H1 bars."""
+def test_adapter_streams_agg_trades_in_order(tmp_path: Path) -> None:
+    """Integration: the historical adapter streams every aggregate trade of the ZIP, in order."""
     pair_symbol = "BTCUSDT"
     trades_dir = tmp_path / "agg_trades" / pair_symbol / "2024" / "01"
 
@@ -199,31 +196,10 @@ def test_adapter_to_consolidator_pipeline(tmp_path: Path) -> None:
         return [trade async for trade in adapter.stream_trades(_BTC_USDT)]
 
     trades = anyio.run(_collect_trades)
-    assert len(trades) == 5, f"Expected 5 trades from fixture, got {len(trades)}"
-
-    consolidator = BarConsolidator(pair=_BTC_USDT, interval=KlineInterval.H1)
-    bars = list(consolidator.consolidate(trades))
-
-    assert len(bars) == 2, f"Expected 2 H1 bars from 5 trades spanning 2 hours, got {len(bars)}"
-
-    bar0 = bars[0]
-    assert bar0.open == Decimal("42000.00"), (
-        f"First H1 bar open should be 42000.00 (first trade in window), got {bar0.open}"
-    )
-    assert bar0.high == Decimal("42100.00"), (
-        f"First H1 bar high should be 42100.00 (max price in window), got {bar0.high}"
-    )
-    assert bar0.low == Decimal("41800.00"), (
-        f"First H1 bar low should be 41800.00 (min price in window), got {bar0.low}"
-    )
-    assert bar0.volume == Decimal("3.5"), (
-        f"First H1 bar volume should be 3.5 (1.0+2.0+0.5), got {bar0.volume}"
-    )
-
-    bar1 = bars[1]
-    assert bar1.open == Decimal("42500.00"), (
-        f"Second H1 bar open should be 42500.00, got {bar1.open}"
-    )
-    assert bar1.volume == Decimal("2.3"), (
-        f"Second H1 bar volume should be 2.3 (1.5+0.8), got {bar1.volume}"
-    )
+    assert [t.price for t in trades] == [
+        Decimal("42000.00"),
+        Decimal("42100.00"),
+        Decimal("41800.00"),
+        Decimal("42500.00"),
+        Decimal("42600.00"),
+    ]

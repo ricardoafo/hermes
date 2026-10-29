@@ -24,6 +24,10 @@
 #   1. Preflight: nothing on disk changes until every check passes.
 #   2. Install into versions/<sha12> unless its .installed marker exists.
 #      The venv is built at its final path because a venv is not relocatable.
+#   2a. (staging) Check the env file against the new release's config with
+#      `hermes config check`, as the service user, before anything restarts
+#      (#970). A loopback endpoint, a trading key or any other finding stops
+#      the deploy; the release stays installed but never goes live.
 #   2b. (prod) Wait out the 4h bar close: no restart from QUIET_BEFORE
 #      seconds before a close until QUIET_AFTER seconds after it (#626).
 #      The wait sits here, right before the steps that stop or restart
@@ -53,18 +57,27 @@
 # /etc/hermes/env.staging, hermes-staging.service, user hermes-staging).
 # A staging run refuses to start when any path it would write, its unit or
 # its user is prod's, or when its env file does not say HERMES_ENV=staging.
+#
+# Lab shadows (#1150): a staging run also reaches every enabled
+# hermes-shadow@<name> instance (#1076), each on
+# /var/lib/hermes-staging/shadows/<name>/hermes.sqlite3. It snapshots each
+# shadow ledger into shadows/<name>/backups, guards and migrates it like the
+# staging ledger, restarts and gates each instance after the flip, and on any
+# failure puts every ledger back to its snapshot on the old release. With
+# shadows enabled, staging waits out the bar close as prod does (2b).
 # By hand:
 #
 #   HERMES_TARGET=staging bash <stage>/bin/install_release.sh <sha12> <stage>
 #
-# Test seams: HERMES_ROOT, HERMES_ENV_FILE, SYSTEMCTL, HERMES_DB,
+# Test seams: HERMES_ROOT, HERMES_ENV_FILE, SYSTEMCTL, HERMES_DB, HERMES_SHADOWS_DIR,
 # HERMES_BACKUP_DIR, HERMES_BACKUP_PYTHON, HERMES_MIGRATE_BIN, RUNUSER,
-# HERMES_UNIT_DIR, HERMES_NOW_EPOCH, HERMES_SCHEMA_PYTHON, HERMES_PROC_DIR. The
+# HERMES_UNIT_DIR, HERMES_NOW_EPOCH, HERMES_SCHEMA_PYTHON, HERMES_PROC_DIR,
+# HERMES_CONFIG_CHECK_BIN. The
 # seams override the target's paths, and the staging guard still checks them.
 # The script can be sourced to reach prune_versions on its own.
 #
-# Reference: openspec/changes/179-cd-first-real-deploy/change.md (D-1..D-7),
-# openspec/changes/192-staging-env/change.md (D-3).
+# Reference: openspec/archive/179-cd-first-real-deploy/change.md (D-1..D-7),
+# openspec/archive/192-staging-env/change.md (D-3).
 
 set -euo pipefail
 
@@ -102,6 +115,9 @@ SYSTEMCTL=${SYSTEMCTL:-systemctl}
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 DB=${HERMES_DB:-$target_state/hermes.sqlite3}
 BACKUP_DIR=${HERMES_BACKUP_DIR:-$target_state/backups}
+# The lab's shadows (#1076): one hermes-shadow@<name> instance per shadow,
+# each on SHADOWS_DIR/<name>/hermes.sqlite3, all from staging's release.
+SHADOWS_DIR=${HERMES_SHADOWS_DIR:-$target_state/shadows}
 RUNUSER=${RUNUSER:-runuser}
 UNIT_DIR=${HERMES_UNIT_DIR:-/etc/systemd/system}
 PROC_DIR=${HERMES_PROC_DIR:-/proc}
@@ -140,6 +156,15 @@ WHEEL=""
 # Set while unit files are replaced: the old copies, and the units that are new.
 unit_backup=""
 units_added=()
+# Enabled shadow instances (staging only), and each one's pre-deploy snapshot.
+shadows=()
+declare -A shadow_snapshot=()
+# Ledgers `hermes migrate` ran on in this deploy (ledger -> its snapshot), and
+# the units stopped for it, so a failure puts both back.
+declare -A migrated=()
+stopped_units=()
+# Shadows restarted on the new release, so a failed gate knows which to undo.
+restarted_shadows=()
 
 log() {
     echo "[install_release] $*"
@@ -176,7 +201,7 @@ env_file_tier() {
 guard_staging() {
     local path
     [ "$TARGET" = staging ] || return 0
-    for path in "$ROOT" "$DB" "$BACKUP_DIR"; do
+    for path in "$ROOT" "$DB" "$BACKUP_DIR" "$SHADOWS_DIR"; do
         if is_within "$path" "$PROD_ROOT" || is_within "$path" "$PROD_STATE"; then
             die "staging target resolves $path inside prod's $PROD_ROOT or $PROD_STATE: refusing"
         fi
@@ -188,6 +213,34 @@ guard_staging() {
     [ "$RUN_AS" != "$PROD_RUN_AS" ] || die "staging target would run as prod's user $PROD_RUN_AS: refusing"
 }
 
+# Every enabled hermes-shadow@ instance, from the links `systemctl enable`
+# writes in the unit dir's *.wants. Staging only: the shadows run from
+# staging's release. A name becomes a path under SHADOWS_DIR, so anything but
+# a plain roster name stops the deploy before it changes anything.
+find_shadows() {
+    local name
+    [ "$TARGET" = staging ] || return 0
+    while IFS= read -r name; do
+        [ -n "$name" ] || continue
+        name=${name#hermes-shadow@}
+        name=${name%.service}
+        [[ "$name" =~ ^[a-z0-9][a-z0-9-]*$ ]] || die "'$name' is not a plain shadow name: refusing"
+        shadows+=("$name")
+    done < <(find "$UNIT_DIR" -mindepth 2 -maxdepth 2 -path '*.wants/hermes-shadow@*.service' -printf '%f\n' \
+        | LC_ALL=C sort -u)
+    if [ "${#shadows[@]}" -gt 0 ]; then
+        log "lab shadows: ${shadows[*]}"
+    fi
+}
+
+shadow_unit() {
+    echo "hermes-shadow@$1.service"
+}
+
+shadow_db() {
+    echo "$SHADOWS_DIR/$1/hermes.sqlite3"
+}
+
 cleanup_partial() {
     if [ -n "$partial_dir" ]; then
         rm -rf "$partial_dir"
@@ -197,6 +250,7 @@ cleanup_partial() {
 preflight() {
     local sha=$1 stage=$2 mode
     guard_staging
+    find_shadows
     [[ "$sha" =~ ^[0-9a-f]{12}$ ]] || die "version id '$sha' is not 12 lowercase hex chars"
     [ -d "$stage" ] || die "stage dir $stage missing"
 
@@ -259,6 +313,29 @@ install_version() {
     partial_dir=""
 }
 
+# Check the staging env file the way the new release will read it (#970):
+# same tier rules, same startup checks, before the unit is touched. It runs
+# as the service user, which systemd gives the file to anyway; the file goes
+# in on stdin because it is root 600. Findings name settings, never values.
+check_staging_env() {
+    local vdir=$1 bin out rc=0
+    [ "$TARGET" = staging ] || return 0
+    bin=${HERMES_CONFIG_CHECK_BIN:-$vdir/.venv/bin/hermes}
+    out=$("$RUNUSER" -u "$RUN_AS" -- "$bin" config check --config-dir "$vdir/config" \
+        --env-file - <"$ENV_FILE" 2>&1) || rc=$?
+    case $rc in
+        0) log "staging env file passes the release's config check" ;;
+        1)
+            echo "$out"
+            die "$ENV_FILE breaks the release's config rules: not deploying"
+            ;;
+        *)
+            echo "$out"
+            die "hermes config check failed to run on $ENV_FILE (exit $rc): not deploying"
+            ;;
+    esac
+}
+
 # Print how many seconds to wait so a restart starting now stays clear of
 # the bar close: QUIET_BEFORE before it through QUIET_AFTER after it.
 quiet_bar_wait() {
@@ -273,11 +350,12 @@ quiet_bar_wait() {
     fi
 }
 
-# Hold the deploy until the bar close is clear. Staging runs its own unit and
-# trades nothing, so only prod waits.
+# Hold the deploy until the bar close is clear. Prod waits, and so does a
+# staging deploy with lab shadows: a shadow restarted inside the close misses
+# that bar, which spends its ADR-021 budget. Staging alone trades nothing.
 wait_for_quiet_bar() {
     local wait
-    [ "$TARGET" = prod ] || return 0
+    [ "$TARGET" = prod ] || [ "${#shadows[@]}" -gt 0 ] || return 0
     wait=$(quiet_bar_wait "${HERMES_NOW_EPOCH:-$(date -u +%s)}")
     if [ "$wait" -gt 0 ]; then
         log "holding ${wait}s for the 4h bar close"
@@ -290,15 +368,16 @@ wait_for_quiet_bar() {
 # unlike `cp`, which can catch a half-written page or miss the WAL. It runs
 # as `hermes`, which owns the database, through the new release's own
 # Python (no sqlite3 CLI on the box). Prints the snapshot path, or nothing
-# when there is no ledger yet (first deploy).
+# when there is no ledger yet (first deploy). A shadow passes its own ledger
+# and backup dir.
 backup_ledger() {
-    local sha=$1 py=$2 out tmp
-    if [ ! -f "$DB" ]; then
-        log "no ledger at $DB yet: nothing to back up" >&2
+    local sha=$1 py=$2 db=${3:-$DB} dir=${4:-$BACKUP_DIR} out tmp
+    if [ ! -f "$db" ]; then
+        log "no ledger at $db yet: nothing to back up" >&2
         return 0
     fi
-    install -d -m 0750 -o "$RUN_AS" -g "$RUN_AS" "$BACKUP_DIR" 2>/dev/null || install -d -m 0750 "$BACKUP_DIR"
-    out="$BACKUP_DIR/pre-$sha.sqlite3"
+    install -d -m 0750 -o "$RUN_AS" -g "$RUN_AS" "$dir" 2>/dev/null || install -d -m 0750 "$dir"
+    out="$dir/pre-$sha.sqlite3"
     tmp="$out.partial"
     "$RUNUSER" -u "$RUN_AS" -- "$py" -c '
 import sqlite3, sys
@@ -308,23 +387,23 @@ with dst:
     src.backup(dst)
 dst.close()
 src.close()
-' "$DB" "$tmp" >&2 || { rm -f "$tmp"; return 1; }
+' "$db" "$tmp" >&2 || { rm -f "$tmp"; return 1; }
     mv -f "$tmp" "$out"
     log "ledger snapshot: $out" >&2
-    prune_backups
+    prune_backups "$dir"
     echo "$out"
 }
 
-# Keep the BACKUPS_KEPT newest snapshots by mtime.
+# Keep the BACKUPS_KEPT newest snapshots in $1 by mtime.
 prune_backups() {
-    local file n=0
+    local dir=$1 file n=0
     while IFS= read -r file; do
         n=$((n + 1))
         if [ "$n" -gt "$BACKUPS_KEPT" ]; then
             log "pruning snapshot $file" >&2
             rm -f "$file"
         fi
-    done < <(find "$BACKUP_DIR" -mindepth 1 -maxdepth 1 -type f -name 'pre-*.sqlite3' -printf '%T@ %p\n' \
+    done < <(find "$dir" -mindepth 1 -maxdepth 1 -type f -name 'pre-*.sqlite3' -printf '%T@ %p\n' \
         | LC_ALL=C sort -rn | cut -d' ' -f2-)
 }
 
@@ -332,21 +411,70 @@ prune_backups() {
 # never run at serve start, so without this step the new release would fail
 # its health gate on an existing ledger. Non-destructive migrations still run
 # at start as before. The unit is stopped first because `hermes migrate`
-# needs the ledger to itself; it restarts in activate_and_gate.
+# needs the ledger to itself; it restarts in activate_and_gate. Arguments:
+# release dir, ledger, the unit that writes it, its backup dir, its snapshot.
 migrate_ledger() {
-    local vdir=$1 bin status
-    if [ ! -f "$DB" ]; then
+    local vdir=$1 db=$2 unit=$3 dir=$4 snapshot=$5 bin status
+    if [ ! -f "$db" ]; then
         return 0
     fi
     bin=${HERMES_MIGRATE_BIN:-$vdir/.venv/bin/hermes}
-    status=$("$RUNUSER" -u "$RUN_AS" -- "$bin" migrate --db "$DB" --status) || return 1
+    status=$("$RUNUSER" -u "$RUN_AS" -- "$bin" migrate --db "$db" --status) || return 1
     case "$status" in
         *"(destructive)"*) ;;
         *) return 0 ;;
     esac
-    log "destructive migration pending: stopping $UNIT and running hermes migrate"
-    "$SYSTEMCTL" stop "$UNIT" || return 1
-    "$RUNUSER" -u "$RUN_AS" -- "$bin" migrate --db "$DB" --snapshot-dir "$BACKUP_DIR/migrations"
+    log "destructive migration pending on $db: stopping $unit and running hermes migrate"
+    "$SYSTEMCTL" stop "$unit" || return 1
+    stopped_units+=("$unit")
+    # A failed run rolls back in its own transaction, so only a ledger the
+    # run changed needs its snapshot back.
+    "$RUNUSER" -u "$RUN_AS" -- "$bin" migrate --db "$db" --snapshot-dir "$dir/migrations" || return 1
+    migrated[$db]=$snapshot
+}
+
+# Copy snapshot $2 over ledger $1, whose writer is stopped, as rollback.sh
+# does: the -wal/-shm files belong to the replaced image and go with it.
+restore_ledger() {
+    local db=$1 snapshot=$2
+    [ -n "$snapshot" ] && [ -f "$snapshot" ] || return 0
+    cp -f "$snapshot" "$db.restore" || return 1
+    chown --reference="$snapshot" "$db.restore" 2>/dev/null || true
+    mv -f "$db.restore" "$db" || return 1
+    rm -f "$db-wal" "$db-shm"
+    log "restored ledger $db from $snapshot"
+}
+
+# Migrate the staging ledger, then each shadow's. When one fails, every
+# ledger already migrated goes back to its snapshot and every stopped unit
+# starts again on the old release, which `current` still points at.
+migrate_ledgers() {
+    local vdir=$1 snapshot=$2 name db
+    if migrate_ledger "$vdir" "$DB" "$UNIT" "$BACKUP_DIR" "$snapshot"; then
+        for name in ${shadows[@]+"${shadows[@]}"}; do
+            db=$(shadow_db "$name")
+            migrate_ledger "$vdir" "$db" "$(shadow_unit "$name")" "$(dirname "$db")/backups" \
+                "${shadow_snapshot[$name]}" || break
+            db=""
+        done
+        [ -n "${db:-}" ] || return 0
+    fi
+    undo_migrations
+    return 1
+}
+
+# Before the flip: put every ledger this deploy migrated back to its snapshot
+# and start every unit it stopped, so the old release, which `current` still
+# points at, never meets a migrated ledger.
+undo_migrations() {
+    local db unit
+    for db in "${!migrated[@]}"; do
+        restore_ledger "$db" "${migrated[$db]}" || echo "::error::restoring $db failed"
+    done
+    "$SYSTEMCTL" start "$UNIT" || true
+    for unit in ${stopped_units[@]+"${stopped_units[@]}"}; do
+        [ "$unit" = "$UNIT" ] || "$SYSTEMCTL" start "$unit" || true
+    done
 }
 
 # Install every *.service and *.timer from the release's deploy/systemd whose
@@ -432,6 +560,43 @@ activate_and_gate() {
     bash "$SCRIPT_DIR/health_gate.sh" "$since"
 }
 
+# Restart every shadow on the new release, then gate each one.
+activate_shadows() {
+    local name unit since
+    for name in ${shadows[@]+"${shadows[@]}"}; do
+        unit=$(shadow_unit "$name")
+        since=$(date +%s)
+        restarted_shadows+=("$name")
+        "$SYSTEMCTL" reset-failed "$unit" || return 1
+        "$SYSTEMCTL" restart "$unit" || return 1
+        HERMES_GATE_UNIT=$unit bash "$SCRIPT_DIR/health_gate.sh" "$since" || return 1
+    done
+}
+
+# After a failed gate: stop each shadow the new release reached (migrated or
+# restarted), put its ledger back to its pre-deploy snapshot, and, when the
+# old release is back, start and gate it. A shadow it never reached still
+# runs the old release on its own ledger and is left alone.
+roll_back_shadows() {
+    local restart=$1 name unit since
+    for name in ${shadows[@]+"${shadows[@]}"}; do
+        if [ -z "${migrated[$(shadow_db "$name")]+x}" ] \
+            && [[ " ${restarted_shadows[*]-} " != *" $name "* ]]; then
+            continue
+        fi
+        unit=$(shadow_unit "$name")
+        "$SYSTEMCTL" stop "$unit" || true
+        restore_ledger "$(shadow_db "$name")" "${shadow_snapshot[$name]}" \
+            || echo "::error::restoring the $name shadow's ledger failed"
+        [ "$restart" = true ] || continue
+        since=$(date +%s)
+        "$SYSTEMCTL" reset-failed "$unit" || true
+        "$SYSTEMCTL" restart "$unit" || true
+        HERMES_GATE_UNIT=$unit bash "$SCRIPT_DIR/health_gate.sh" "$since" \
+            || echo "::error::shadow $name failed the gate on the old release too"
+    done
+}
+
 # Print the pid of a running process that has files of release dir $1
 # mapped (its python extension modules), or nothing. An open console runs
 # from the release it started on until it exits, so pruning that release
@@ -477,10 +642,26 @@ prune_versions() {
         | LC_ALL=C sort -rn | cut -d' ' -f2-)
 }
 
+# Refuse a release that cannot read the events already in ledger $3. Read-only,
+# as the service user that owns the ledger and its WAL files. The script goes
+# in on stdin: the staging dir is root-only (0700), so the service user cannot
+# open a path inside it.
+check_schema() {
+    local vdir=$1 sha=$2 db=$3 guard_rc=0
+    [ -f "$db" ] || return 0
+    "$RUNUSER" -u "$RUN_AS" -- "${HERMES_SCHEMA_PYTHON:-$vdir/.venv/bin/python}" \
+        - "$db" < "$SCRIPT_DIR/schema_guard.py" || guard_rc=$?
+    case $guard_rc in
+        0) ;;
+        3) die "release $sha cannot read the events in $db: not deploying it" ;;
+        *) die "the schema guard failed to run (exit $guard_rc): not deploying $sha" ;;
+    esac
+}
+
 main() {
     local sha=${1:?usage: install_release.sh <sha12> <stage_dir>}
     local stage=${2:?usage: install_release.sh <sha12> <stage_dir>}
-    local vdir="$ROOT/versions/$sha" cur="" prev_ok=false snapshot=""
+    local vdir="$ROOT/versions/$sha" cur="" prev_ok=false snapshot="" name db
 
     preflight "$sha" "$stage"
     trap cleanup_partial EXIT
@@ -492,36 +673,33 @@ main() {
         install_version "$vdir" "$stage"
     fi
 
+    check_staging_env "$vdir"
+
     wait_for_quiet_bar
 
     snapshot=$(backup_ledger "$sha" "${HERMES_BACKUP_PYTHON:-$vdir/.venv/bin/python}") \
         || die "ledger snapshot of $DB failed: not deploying $sha"
+    for name in ${shadows[@]+"${shadows[@]}"}; do
+        db=$(shadow_db "$name")
+        shadow_snapshot[$name]=$(backup_ledger "$sha" "${HERMES_BACKUP_PYTHON:-$vdir/.venv/bin/python}" \
+            "$db" "$(dirname "$db")/backups") || die "ledger snapshot of $db failed: not deploying $sha"
+    done
 
-    if [ -f "$DB" ]; then
-        # Read-only, as the service user that owns the ledger and its WAL files.
-        # The script goes in on stdin: the staging dir is root-only (0700), so
-        # the service user cannot open a path inside it.
-        local guard_rc=0
-        "$RUNUSER" -u "$RUN_AS" -- "${HERMES_SCHEMA_PYTHON:-$vdir/.venv/bin/python}" \
-            - "$DB" < "$SCRIPT_DIR/schema_guard.py" || guard_rc=$?
-        case $guard_rc in
-            0) ;;
-            3) die "release $sha cannot read the events in $DB: not deploying it" ;;
-            *) die "the schema guard failed to run (exit $guard_rc): not deploying $sha" ;;
-        esac
-    fi
+    check_schema "$vdir" "$sha" "$DB"
+    for name in ${shadows[@]+"${shadows[@]}"}; do
+        check_schema "$vdir" "$sha" "$(shadow_db "$name")"
+    done
 
-    if ! migrate_ledger "$vdir"; then
-        # current still points at the old release and the failed migration
-        # rolled back in its transaction, so the old release can run as before.
-        "$SYSTEMCTL" start "$UNIT" || true
-        die "hermes migrate failed on $DB: not deploying $sha"
+    if ! migrate_ledgers "$vdir" "$snapshot"; then
+        # current still points at the old release, every migrated ledger is
+        # back to its snapshot, and the stopped units run the old release again.
+        die "hermes migrate failed: not deploying $sha"
     fi
 
     if ! sync_units "$stage"; then
         # Nothing reloaded systemd yet, so the old units still run the old release.
         restore_units
-        "$SYSTEMCTL" start "$UNIT" || true
+        undo_migrations
         die "installing the release's systemd units failed: not deploying $sha"
     fi
 
@@ -539,7 +717,7 @@ main() {
     flip_link "$vdir" "$ROOT/current"
     log "current -> $(readlink "$ROOT/current")"
 
-    if ! activate_and_gate; then
+    if ! activate_and_gate || ! activate_shadows; then
         echo "::error::release $sha failed the health gate"
         if [ -L "$ROOT/previous" ] && ! [ "$ROOT/previous" -ef "$ROOT/current" ]; then
             prev_ok=true
@@ -554,6 +732,7 @@ main() {
             "$SYSTEMCTL" daemon-reload || true
             "$SYSTEMCTL" stop "$UNIT" || true
         fi
+        roll_back_shadows "$prev_ok"
         exit 1
     fi
 

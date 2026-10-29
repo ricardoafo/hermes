@@ -6,10 +6,8 @@ portfolio snapshot moves through ``after_fill`` and ``after_bar`` and is stored
 as marks; the entry signal is appended as the serve loop does. The CLI then
 reads that ledger file read-only.
 
-Reference: openspec/changes/ledger-read-model/change.md (A-5.2).
+Reference: openspec/archive/ledger-read-model/change.md (A-5.2).
 """
-
-from __future__ import annotations
 
 import io
 import json

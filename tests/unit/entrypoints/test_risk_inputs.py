@@ -32,13 +32,14 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints import risk_inputs as module
 from hermes.entrypoints.commands import discover
+from tests.support.paths import REPO_ROOT
 
 _NOW = datetime(2026, 10, 17, 12, tzinfo=UTC)
 _STRATEGY = StrategyId("swing-donchian-4h")
 _BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
 _ETH = Pair(base=Currency.ETH, quote=Currency.USDT)
 _SOL = Pair(base=Currency.SOL, quote=Currency.USDT)
-_CONFIG = Path(__file__).resolve().parents[3] / "config"
+_CONFIG = REPO_ROOT / "config"
 
 
 def _snapshot(equity: str, peak: str) -> PortfolioSnapshot:

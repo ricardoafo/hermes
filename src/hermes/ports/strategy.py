@@ -13,8 +13,6 @@ Reference: code-conventions.md §5 (Ports as Protocols).
 spec-5-swing-strategy-adapter change.md D-1.
 """
 
-from __future__ import annotations
-
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 if TYPE_CHECKING:

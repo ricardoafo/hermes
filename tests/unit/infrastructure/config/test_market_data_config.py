@@ -12,10 +12,6 @@ Invariants:
 - ``HERMES_MARKET_DATA__<FIELD>`` overrides reach the model.
 """
 
-from __future__ import annotations
-
-from pathlib import Path
-
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -26,8 +22,9 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.infrastructure.config import ConfigError, MarketDataConfig, load_config
 from hermes.infrastructure.config.loader import load_yaml_model
+from tests.support.paths import REPO_ROOT
 
-_REPO_CONFIG = Path(__file__).parents[4] / "config"
+_REPO_CONFIG = REPO_ROOT / "config"
 
 
 class TestMarketDataConfigHostAllowList:

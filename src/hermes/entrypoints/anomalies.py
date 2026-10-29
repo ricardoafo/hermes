@@ -16,20 +16,17 @@ anomalies are recorded and notified only, and nothing pauses trading on them.
 Exit codes: 0 success (also when there is none), 2 usage, 3 no ledger or unreadable.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import re
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Final, TextIO
 
 from hermes.adapters.ledger.anomaly_reader import SqliteAnomalyReader
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.anomaly_detected import AnomalyDetected
+from hermes.entrypoints._cli import add_db_arg
 from hermes.entrypoints._streams import resolve_err
-from hermes.entrypoints.serve import DEFAULT_DB_PATH
 from hermes.infrastructure.time import now_utc
 
 __all__ = ["main"]
@@ -68,7 +65,7 @@ def main(
     err = resolve_err(err)
     parser = argparse.ArgumentParser(prog="hermes anomalies", add_help=False)
     parser.add_argument("--since", default=_DEFAULT_SINCE)
-    parser.add_argument("--db", type=Path, default=DEFAULT_DB_PATH)
+    add_db_arg(parser)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("-h", "--help", action="store_true")
     try:

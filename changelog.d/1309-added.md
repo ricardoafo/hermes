@@ -1,0 +1,1 @@
+- `hermes batch check` reads a `kind: sweep` research batch (ADR-031 §1): up to 12 families of 4h template grids, expanded in one fixed order into at most 150 candidates with ids like `<family>@<param>=<value>,...`.

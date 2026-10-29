@@ -4,8 +4,6 @@ The FX seam is the scripted ``FakeFx``; the Frankfurter adapter itself is covere
 against recorded responses in ``tests/integration/adapters/fx``.
 """
 
-from __future__ import annotations
-
 import asyncio
 import dataclasses
 import sqlite3
@@ -17,6 +15,8 @@ from decimal import Decimal
 from pathlib import Path
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 from structlog.testing import capture_logs
 
 from hermes.application.ledger.eur_pricer import EurPricer
@@ -33,6 +33,7 @@ from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
+from hermes.domain.value_objects.time import MADRID
 from hermes.entrypoints import serve as serve_module
 from hermes.infrastructure.config.loader import load_config
 from tests.support.serve_loop import (
@@ -241,7 +242,8 @@ def test_serve_gives_both_notifiers_the_pricer_lookup(tmp_path: Path) -> None:
 class _ProbeFx(FakeFx):
     """FakeFx that notes how many trades the ledger held at each worker-thread call.
 
-    The fill path prices on the loop thread; only boot pricing runs in a worker.
+    Live fills read the cache only, so every provider call comes from the
+    pricing pass in a worker thread.
     """
 
     def __init__(self, db: Path, *, hang: threading.Event | None = None) -> None:
@@ -399,3 +401,124 @@ def test_cancelling_during_boot_pricing_exits_promptly_and_releases_resources(
         gate.set()
 
     assert (code, feed.closed, elapsed < 2.0) == (0, True, True)
+
+
+class _ThreadedFx(FakeFx):
+    """FakeFx that notes which provider calls ran on the event-loop thread."""
+
+    def __init__(self, rates: dict[date, tuple[Decimal, date]]) -> None:
+        """Answer from ``rates``; ``loop_calls`` collects calls made on the main thread."""
+        super().__init__(rates=rates)
+        self.loop_calls: list[date] = []
+
+    def get_for_date(self, from_currency: Currency, to_currency: Currency, on: date) -> FxRate:
+        """Note a main-thread call, then answer like FakeFx."""
+        if threading.current_thread() is threading.main_thread():
+            self.loop_calls.append(on)
+        return super().get_for_date(from_currency, to_currency, on)
+
+
+def test_a_live_fill_with_a_cold_cache_makes_no_provider_call_on_the_loop(
+    tmp_path: Path,
+) -> None:
+    """Invariant (#996): the fill path never calls FX; the worker pass prices the fill."""
+    db = tmp_path / "t.sqlite3"
+    first = FakeFeed(warm=history(10))
+    run_once(build(db, first, h4_bar(10).close_time + timedelta(seconds=1)), first)
+    feed = FakeFeed(warm=history(11))
+    started = h4_bar(11).close_time + timedelta(seconds=1)
+    fx = _ThreadedFx(
+        {
+            _SEED_DAY: (Decimal("1.25"), _SEED_DAY),
+            started.date(): (Decimal("1.10"), started.date()),
+        }
+    )
+    composition = build(db, feed, started, fx=fx)
+
+    with capture_logs() as logs:
+        code = run_once(composition, feed, until=lambda: _priced(logs))
+
+    trades = _count(db, "SELECT COUNT(*) FROM trades")
+    assert (code, fx.loop_calls, trades, _pending_trades(db)) == (0, [], 1, 0)
+
+
+class _SteppingMonotonic:
+    """Monotonic clock that jumps past the pricer's failure back-off on every read."""
+
+    def __init__(self) -> None:
+        """Start at zero."""
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        """Return the current reading, then step ten minutes."""
+        reading = self.now
+        self.now += 600.0
+        return reading
+
+
+def test_the_daily_pass_prices_a_fill_the_first_pass_left_pending(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Invariant (#996): a rate missing at boot is picked up by the next daily pass."""
+    monkeypatch.setattr(serve_module, "seconds_until_next_eur_pass", lambda _now: 0.05)
+    fill_day = date(2024, 1, 2)
+    fx = FakeFx(rates={_SEED_DAY: (Decimal("1.25"), _SEED_DAY)})
+    db = tmp_path / "t.sqlite3"
+    seeded = FakeFeed()
+    run_once(build(db, seeded, BASE, fx=fx), seeded)
+    built = build(db, FakeFeed(), BASE + timedelta(days=4), fx=fx)
+    composition = dataclasses.replace(
+        built, eur_pricer=EurPricer(fx, monotonic=_SteppingMonotonic())
+    )
+    _record_pending_buys(composition, [datetime(2024, 1, 2, 10, tzinfo=UTC)])
+
+    def _publish_after_first_pass(logs: Sequence[Mapping[str, object]]) -> bool:
+        passes = [e for e in logs if e["event"] == "serve.eur_priced"]
+        if passes:
+            fx.rates[fill_day] = (Decimal("1.10"), fill_day)
+        return any(e["trades_filled"] == 1 for e in passes)
+
+    with capture_logs() as logs:
+        code = run_once(composition, FakeFeed(), until=lambda: _publish_after_first_pass(logs))
+
+    passes = [e["trades_filled"] for e in logs if e["event"] == "serve.eur_priced"]
+    assert (code, passes[0], passes[-1], _pending_trades(db)) == (0, 0, 1, 0)
+
+
+@pytest.mark.parametrize(
+    ("now", "expected_hours"),
+    [
+        (datetime(2026, 10, 19, 8, 0, tzinfo=UTC), 7.0),
+        (datetime(2026, 10, 19, 15, 0, tzinfo=UTC), 24.0),
+        (datetime(2026, 10, 24, 16, 0, tzinfo=UTC), 24.0),
+        (datetime(2027, 3, 27, 16, 0, tzinfo=UTC), 23.0),
+    ],
+    ids=["morning-cest", "exactly-17-00", "autumn-switch", "spring-switch"],
+)
+def test_the_wait_to_the_next_pass_counts_real_seconds_across_dst(
+    now: datetime, expected_hours: float
+) -> None:
+    """Invariant (#996): the wait ends at 17:00 Madrid, counted in UTC across a DST switch.
+
+    Hand-computed: 08:00 UTC on 19 Oct is 10:00 CEST, 7 h to 17:00. 15:00 UTC is
+    17:00 CEST, so the next pass is a day on. 16:00 UTC on 24 Oct is 18:00 CEST;
+    17:00 CET on 25 Oct is 16:00 UTC, 24 h later though the wall clock moves 23 h.
+    16:00 UTC on 27 Mar 2027 is 17:00 CET exactly; 17:00 CEST on 28 Mar is
+    15:00 UTC, 23 h later.
+    """
+    assert serve_module.seconds_until_next_eur_pass(now) == expected_hours * 3600
+
+
+@given(
+    now=st.datetimes(
+        min_value=datetime(2020, 1, 1),
+        max_value=datetime(2040, 1, 1),
+        timezones=st.just(UTC),
+    )
+)
+def test_the_next_pass_always_lands_on_17_00_madrid_within_a_day(now: datetime) -> None:
+    """Invariant (#996): from any instant the wait is positive, at most 25 h, and ends at 17:00."""
+    seconds = serve_module.seconds_until_next_eur_pass(now)
+    lands = (now + timedelta(seconds=seconds)).astimezone(MADRID)
+    assert 0 < seconds <= 25 * 3600
+    assert (lands.hour, lands.minute, lands.second, lands.microsecond) == (17, 0, 0, 0)

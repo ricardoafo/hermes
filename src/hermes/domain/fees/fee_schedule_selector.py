@@ -23,12 +23,10 @@ No I/O, no clock, no pydantic. The adapter-layer loader
 (:mod:`hermes.adapters.fees.binance_history`) handles CSV parsing.
 
 Reference:
-    - openspec/changes/fee-history-time-aware-wire/change.md
+    - openspec/archive/fee-history-time-aware-wire/change.md
     - docs/architecture/adr-011-paper-trading-engine.md D-09
     - docs/experiments/swing-mvp1/pre-registration-v1.md §6.1
 """
-
-from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass

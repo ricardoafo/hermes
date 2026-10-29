@@ -1,13 +1,11 @@
 """Unit tests for the dataset manifest JSON file adapter.
 
-Invariants under test (openspec/changes/356-data-manifest/change.md Design):
+Invariants under test (openspec/archive/356-data-manifest/change.md Design):
 
 - Write then load returns an equal manifest.
 - A malformed, mislabelled or wrong-version file fails with DataManifestFormatError.
 - The committed manifest loads and matches the signed pre-registration.
 """
-
-from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
@@ -19,7 +17,6 @@ from hermes.adapters.data_manifest.json_file import JsonFileDatasetManifest
 from hermes.application.strategy_protocol.pinned_dataset import (
     assert_manifest_matches_preregistration,
 )
-from hermes.application.strategy_protocol.preregistration import PreRegistration
 from hermes.domain.errors import DataManifestFormatError
 from hermes.domain.market_data.dataset_manifest import (
     DatasetEntry,
@@ -30,10 +27,10 @@ from hermes.domain.market_data.dataset_manifest import (
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
-from hermes.ports.dataset_manifest import DatasetManifestPort
+from hermes.infrastructure.project_root import load_pre_registration
+from tests.support.paths import REPO_ROOT
 
-_ROOT = Path(__file__).resolve().parents[4]
-_COMMITTED = _ROOT / "docs" / "experiments" / "swing-mvp1" / "data-manifest.json"
+_COMMITTED = REPO_ROOT / "docs" / "experiments" / "swing-mvp1" / "data-manifest.json"
 
 
 def _manifest() -> DatasetManifest:
@@ -69,11 +66,6 @@ def _manifest() -> DatasetManifest:
             ),
         ),
     )
-
-
-def test_adapter_satisfies_the_port(tmp_path: Path) -> None:
-    """The JSON adapter can be injected wherever DatasetManifestPort is expected."""
-    assert isinstance(JsonFileDatasetManifest(tmp_path / "m.json"), DatasetManifestPort)
 
 
 def test_write_then_load_round_trips(tmp_path: Path) -> None:
@@ -150,7 +142,7 @@ def test_non_json_file_is_refused(tmp_path: Path) -> None:
 def test_committed_manifest_matches_the_signed_preregistration() -> None:
     """The pinned manifest in the repo uses the signed windows and pins no OOS dataset."""
     manifest = JsonFileDatasetManifest(_COMMITTED).load()
-    pre_reg = PreRegistration(project_root=_ROOT)
+    pre_reg = load_pre_registration(REPO_ROOT)
     assert_manifest_matches_preregistration(
         manifest, experiment_id=pre_reg.experiment_id(), windows=pre_reg.data_windows()
     )

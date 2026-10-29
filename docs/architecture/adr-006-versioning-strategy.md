@@ -1,10 +1,11 @@
 # ADR-006: Versioning strategy — SemVer for the release surface, numbered SQL migrations for the ledger, versioned config schemas for parameters
 
 **Date**: 2026-08-20
-**Status**: Accepted — partially superseded by [ADR-014](adr-014-pre-registration-binds-real-capital.md) (pre-release calendar only)
+**Status**: Accepted — partially superseded by [ADR-014](adr-014-pre-registration-binds-real-capital.md) (pre-release calendar only) and [ADR-027](adr-027-zero-major-versions-until-real-capital.md) (`0.x.y` and `1.0.0-shadow.N` pre-release lines)
 **Accepted**: 2026-08-21
 **Deciders**: Ricardo Afonso (product owner), Claude (proposer)
 **Supersedes**: —
+**Superseded in part by**: [ADR-014](adr-014-pre-registration-binds-real-capital.md) (pre-release calendar), [ADR-022](adr-022-release-versions-and-deploy-cadence.md) (§1 "Version bump rules", release-cut mechanics) and [ADR-027](adr-027-zero-major-versions-until-real-capital.md) (`0.y.z` and `1.0.0-shadow.N` pre-release lines)
 
 ## Context
 

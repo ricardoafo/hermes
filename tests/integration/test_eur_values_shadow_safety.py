@@ -1,149 +1,111 @@
 """Shadow-test safety: EUR recording never changes what the strategy does.
 
-Runs the scripted serve market (one ENTRY, one EXIT) through the swing
-strategy, the sizing calculator, the simulated exchange (fees included) and
-the portfolio tracker, recording every fill with :class:`TradeRecorder`. The
-run happens twice: once with the FX provider answering, once with it down.
-Every signal, sizing result, fill, balance and portfolio state must be
-byte-identical; only the ledger's EUR columns may differ.
+Runs the production ``hermes serve`` composition on the fake market's
+chandelier-exit script (one ENTRY, one EXIT on BTC/USDT): the swing strategy,
+the risk overlay and sizing, the ``ShadowExecutor`` and ``FillKernel`` over the
+real Binance depth adapter, the portfolio tracker and the ``TradeRecorder``. The
+run happens twice on two fresh ledgers: once with Frankfurter answering, once
+with it answering HTTP 503 for the whole run. Every signal, trade, fill-quality
+row, lot quantity, portfolio mark and stop mark must be byte-identical; only the
+ledger's EUR columns may differ.
+
+Columns left out of the comparison, and why:
+
+- EUR columns (``eur_*``, ``price_eur``, ``fee_eur``, ``value_eur``, the lot's
+  ``cost_basis_per_unit`` and the consumption's ``*_eur``): the point of the
+  test is that only these differ.
+- ``correlation_id``, ``lot_id``, ``payload_sha256`` (which hashes the
+  correlation id) and ``recorded_at``: drawn from fresh ULIDs and the wall clock
+  on every run, with or without FX.
 
 Reference: issue #386 "Shadow-test safety", change ``trade-eur-values`` R-5,
 ADR-016 item 9.
 """
 
-from __future__ import annotations
-
+import json
 import sqlite3
 from contextlib import closing
-from datetime import date, timedelta
-from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
-from hermes.adapters.exchanges.simulated import SimulatedExchangeAdapter
-from hermes.adapters.fills.orderbook_walk import OrderbookWalkFillModel
-from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
-from hermes.application.ledger.eur_pricer import EurPricer
-from hermes.application.ledger.trade_recorder import TradeRecorder
-from hermes.application.order_router.sizing import SizingCalculator, SizingInput, SizingPolicy
-from hermes.application.portfolio.tracker import PortfolioTracker
-from hermes.domain.fees.fee_schedule import FeeSchedule, FeeTier
-from hermes.domain.market_data.orderbook import Orderbook, OrderbookLevel
-from hermes.domain.portfolio.snapshot import PortfolioSnapshot
-from hermes.domain.strategy.signal import SignalKind
-from hermes.domain.trading.order import Order, OrderSide
-from hermes.domain.value_objects.currency import Currency
-from hermes.domain.value_objects.money import Money
-from hermes.domain.value_objects.pair import Pair
-from hermes.domain.value_objects.quantity import Quantity
-from hermes.domain.value_objects.strategy_id import StrategyId
-from tests.support.serve_loop import BTC, H4_BASE, FakeClock, fresh_strategy, history
-from tests.unit.application.ledger.fake_fx import FakeFx
+from tests.integration.scenarios import markets
+from tests.support.fake_market import harness
 
 pytestmark = pytest.mark.integration
 
-_STRATEGY = StrategyId("swing")
-_CAPITAL = Decimal("10000")
-_SIZING = SizingPolicy(
-    capital=_CAPITAL,
-    risk_pct=Decimal("0.01"),
-    max_position_pct=Decimal("0.05"),
-    max_total_exposure_pct=Decimal("0.15"),
+_RUN_IDS = ("correlation_id", "payload_sha256")
+"""Event payload fields that differ between any two runs, FX or not."""
+
+_BEHAVIOUR_QUERIES = (
+    "SELECT pair_base, pair_quote, side, qty_amount, qty_asset, price_amount, fee_amount,"
+    " fee_currency, executed_at FROM trades ORDER BY id",
+    "SELECT asset, original_qty, remaining_qty, opened_at, strategy_id,"
+    " cost_basis_native_per_unit, native_currency, trade_id FROM lots ORDER BY opened_at, asset",
+    "SELECT consumed_qty, consumed_asset, consumed_at, trade_id FROM lot_consumptions ORDER BY id",
+    "SELECT strategy_id, asset, amount, seeded_at FROM capital_seeds ORDER BY id",
+    "SELECT strategy_id, pair_base, pair_quote, interval, bar_close_time, quote, starting_cash,"
+    " cash, market_value, equity, realized_pnl, peak_equity, positions_json"
+    " FROM portfolio_marks ORDER BY id",
+    "SELECT strategy_id, pair_base, pair_quote, entry_time, bar_close_time, stop_price,"
+    " chandelier_level, atr, high_since_entry, stop_moved FROM stop_marks"
+    " ORDER BY pair_base, bar_close_time",
 )
-_FEES = FeeSchedule.from_tiers(
-    pair=BTC,
-    tiers=(FeeTier(volume_threshold_usd=Decimal("0"), maker_bps=10, taker_bps=10),),
-)
+
+_EVENT_TYPES = ("SignalEmitted", "TradeExecuted", "FillQualityRecorded", "ShadowCapitalSeeded")
 
 
-def _book(pair: Pair, price: Decimal, clock: FakeClock) -> Orderbook:
-    return Orderbook(
-        pair=pair,
-        bids=(OrderbookLevel(price=price - 1, quantity=Decimal("1000")),),
-        asks=(OrderbookLevel(price=price, quantity=Decimal("1000")),),
-        snapshot_time=clock.now(),
-    )
+def _serve(db: Path, *, fx_down: bool) -> int:
+    """Run serve on the chandelier-exit market against a fresh ledger; return its exit code."""
+    scenario = markets.chandelier_exit()
+    return harness.serve(
+        scenario.market, db, live_from=scenario.live_from, fx_down=fx_down
+    ).exit_code
 
 
-def _run(fx: FakeFx, conn: sqlite3.Connection) -> list[str]:
-    """Drive the scripted market against the ledger on ``conn``; return the behaviour trace."""
-    clock = FakeClock(H4_BASE)
-    last_close: dict[str, Decimal] = {"px": Decimal("1000")}
-    exchange = SimulatedExchangeAdapter(
-        fill_model=OrderbookWalkFillModel(apply_slippage=False),
-        orderbook_fn=lambda pair: _book(pair, last_close["px"], clock),
-        clock=clock,
-        fee_schedule_fn=lambda _pair: _FEES,
-        initial_balances={Currency.USDT: _CAPITAL},
-    )
-    tracker = PortfolioTracker(
-        PortfolioSnapshot.seed(_STRATEGY, Money(amount=_CAPITAL, currency=Currency.USDT))
-    )
-    strategy = fresh_strategy()
-    recorder = TradeRecorder(SqliteLedger(conn), EurPricer(fx))
-
-    trace: list[str] = []
-    for bar in history(14):
-        tracker.mark(bar)
-        signal = strategy.on_bar(bar, tracker.state())
-        trace.append(repr(signal))
-        if signal is None:
-            continue
-        clock.current = bar.close_time
-        last_close["px"] = bar.close
-        if signal.kind == SignalKind.ENTRY:
-            assert signal.entry_price is not None
-            sizing = SizingCalculator(_SIZING).compute(
-                SizingInput(
-                    entry_px=signal.entry_price,
-                    stop_px=signal.stop_price,
-                    open_notional=tracker.open_notional(),
-                )
-            )
-            trace.append(repr(sizing))
-            side, qty = OrderSide.BUY, sizing.unwrap().qty
-        else:
-            side, qty = OrderSide.SELL, exchange.get_balance(currency=Currency.BTC).amount
-        fill = exchange.place_market_order(
-            side=side,
-            order=Order(
-                side=side,
-                pair=BTC,
-                qty=Quantity(amount=qty, asset=Currency.BTC),
-                strategy_id=_STRATEGY,
-            ),
-        )
-        trace.append(repr(fill))
-        trace.append(repr(tracker.apply_fill(fill)))
-        recorder.record(fill, correlation_id=f"c-{len(trace)}")
-        trace.append(repr(exchange.get_balance(currency=Currency.USDT)))
-        trace.append(repr(exchange.get_balance(currency=Currency.BTC)))
-    trace.append(repr(tracker.state()))
+def _behaviour(db: Path) -> list[str]:
+    """Return everything serve decided and recorded, minus EUR values and per-run ids."""
+    with closing(sqlite3.connect(db)) as conn:
+        trace = [repr(row) for query in _BEHAVIOUR_QUERIES for row in conn.execute(query)]
+        rows = conn.execute(
+            "SELECT event_type, occurred_at, payload_json FROM events"
+            " WHERE event_type IN (?, ?, ?, ?) ORDER BY id",
+            _EVENT_TYPES,
+        ).fetchall()
+    for event_type, occurred_at, payload_json in rows:
+        payload = {k: v for k, v in json.loads(payload_json).items() if k not in _RUN_IDS}
+        trace.append(f"{event_type} {occurred_at} {json.dumps(payload, sort_keys=True)}")
     return trace
 
 
-def _fx_up() -> FakeFx:
-    """Answer every date of the scripted market, each resolved to itself (final)."""
-    start = H4_BASE.date() - timedelta(days=20)
-    days = [date.fromordinal(start.toordinal() + i) for i in range(40)]
-    return FakeFx(rates={day: (Decimal("1.0912"), day) for day in days})
+def _statuses(db: Path) -> list[tuple[str, str]]:
+    """Return ``(side, eur_status)`` of every trade, oldest first."""
+    with closing(sqlite3.connect(db)) as conn:
+        return conn.execute("SELECT side, eur_status FROM trades ORDER BY id").fetchall()
 
 
-def test_strategy_sizing_and_fills_are_identical_with_and_without_fx() -> None:
-    """Invariant (A-5.1): FX availability changes only ledger EUR columns, never behaviour."""
-    with (
-        closing(sqlite3.connect(":memory:")) as ledger_with,
-        closing(sqlite3.connect(":memory:")) as ledger_without,
-    ):
-        with_fx = _run(_fx_up(), ledger_with)
-        without_fx = _run(FakeFx(down=True), ledger_without)
+def _seed_status(db: Path) -> str:
+    """Return the ``eur_status`` of the capital seed."""
+    with closing(sqlite3.connect(db)) as conn:
+        return str(conn.execute("SELECT eur_status FROM capital_seeds").fetchone()[0])
 
-        assert "\n".join(with_fx).encode() == "\n".join(without_fx).encode()
-        statuses = (
-            ledger_with.execute("SELECT side, eur_status FROM trades ORDER BY id").fetchall(),
-            ledger_without.execute("SELECT side, eur_status FROM trades ORDER BY id").fetchall(),
-        )
-        assert statuses == (
-            [("BUY", "ok"), ("SELL", "ok")],
-            [("BUY", "pending"), ("SELL", "pending")],
-        )
+
+def test_strategy_sizing_and_fills_are_identical_with_and_without_fx(tmp_path: Path) -> None:
+    """Invariant (A-5.1): FX availability changes only ledger EUR columns, never behaviour.
+
+    The boot pass prices the seed when FX answers. Live fills read the rate
+    cache only (#996), so both runs leave their trades pending for the daily pass.
+    """
+    with_fx, without_fx = tmp_path / "with-fx.sqlite3", tmp_path / "without-fx.sqlite3"
+    exit_codes = (_serve(with_fx, fx_down=False), _serve(without_fx, fx_down=True))
+
+    assert "\n".join(_behaviour(with_fx)).encode() == "\n".join(_behaviour(without_fx)).encode()
+    assert (exit_codes, _seed_status(with_fx), _seed_status(without_fx)) == (
+        (0, 0),
+        "ok",
+        "pending",
+    )
+    assert (_statuses(with_fx), _statuses(without_fx)) == (
+        [("BUY", "pending"), ("SELL", "pending")],
+        [("BUY", "pending"), ("SELL", "pending")],
+    )

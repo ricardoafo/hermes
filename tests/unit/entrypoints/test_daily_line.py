@@ -10,8 +10,6 @@ Invariants protected here:
 - no P&L word ever appears.
 """
 
-from __future__ import annotations
-
 import io
 import json
 import re
@@ -24,6 +22,7 @@ from hermes.application.status import StatusReport, UnitState, build_report
 from hermes.domain.strategy.signal import SignalKind
 from hermes.entrypoints import status as status_module
 from hermes.entrypoints.daily_line import JournalCounts, count_journal, daily_line
+from tests.support.paths import REPO_ROOT
 from tests.support.status_ledger import (
     ETH,
     INTERVALS,
@@ -34,7 +33,7 @@ from tests.support.status_ledger import (
     write_ledger,
 )
 
-_CONFIG = Path(__file__).resolve().parents[3] / "config"
+_CONFIG = REPO_ROOT / "config"
 _PNL_WORDS = re.compile(
     r"p&l|pnl|profit|loss|equity|sharpe|drawdown|win rate|return", re.IGNORECASE
 )

@@ -28,8 +28,6 @@ What the plain generator leaves out, and why:
 - NaN or non-numeric prices (issue #850).
 """
 
-from __future__ import annotations
-
 import math
 import random
 from dataclasses import dataclass, field
@@ -93,8 +91,18 @@ class GeneratedPath:
 
     @property
     def end(self) -> datetime:
-        """Return the instant the last bar closes."""
-        return self.market.end
+        """Return when the run stops: the last bar's close, or once every bar can be out.
+
+        A late bar shown after the last close, or a klines outage still open at
+        it, holds bars back past the end of the market. The run then goes on
+        until a minute after the last of those ends (the feed polls at least
+        every 30 s while it waits), so serve gets to fetch and handle them, as
+        it would live (issue #1207).
+        """
+        held_back = [shown for _, _, _, shown in self.late_bars] + [
+            end for _, end in self.klines_outages
+        ]
+        return max([self.market.end, *(at + _MINUTE for at in held_back)])
 
 
 @dataclass

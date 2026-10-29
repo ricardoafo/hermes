@@ -9,8 +9,6 @@ Invariants under test:
 - A sample refuses a naive timestamp, a negative spread and an empty window.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 

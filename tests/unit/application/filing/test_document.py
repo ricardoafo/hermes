@@ -1,7 +1,5 @@
 """Tests for the tax pack's document model (change 568-tax-pack D-8)."""
 
-from __future__ import annotations
-
 import pytest
 
 from hermes.application.filing.document import Table

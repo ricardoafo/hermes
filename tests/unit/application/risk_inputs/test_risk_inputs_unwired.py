@@ -6,6 +6,8 @@ of the 1D closes, as the portfolio backtest does (#822), and not RO-02 (spread
 spike) or the live-phase recovery, single SA-9 and 30-trade Sharpe kills,
 which the backtest never runs. These tests fail on purpose when that set
 changes, so it is a deliberate change that updates them, never a side effect.
+Real money feeds these inputs through ``live_inputs`` (#1158,
+``test_live_risk_inputs_reach_rules.py``); without it, shadow stays here.
 The import-linter contract ``risk-inputs-are-record-only`` in
 ``pyproject.toml`` keeps the recorded rows (#835) out of every decision.
 
@@ -17,8 +19,6 @@ Invariants under test:
 - Serve's kill inputs leave the recovery, single SA-9 and 30-trade Sharpe
   kills neutral, whatever the portfolio did.
 """
-
-from __future__ import annotations
 
 import inspect
 from dataclasses import replace
@@ -73,6 +73,7 @@ def _stand_in(snapshot: PortfolioSnapshot) -> SimpleNamespace:
     return SimpleNamespace(
         _kernel=SimpleNamespace(tracker=SimpleNamespace(snapshot=snapshot)),
         _killed_by="",
+        _live_inputs=None,
         _slippages=[],
         _btc_log_return_1d=lambda: None,
     )
@@ -104,7 +105,9 @@ def test_serve_market_snapshot_median_is_still_the_current_spread() -> None:
     market = shadow.ShadowExecutor._market_snapshot(_stand_in(snapshot), _BTC, book, bar, _NOW)  # type: ignore[arg-type]
 
     assert (market.current_spread, market.median_spread_1h) == (Decimal("0.02"), Decimal("0.02"))
-    assert "risk_inputs" not in inspect.getsource(shadow)
+    source = inspect.getsource(shadow)
+    assert "hermes.application.risk_inputs" not in source
+    assert "hermes.ports.risk_inputs" not in source
 
 
 def test_serve_kill_inputs_leave_the_live_only_kills_neutral() -> None:
@@ -112,7 +115,7 @@ def test_serve_kill_inputs_leave_the_live_only_kills_neutral() -> None:
     seeded = PortfolioSnapshot.seed(_STRATEGY, Money(amount=Decimal(10000), currency=Currency.USDT))
     snapshot = replace(seeded, cash=Decimal(6000))
 
-    state = shadow.ShadowExecutor._experiment_state(_stand_in(snapshot))  # type: ignore[arg-type]
+    state = shadow.ShadowExecutor._experiment_state(_stand_in(snapshot), _NOW)  # type: ignore[arg-type]
 
     assert (
         state.max_drawdown,

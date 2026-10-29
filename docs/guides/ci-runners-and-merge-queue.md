@@ -51,6 +51,17 @@ flowchart LR
 - Every runner is ephemeral. It takes one job, exits and re-registers,
   so one runner showing offline between jobs is normal.
   `hermes runners` (#516) reports each group's health.
+- **No job ever runs on a GitHub-hosted runner.** The deploy secrets and the
+  write token must stay on server-01 (Rick, 17 Oct 2026; issue #754). A job
+  whose runner variable is unset does not fall back to a hosted image: its
+  expression ends in the fixed label set `["self-hosted","linux","hermes"]`,
+  so it queues for a server-01 runner. `scripts/dev/runs-on-check.py`, part of
+  the `workflows` check in PR CI and `pr-preflight.sh`, fails any `runs-on`
+  that names a hosted image or lacks that self-hosted ending (#1069).
+  The check reads the expressions in the files. It cannot see the value of a
+  repo variable, so a runner variable set to a hosted image would pass it:
+  keep `RUNNER_LABEL`, `OPS_RUNNER_LABEL` and `REVIEW_RUNNER_LABEL` on
+  server-01 labels.
 
 Runner commands, all run from `scripts/dev/gh-runner` on Workbench:
 
@@ -90,6 +101,21 @@ flowchart TD
 - **Merging** never pushes to a PR branch and never updates one. The
   ruleset doesn't require up-to-date branches, because the queue proves
   the merged tree instead.
+
+## Change types
+
+`scripts/dev/change-type.py` is the one place that says what kind of change a diff is. A file takes the first rule it
+matches, and a diff takes the strictest type of its files. A file no rule names counts as engine, so a gap in the list
+fails safe. A release's type is the strictest type among the changes since the last deploy.
+
+- **Docs**: `docs/`, `openspec/` and any `*.md`. Lint only.
+- **Surface**: console screens and views, tests, and developer tooling. The unit tier and console snapshots.
+- **Runtime**: `serve`, adapters, infrastructure, deploy scripts, migrations and config other than
+  `config/strategies.yaml`. The unit tier and e2e.
+- **Engine**: the `ENGINE_PATHS` of ADR-025. Everything above, plus the Train replay.
+
+Run `python3 scripts/dev/change-type.py origin/main HEAD` to see the type of your branch. The table that says what each
+type runs in each environment is in ADR-024 §3.
 
 ## When a PR does not merge
 

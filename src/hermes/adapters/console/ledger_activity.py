@@ -19,20 +19,17 @@ model adds them from the journal reader when it is readable (#653).
 The connection is opened with SQLite's ``mode=ro`` URI and never migrates, so
 the feed is safe to read next to a running ``hermes serve``.
 
-Reference: openspec/changes/374-hermes-activity/change.md;
-openspec/changes/live-home-screen/change.md (D-5).
+Reference: openspec/archive/374-hermes-activity/change.md;
+openspec/archive/live-home-screen/change.md (D-5).
 """
-
-from __future__ import annotations
 
 import json
 import sqlite3
 from datetime import datetime
 from decimal import Decimal
-from pathlib import Path
-from typing import Final, Self
+from typing import Final
 
-from hermes.adapters.ledger.connection import open_ledger
+from hermes.adapters.ledger.connection import ReadOnlyLedgerReader
 from hermes.application.console.activity import candle_boundary
 from hermes.application.console.views import ActivityItem, ActivityKind
 from hermes.domain.errors import LedgerError
@@ -44,51 +41,8 @@ _OK: Final = "ok"
 _BUY: Final = "BUY"
 
 
-class LedgerActivityReader:
+class LedgerActivityReader(ReadOnlyLedgerReader):
     """Turn ledger events into activity rows."""
-
-    def __init__(self, connection: sqlite3.Connection) -> None:
-        """Wrap an already-open read-only connection.
-
-        Args:
-            connection: A connection opened by :meth:`open` (or a test's own).
-        """
-        self._conn = connection
-
-    @classmethod
-    def open(cls, path: Path) -> Self:
-        """Open ``path`` read-only.
-
-        Args:
-            path: The ledger file.
-
-        Returns:
-            A reader over a ``mode=ro`` connection.
-
-        Raises:
-            FileNotFoundError: There is no file at ``path``; nothing is created.
-            LedgerError: SQLite refused to open the file.
-        """
-        resolved = path.resolve()
-        if not resolved.is_file():
-            raise FileNotFoundError(str(path))
-        try:
-            connection = open_ledger(resolved, read_only=True)
-        except sqlite3.Error as exc:
-            raise LedgerError(msg=f"cannot open {path} read-only: {exc}") from exc
-        return cls(connection)
-
-    def close(self) -> None:
-        """Close the connection."""
-        self._conn.close()
-
-    def __enter__(self) -> Self:
-        """Return ``self`` for ``with`` blocks."""
-        return self
-
-    def __exit__(self, *_exc_info: object) -> None:
-        """Close the connection, whatever ended the ``with`` block."""
-        self.close()
 
     def items_since(self, since: datetime) -> tuple[ActivityItem, ...]:
         """Return the activity rows of every bar check, signal and fill at or after ``since``.

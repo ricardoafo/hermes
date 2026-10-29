@@ -8,8 +8,6 @@ audit or notify without reading the ledger row.
 Reference: ADR-003 §02 flow 1 (rebalancer cycle), code-conventions.md §10.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import ClassVar
 

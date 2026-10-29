@@ -1,6 +1,6 @@
 """Unit tests for trial records and the trial summary behind the DSR.
 
-Invariants under test (openspec/changes/357-trial-log/change.md R-1, R-3):
+Invariants under test (openspec/archive/357-trial-log/change.md R-1, R-3):
 
 - A trial record cannot describe an OOS run, a naive time, an empty dataset
   list or a missing commit.
@@ -8,8 +8,6 @@ Invariants under test (openspec/changes/357-trial-log/change.md R-1, R-3):
 - The summary counts every trial, counts Validation touches separately, and
   gives a Sharpe variance only when two or more trials report a Sharpe.
 """
-
-from __future__ import annotations
 
 import statistics
 from dataclasses import replace

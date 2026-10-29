@@ -16,15 +16,12 @@ Invariants (backtest-driver-mvp1-phase2 change.md D-4, R-1, R-6):
 The full run is smoke-tested against real data (see the change spec).
 """
 
-from __future__ import annotations
-
 import argparse
 import importlib.util
 import sys
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
 from types import ModuleType
 
 import pytest
@@ -34,9 +31,10 @@ from hermes.application.execution.prereg_book import ExitPricing
 from hermes.domain.statistics.performance import daily_returns
 from hermes.domain.statistics.sharpe import sharpe_ratio
 from tests.support.fill_kernel import seed
+from tests.support.paths import REPO_ROOT
 
-_SCRIPTS = Path(__file__).resolve().parents[3] / "scripts" / "backtest"
-_CONFIG = Path(__file__).resolve().parents[3] / "config"
+_SCRIPTS = REPO_ROOT / "scripts" / "backtest"
+_CONFIG = REPO_ROOT / "config"
 
 
 def _import_driver() -> ModuleType:

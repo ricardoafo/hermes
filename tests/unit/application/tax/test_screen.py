@@ -1,6 +1,6 @@
 """Tests for the Tax screen's view built from the tax estimate (issue #719).
 
-Reference: openspec/changes/719-tax-screen/change.md (R-1, R-2, R-5).
+Reference: openspec/archive/719-tax-screen/change.md (R-1, R-2, R-5).
 """
 
 from datetime import UTC, date, datetime, timedelta

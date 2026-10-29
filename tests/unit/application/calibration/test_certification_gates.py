@@ -4,8 +4,6 @@ Each test names the pre-registration rule it protects. Gates are pure, so the
 tests drive them with hand-built records and evidence and a fixed clock.
 """
 
-from __future__ import annotations
-
 from dataclasses import replace
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -17,7 +15,6 @@ from hypothesis import strategies as st
 
 from hermes.application.calibration.certification_gates import (
     LIVE_APPROVAL_PHRASE,
-    CertificationRecord,
     GateEvidence,
     LiveEvidence,
     OperatorSignOff,
@@ -31,8 +28,10 @@ from hermes.application.calibration.certification_gates import (
     section9_checks,
     v1_parameter_fingerprint,
 )
-from hermes.application.calibration.lifecycle import CertificationState
+from hermes.application.calibration.shadow_parity import MetricStatus
 from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.domain.calibration.certification import CertificationRecord, CertificationState
+from hermes.infrastructure.project_root import load_pre_registration
 
 _S = CertificationState
 _SID = "swing-donchian-4h"
@@ -51,10 +50,18 @@ _PASSING = WindowMetrics(
     fees_to_gross_pnl=0.2,
     win_rate=0.4,
 )
+_SHADOW = ShadowEvidence(
+    days=90,
+    drift_p50_bps=10.0,
+    kill_fired=False,
+    drift_breached=False,
+    m09=MetricStatus.OK,
+    m10=MetricStatus.OK,
+)
 _ALL_PASS = GateEvidence(
     backtest=_PASSING,
     calibration_fill_count=40,
-    shadow=ShadowEvidence(days=90, drift_p50_bps=10.0, kill_fired=False, drift_breached=False),
+    shadow=_SHADOW,
     oos=_PASSING,
     live=LiveEvidence(days=90, kill_fired=False),
     sign_off=OperatorSignOff("Ricardo", LIVE_APPROVAL_PHRASE, _OOS_DAY),
@@ -67,7 +74,7 @@ def pre_reg() -> PreRegistration:
     """Return the real signed pre-registration."""
     here = Path(__file__).resolve().parent
     root = next(p for p in [here, *here.parents] if (p / "pyproject.toml").exists())
-    return PreRegistration(project_root=root)
+    return load_pre_registration(root)
 
 
 def _record(
@@ -136,7 +143,7 @@ class TestSection9Checks:
     def test_win_rate_boundary_passes(self, pre_reg: PreRegistration) -> None:
         """Win rate is the one ≥ row in §9: exactly 30% passes."""
         checks = section9_checks(replace(_PASSING, win_rate=0.30), pre_reg.h1_thresholds())
-        assert all(c.passed for c in checks)
+        assert [c.name for c in checks if not c.passed] == []
 
 
 # ---------------------------------------------------------------------------
@@ -182,21 +189,34 @@ class TestBacktestGate:
 
 
 class TestShadowGate:
-    """BACKTEST_CERTIFIED → SHADOW_CERTIFIED: 90 days, drift p50 < 30 bps, no kill (§7, §10)."""
+    """BACKTEST_CERTIFIED → SHADOW_CERTIFIED (§7, §10; ADR-021 Done rule 3).
+
+    90 days, drift p50 < 30 bps, no kill, and M-09 and M-10 passed (#965).
+    """
 
     @pytest.mark.parametrize(
         ("shadow", "failed"),
         [
-            (ShadowEvidence(days=89, drift_p50_bps=10.0, kill_fired=False), "shadow_days"),
-            (ShadowEvidence(days=90, drift_p50_bps=30.0, kill_fired=False), "shadow_drift_p50_bps"),
-            (ShadowEvidence(days=90, drift_p50_bps=10.0, kill_fired=True), "shadow_kill"),
-            (ShadowEvidence(days=90, drift_p50_bps=10.0, kill_fired=None), "shadow_kill"),
+            (replace(_SHADOW, days=89), "shadow_days"),
+            (replace(_SHADOW, drift_p50_bps=30.0), "shadow_drift_p50_bps"),
+            (replace(_SHADOW, kill_fired=True), "shadow_kill"),
+            (replace(_SHADOW, kill_fired=None), "shadow_kill"),
+            (replace(_SHADOW, m09=None), "shadow_m09"),
+            (replace(_SHADOW, m09=MetricStatus.BLOCK), "shadow_m09"),
+            (replace(_SHADOW, m09=MetricStatus.INSUFFICIENT), "shadow_m09"),
+            (replace(_SHADOW, m10=None), "shadow_m10"),
+            (replace(_SHADOW, m10=MetricStatus.BLOCK), "shadow_m10"),
+            (replace(_SHADOW, m10=MetricStatus.INSUFFICIENT), "shadow_m10"),
         ],
     )
     def test_each_rule_blocks(
         self, pre_reg: PreRegistration, shadow: ShadowEvidence, failed: str
     ) -> None:
-        """89 days, 30 bps, a fired kill and an unknown kill state each block."""
+        """Each rule blocks alone, M-09 and M-10 on anything but pass (#965).
+
+        89 days, 30 bps, a fired or unknown kill, and an M-09 or M-10 that is
+        missing, block or insufficient.
+        """
         evidence = replace(_ALL_PASS, shadow=shadow)
         report = evaluate_next_gate(
             _record(_S.BACKTEST_CERTIFIED), evidence, now=_OOS_DAY, pre_reg=pre_reg

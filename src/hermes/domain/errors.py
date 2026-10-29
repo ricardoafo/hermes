@@ -9,8 +9,6 @@ Defines the sealed ``HermesError`` root and its two subtrees:
 Reference: code-conventions.md §2 — Error handling — hybrid Result/exceptions.
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Final
@@ -298,7 +296,7 @@ class DataManifestFormatError(InfraError):
         path: Manifest file path.
         msg: What was wrong with it.
 
-    Reference: openspec/changes/356-data-manifest/change.md Design.
+    Reference: openspec/archive/356-data-manifest/change.md Design.
     """
 
     path: str
@@ -348,10 +346,10 @@ class KrakenPublicError(InfraError):
 class OOSDataLeakageError(DomainError):
     """Attempted to read OOS data outside certification mode.
 
-    Raised by :class:`hermes.application.strategy_protocol.data_split_enforcer.DataSplitEnforcer`
-    when code attempts to read a bar or trade whose timestamp falls inside the
-    OOS test window (``2025-09-01 ≤ ts ≤ 2026-12-31``) while
-    ``certification_mode`` context variable is ``False``.
+    Raised by :func:`hermes.application.strategy_protocol.pinned_dataset.assert_oos_access_allowed`
+    when code attempts to read bars inside the OOS test window
+    (``2025-09-01 ≤ ts ≤ 2026-12-31``) while the certification lifecycle does
+    not allow it, for example outside certification mode.
 
     This is the code-enforced read refusal mandated by
     ``docs/experiments/swing-mvp1/pre-registration-v1.md`` §4 discipline gate.
@@ -392,7 +390,7 @@ class DatasetHashMismatchError(DomainError):
         expected_rows: Row count pinned in the manifest.
         actual_rows: Row count actually loaded.
 
-    Reference: openspec/changes/356-data-manifest/change.md R-1.
+    Reference: openspec/archive/356-data-manifest/change.md R-1.
     """
 
     dataset_id: str
@@ -420,7 +418,7 @@ class DatasetNotPinnedError(DomainError):
         interval: Interval string (e.g. ``4h``).
         reason: Which split is missing, or that the range lies outside every split.
 
-    Reference: openspec/changes/356-data-manifest/change.md R-3.
+    Reference: openspec/archive/356-data-manifest/change.md R-3.
     """
 
     pair: str
@@ -492,7 +490,7 @@ class TrialLogError(InfraError):
         path: Trial log path.
         msg: What went wrong, with the line number when known.
 
-    Reference: openspec/changes/357-trial-log/change.md D-2.
+    Reference: openspec/archive/357-trial-log/change.md D-2.
     """
 
     path: str

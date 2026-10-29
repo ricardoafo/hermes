@@ -1,18 +1,14 @@
 """Port-conformance tests for :class:`hermes.ports.clock.ClockPort`.
 
 Verifies that both concrete adapters — :class:`WallClock` and
-:class:`SimulatedClock` — structurally satisfy the ``ClockPort`` protocol
-and that the protocol's runtime-checkable ``isinstance`` check passes.
+:class:`SimulatedClock` — return the time the ``ClockPort`` contract asks
+for: a timezone-aware UTC instant, read from the right source.
 
-Reference: openspec/changes/spec-4a-clock-port/change.md A-2.1, A-3.1.
+Reference: openspec/archive/spec-4a-clock-port/change.md A-2.1, A-3.1.
 """
-
-from __future__ import annotations
 
 import typing
 from datetime import UTC, datetime, timedelta
-
-import pytest
 
 from hermes.adapters.clock import SimulatedClock, WallClock
 from hermes.ports.clock import ClockPort
@@ -21,27 +17,14 @@ _EPOCH = datetime(2025, 1, 1, tzinfo=UTC)
 
 
 class TestClockPortConformance:
-    """Both adapters must satisfy ClockPort at runtime and statically."""
+    """Both adapters return the instant ClockPort promises."""
 
-    def test_wall_clock_is_clock_port(self) -> None:
-        """WallClock satisfies ClockPort via isinstance (runtime_checkable)."""
-        clock = WallClock()
-        assert isinstance(clock, ClockPort), (
-            "WallClock does not satisfy ClockPort — check that it exposes now() -> datetime"
-        )
-
-    def test_simulated_clock_is_clock_port(self) -> None:
-        """SimulatedClock satisfies ClockPort via isinstance (runtime_checkable)."""
-        clock = SimulatedClock(start=_EPOCH)
-        assert isinstance(clock, ClockPort), (
-            "SimulatedClock does not satisfy ClockPort — check that it exposes now() -> datetime"
-        )
-
-    def test_wall_clock_now_returns_datetime(self) -> None:
-        """WallClock.now() returns a datetime instance."""
-        clock = WallClock()
-        result = clock.now()
-        assert isinstance(result, datetime)
+    def test_wall_clock_now_reads_the_system_clock(self) -> None:
+        """WallClock.now() lies between two readings of the system clock taken around it."""
+        before = datetime.now(UTC)
+        result = WallClock().now()
+        after = datetime.now(UTC)
+        assert before <= result <= after
 
     def test_wall_clock_now_is_timezone_aware(self) -> None:
         """WallClock.now() always returns a tz-aware datetime with zero UTC offset (A-2.2)."""
@@ -54,11 +37,10 @@ class TestClockPortConformance:
             f"WallClock.now() is not UTC — utcoffset={result.utcoffset()!r}"
         )
 
-    def test_simulated_clock_now_returns_datetime(self) -> None:
-        """SimulatedClock.now() returns a datetime instance."""
+    def test_simulated_clock_now_is_its_start(self) -> None:
+        """SimulatedClock.now() returns the start it was built with, and keeps returning it."""
         clock = SimulatedClock(start=_EPOCH)
-        result = clock.now()
-        assert isinstance(result, datetime)
+        assert [clock.now(), clock.now()] == [_EPOCH, _EPOCH]
 
     def test_simulated_clock_now_is_timezone_aware(self) -> None:
         """SimulatedClock.now() always returns a tz-aware datetime with zero UTC offset."""
@@ -78,18 +60,3 @@ class TestClockPortConformance:
         assert hints["return"] is datetime, (
             f"ClockPort.now must return datetime, got {hints['return']!r}"
         )
-
-    @pytest.mark.parametrize(
-        "adapter_instance",
-        [
-            WallClock(),
-            SimulatedClock(start=datetime(2025, 1, 1, tzinfo=UTC)),
-        ],
-        ids=["WallClock", "SimulatedClock"],
-    )
-    def test_all_adapters_are_clock_port_instances(self, adapter_instance: ClockPort) -> None:
-        """Parametrised: every adapter satisfies ClockPort."""
-        assert isinstance(adapter_instance, ClockPort)
-        ts = adapter_instance.now()
-        assert isinstance(ts, datetime)
-        assert ts.tzinfo is not None

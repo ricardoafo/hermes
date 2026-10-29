@@ -7,10 +7,8 @@ obligation is undetermined, or the year's own Renta Web boxes are not yet
 configured, and ``ready`` otherwise. Advisory items (the
 estimate, the gestor defaults, the shadow label) never change the status.
 
-Reference: openspec/changes/568-tax-pack/change.md D-2, R-3.
+Reference: openspec/archive/568-tax-pack/change.md D-2, R-3.
 """
-
-from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass

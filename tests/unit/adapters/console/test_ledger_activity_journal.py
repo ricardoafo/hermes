@@ -14,8 +14,6 @@ Invariants:
 - an unreadable journal leaves the journal rows out and the rest unchanged.
 """
 
-from __future__ import annotations
-
 import json
 from datetime import datetime, timedelta
 from pathlib import Path

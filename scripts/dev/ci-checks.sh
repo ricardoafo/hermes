@@ -12,7 +12,7 @@
 #
 # Checks:
 #   format, lint, types, imports      ruff format, ruff check, mypy, import-linter
-#   deps, complexity, deadcode        pip-audit, radon, vulture
+#   deps, complexity, deadcode        pip-audit, ruff C901, the dead-code ratchet (#1201)
 #   licenses                          pip-licenses through license-check.py
 #   unit                              tests/unit/ with branch coverage
 #   integration                       tests/integration/
@@ -23,10 +23,11 @@
 #   codeowners                        CODEOWNERS syntax
 #   markdown                          markdownlint on the full tree
 #   guides-index                      the guides index still builds (--check)
-#   workflows                         actionlint + zizmor on .github/workflows
+#   workflows                         actionlint + zizmor on .github/workflows, and
+#                                     every runs-on pinned to self-hosted runners (#1069)
 #   guards                            the pre-commit guards, over the whole tree,
 #                                     and every hook covered by CI (#840)
-#   self-tests                        every *-self-test pre-commit hook (#840)
+#   self-tests                        every scripts/dev self-test mode (#840, #1190)
 #
 # `--changed <base>` (unit, integration) runs only the tests for the files
 # changed since <base>: see scripts/dev/changed-tests.sh. CI always runs
@@ -96,11 +97,16 @@ run_guards() {
     local base="${GITHUB_BASE_REF:+origin/$GITHUB_BASE_REF}"
     local rc=0
     uv run python scripts/dev/no-vague-test-assertions.py || rc=1
-    bash scripts/dev/no-naive-datetime.sh || rc=1
     bash scripts/dev/no-domain-mode-check.sh || rc=1
+    uv run python scripts/dev/openspec-archive.py --check || rc=1
+    uv run python scripts/dev/agents-md-check.py || rc=1
+    uv run python scripts/dev/footprint-check.py || rc=1
+    uv run python scripts/dev/ratchets.py dup || rc=1
+    uv run python scripts/dev/ratchets.py size || rc=1
     uv run python scripts/dev/migration-sql-check.py || rc=1
     bash scripts/dev/test-file-adjacency.sh --base "${base:-origin/main}" || rc=1
     bash scripts/dev/no-future-annotations.sh --base "${base:-origin/main}" || rc=1
+    python3 scripts/dev/adr-status-check.py || rc=1
     uv run python scripts/dev/hook-coverage-check.py || rc=1
     return "$rc"
 }
@@ -115,8 +121,8 @@ run_one() {
         imports) uv run lint-imports ;;
         # --skip-editable skips our own local hermes package (not on PyPI).
         deps) uv run pip-audit --skip-editable ;;
-        complexity) uv run radon cc --min B src/ ;;
-        deadcode) uv run vulture src/ ;;
+        complexity) uv run ruff check --select C901 src scripts ;;
+        deadcode) uv run python scripts/dev/ratchets.py deadcode ;;
         # Blocks GPL/AGPL/LGPL, which create commercial-use constraints.
         licenses)
             uv tool install --quiet pip-licenses==5.5.5 \
@@ -140,7 +146,8 @@ run_one() {
         # .github/zizmor.yml and is burned down in #529.
         workflows)
             uv tool run --quiet --from "actionlint-py==1.7.12.*" actionlint \
-                && uv tool run --quiet zizmor==1.30.1 --offline --config .github/zizmor.yml .github/workflows
+                && uv tool run --quiet zizmor==1.30.1 --offline --config .github/zizmor.yml .github/workflows \
+                && uv run python scripts/dev/runs-on-check.py
             ;;
         guards) run_guards ;;
         self-tests) uv run python scripts/dev/hook-coverage-check.py --run-self-tests ;;

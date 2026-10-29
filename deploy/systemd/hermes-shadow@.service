@@ -1,0 +1,70 @@
+# One lab shadow on hermes-01: `hermes serve` for the strategy named by the
+# instance, on its own ledger (#1076, ADR-024).
+#
+# hermes-01 is the staging lab until a champion's shadow is Done (ADR-024).
+# The lab runs up to 6 shadows plus the champion, each as one instance of this
+# template, all from the staging release:
+#   hermes-shadow@swing-donchian-4h.service  -> strategy swing-donchian-4h
+#   /var/lib/hermes-staging/shadows/<name>   its ledger, day-0 records, certification
+#   /etc/hermes/env.staging                  shared secrets, HERMES_ENV="staging", no keys
+#
+# Shipped disabled: nothing in the repo enables it. The first ledger is created
+# by hand with --new-ledger; see docs/guides/environments.md. Serve
+# refuses a ledger that holds another strategy's capital, so an instance can
+# never run on a second shadow's file.
+#
+# No OnFailure= and no ExecStopPost= alerts: a lab crash must never page.
+
+[Unit]
+Description=Hermes lab shadow %i (hermes serve)
+# A restart reads the clock to tell missed bars from live ones (#1078).
+After=network-online.target time-sync.target
+Wants=network-online.target time-sync.target
+# Every start re-fetches warm-up history from the box's one IP; the guard
+# bounds what a crash loop costs the other shadows' rate limit.
+StartLimitIntervalSec=10min
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=hermes-staging
+Group=hermes-staging
+
+StateDirectory=hermes-staging/shadows/%i
+StateDirectoryMode=0750
+WorkingDirectory=/var/lib/hermes-staging/shadows/%i
+
+# No leading "-": a missing file must fail the start, not boot without secrets.
+EnvironmentFile=/etc/hermes/env.staging
+
+ExecStart=/opt/hermes-staging/current/.venv/bin/hermes serve --config-dir /opt/hermes-staging/current/config --strategy %i --db /var/lib/hermes-staging/shadows/%i/hermes.sqlite3
+Restart=on-failure
+RestartSec=30s
+RestartPreventExitStatus=2 3
+SyslogIdentifier=hermes-shadow-%i
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/hermes-staging/shadows/%i
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+UMask=0027
+
+[Install]
+WantedBy=multi-user.target

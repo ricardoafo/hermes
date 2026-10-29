@@ -1,13 +1,13 @@
-"""Unit and property tests for scripts/dev/cut-release.py (ADR-022 §1, §2, §7).
+"""Unit and property tests for scripts/dev/cut-release.py (ADR-022 §2, §7; ADR-027).
 
 Protects the release-cut invariants:
 - A cut refuses malformed, equal or older versions and mismatched version files.
+- A cut refuses the retired ``-shadow.N`` line; the last shadow counts as 0.1.0.
+- An engine change needs a MINOR bump; leaving 0.y.z needs --real-capital.
 - Compiling keeps every hand-written ``[Unreleased]`` entry and every fragment.
 - The cut leaves an empty ``[Unreleased]`` and deletes only compiled fragments.
 - The PR body carries the Engine change line the PR body lint enforces.
 """
-
-from __future__ import annotations
 
 import importlib.util
 import re
@@ -15,11 +15,14 @@ import sys
 from pathlib import Path
 
 import pytest
+from hypothesis import given
+from hypothesis import strategies as st
 
 from hermes.release_version import to_package_version, to_semver
+from tests.support.accepted import assert_accepted
+from tests.support.paths import REPO_ROOT
 
-_ROOT = Path(__file__).resolve().parents[3]
-_SCRIPT_PATH = _ROOT / "scripts" / "dev" / "cut-release.py"
+_SCRIPT_PATH = REPO_ROOT / "scripts" / "dev" / "cut-release.py"
 _spec = importlib.util.spec_from_file_location("cut_release", _SCRIPT_PATH)
 assert _spec is not None and _spec.loader is not None
 cut_release = importlib.util.module_from_spec(_spec)
@@ -58,17 +61,82 @@ def _repo(tmp_path: Path, version: str = "0.0.0") -> Path:
     (frags / "20-added.md").write_text("- Fragment feature twenty.\n", encoding="utf-8")
     (frags / "10-fixed.md").write_text("- Fragment fix ten.\n", encoding="utf-8")
     (frags / "README.md").write_text("# Fragments\n", encoding="utf-8")
-    (frags / "wave-old.md").write_text("Legacy note.\n", encoding="utf-8")
     return tmp_path
 
 
 @pytest.mark.parametrize(
-    ("current", "new"), [("1.0.0a2", "1.0.0a2"), ("1.0.0a2", "1.0.0a1"), ("1.0.0", "1.0.0a9")]
+    ("current", "new"),
+    [("0.2.0", "0.2.0"), ("0.3.0", "0.2.9"), ("1.0.0a1", "0.1.0"), ("1.0.0", "0.9.0")],
 )
 def test_a_version_that_does_not_move_forward_is_refused(current: str, new: str) -> None:
     """A cut never repeats or rewinds the version."""
     with pytest.raises(ValueError, match="not greater"):
         cut_release.check_newer(current, new)
+
+
+@given(st.integers(1, 50), st.integers(1, 30), st.integers(0, 30))
+def test_any_zero_version_above_0_1_0_follows_the_retired_shadow(
+    shadow: int, minor: int, patch: int
+) -> None:
+    """From any retired ``1.0.0aN``, every 0.y.z above 0.1.0 counts as newer (ADR-027 §2)."""
+    new = f"0.{minor}.{patch}"
+    if new == "0.1.0":
+        return
+
+    assert_accepted(cut_release.check_newer, f"1.0.0a{shadow}", new)
+
+
+def test_a_retired_shadow_name_is_refused() -> None:
+    """No new -shadow.N release is cut (ADR-027 §1)."""
+    with pytest.raises(ValueError, match=r"retired -shadow\.N"):
+        cut_release.check_release_name("1.0.0-shadow.2")
+
+
+@pytest.mark.parametrize(("current", "new"), [("0.2.0", "0.2.1"), ("1.0.0a1", "0.1.5")])
+def test_an_engine_change_on_a_patch_bump_is_refused(current: str, new: str) -> None:
+    """A decision-changing engine change needs a MINOR cut (ADR-027 §1)."""
+    with pytest.raises(ValueError, match="needs a MINOR cut"):
+        cut_release.check_bump(current, new, engine_change="yes", real_capital=False)
+
+
+@pytest.mark.parametrize(("current", "new"), [("0.2.0", "0.3.0"), ("1.0.0a1", "0.2.0")])
+def test_an_engine_change_on_a_minor_bump_is_allowed(current: str, new: str) -> None:
+    """A MINOR bump may carry an engine change."""
+    assert_accepted(cut_release.check_bump, current, new, engine_change="yes", real_capital=False)
+
+
+@pytest.mark.parametrize("engine_change", ["no", None])
+def test_a_patch_bump_without_engine_change_is_allowed(engine_change: str | None) -> None:
+    """A PATCH cut passes when the engine line says no or is left for the PR body."""
+    assert_accepted(
+        cut_release.check_bump, "0.2.0", "0.2.1", engine_change=engine_change, real_capital=False
+    )
+
+
+@pytest.mark.parametrize("current", ["0.9.3", "1.0.0a1"])
+def test_leaving_zero_major_without_real_capital_is_refused(current: str) -> None:
+    """1.0.0 is cut only for the first real-capital release (ADR-027 §3)."""
+    with pytest.raises(ValueError, match="--real-capital"):
+        cut_release.check_bump(current, "1.0.0", engine_change="no", real_capital=False)
+
+
+@pytest.mark.parametrize("new", ["1.0.1", "1.1.0", "2.0.0"])
+def test_leaving_zero_major_lands_on_1_0_0(new: str) -> None:
+    """The step out of 0.y.z is exactly 1.0.0, even with --real-capital (ADR-027 §3)."""
+    with pytest.raises(ValueError, match=r"skips 1\.0\.0"):
+        cut_release.check_bump("0.9.3", new, engine_change="no", real_capital=True)
+
+
+def test_leaving_zero_major_with_real_capital_is_allowed() -> None:
+    """--real-capital lets the first 1.x cut through."""
+    assert_accepted(cut_release.check_bump, "0.9.3", "1.0.0", engine_change="no", real_capital=True)
+
+
+def test_bumps_after_one_need_no_real_capital_flag() -> None:
+    """Only the step out of 0.y.z needs the flag."""
+    assert_accepted(
+        cut_release.check_bump, "1.0.0", "1.1.0", engine_change="yes", real_capital=False
+    )
 
 
 def test_mismatched_version_files_are_refused() -> None:
@@ -80,8 +148,8 @@ def test_mismatched_version_files_are_refused() -> None:
 def test_the_repository_version_files_agree() -> None:
     """The checked-in pyproject.toml and src/hermes/__init__.py declare one version."""
     version = cut_release.read_current_version(
-        (_ROOT / "pyproject.toml").read_text(encoding="utf-8"),
-        (_ROOT / "src" / "hermes" / "__init__.py").read_text(encoding="utf-8"),
+        (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"),
+        (REPO_ROOT / "src" / "hermes" / "__init__.py").read_text(encoding="utf-8"),
     )
 
     assert version == to_package_version(to_semver(version))
@@ -128,9 +196,9 @@ def test_a_second_cut_keeps_the_earlier_release_section() -> None:
 
 def test_compiling_the_real_changelog_loses_no_entry() -> None:
     """A dry cut of this repository keeps every bullet of [Unreleased] plus one per fragment."""
-    changelog = (_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
+    changelog = (REPO_ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
     fragments = cut_release.aggregate_changelog.collect_fragments(
-        _ROOT / "changelog.d", resolve_pr=lambda _: None
+        REPO_ROOT / "changelog.d", resolve_pr=lambda _: None
     )
     _, legacy, _ = cut_release._split_unreleased(changelog)
 
@@ -149,7 +217,7 @@ def test_cut_updates_versions_changelog_and_fragments(tmp_path: Path) -> None:
 
     code = cut_release.main(
         [
-            "1.0.0-shadow.1",
+            "0.2.0",
             "--root",
             str(root),
             "--date",
@@ -161,14 +229,14 @@ def test_cut_updates_versions_changelog_and_fragments(tmp_path: Path) -> None:
     )
 
     assert code == 0
-    assert 'version = "1.0.0a1"' in (root / "pyproject.toml").read_text(encoding="utf-8")
+    assert 'version = "0.2.0"' in (root / "pyproject.toml").read_text(encoding="utf-8")
     assert (root / "src" / "hermes" / "__init__.py").read_text(
         encoding="utf-8"
-    ) == '__version__ = "1.0.0a1"\n'
-    assert "## [Unreleased]\n\n## [1.0.0-shadow.1] - 2026-10-06\n" in (
-        root / "CHANGELOG.md"
-    ).read_text(encoding="utf-8")
-    assert sorted(p.name for p in (root / "changelog.d").iterdir()) == ["README.md", "wave-old.md"]
+    ) == '__version__ = "0.2.0"\n'
+    assert "## [Unreleased]\n\n## [0.2.0] - 2026-10-06\n" in (root / "CHANGELOG.md").read_text(
+        encoding="utf-8"
+    )
+    assert sorted(p.name for p in (root / "changelog.d").iterdir()) == ["README.md"]
 
 
 def test_cut_writes_a_pr_body_whose_engine_line_must_be_filled(tmp_path: Path) -> None:
@@ -177,7 +245,7 @@ def test_cut_writes_a_pr_body_whose_engine_line_must_be_filled(tmp_path: Path) -
 
     cut_release.main(
         [
-            "1.0.0-shadow.1",
+            "0.2.0",
             "--root",
             str(root),
             "--date",
@@ -199,7 +267,7 @@ def test_engine_change_answer_lands_in_the_pr_body(tmp_path: Path) -> None:
 
     cut_release.main(
         [
-            "1.0.0-shadow.1",
+            "0.2.0",
             "--root",
             str(root),
             "--date",
@@ -217,12 +285,12 @@ def test_engine_change_answer_lands_in_the_pr_body(tmp_path: Path) -> None:
 
 def test_a_refused_cut_changes_nothing(tmp_path: Path) -> None:
     """A version that does not move forward exits 2 and leaves every file as it was."""
-    root = _repo(tmp_path, version="1.0.0a1")
+    root = _repo(tmp_path, version="0.2.0")
     before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
 
     code = cut_release.main(
         [
-            "1.0.0-shadow.1",
+            "0.2.0",
             "--root",
             str(root),
             "--no-lock",
@@ -240,10 +308,148 @@ def test_dry_run_changes_nothing(tmp_path: Path, capsys: pytest.CaptureFixture[s
     root = _repo(tmp_path)
     before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
 
+    code = cut_release.main(["0.2.0", "--root", str(root), "--date", "2026-10-06", "--dry-run"])
+
+    assert code == 0
+    assert capsys.readouterr().out.startswith("## [0.2.0] - 2026-10-06\n")
+    assert {p: p.read_bytes() for p in root.rglob("*") if p.is_file()} == before
+
+
+def test_the_first_zero_cut_after_the_retired_shadow_succeeds(tmp_path: Path) -> None:
+    """From package 1.0.0a1 the next cut, 0.2.0, sets both version files (ADR-027 §2)."""
+    root = _repo(tmp_path, version="1.0.0a1")
+
     code = cut_release.main(
-        ["1.0.0-shadow.1", "--root", str(root), "--date", "2026-10-06", "--dry-run"]
+        ["0.2.0", "--root", str(root), "--no-lock", "--body-out", str(tmp_path / "body.md")]
     )
 
     assert code == 0
-    assert capsys.readouterr().out.startswith("## [1.0.0-shadow.1] - 2026-10-06\n")
+    assert (root / "src" / "hermes" / "__init__.py").read_text(
+        encoding="utf-8"
+    ) == '__version__ = "0.2.0"\n'
+
+
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["1.0.0-shadow.2"],
+        ["0.2.1", "--engine-change", "yes"],
+        ["1.0.0"],
+    ],
+)
+def test_a_cut_adr_027_refuses_changes_nothing(tmp_path: Path, argv: list[str]) -> None:
+    """A retired name, an engine change on a PATCH bump or 1.0.0 without the flag exits 2."""
+    root = _repo(tmp_path, version="0.2.0")
+    before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+
+    code = cut_release.main(
+        [*argv, "--root", str(root), "--no-lock", "--body-out", str(tmp_path / "body.md")]
+    )
+
+    assert code == 2
+    assert {p: p.read_bytes() for p in root.rglob("*") if p.is_file()} == before
+
+
+@pytest.mark.parametrize(
+    ("current", "sections", "engine", "expected"),
+    [
+        ("0.2.0", {"Fixed"}, "no", "0.2.1"),
+        ("0.2.3", {"Fixed", "Security"}, "no", "0.2.4"),
+        ("0.2.3", {"Fixed"}, "yes", "0.3.0"),
+        ("0.2.3", {"Fixed", "Added"}, "no", "0.3.0"),
+        ("0.2.3", {"Changed"}, "no", "0.3.0"),
+        ("1.0.0a1", {"Fixed"}, "no", "0.1.1"),
+        ("1.0.0a1", {"Added"}, "no", "0.2.0"),
+        ("1.4.2", {"Security"}, "no", "1.4.3"),
+    ],
+)
+def test_next_version_follows_the_entry_types(
+    current: str, sections: set[str], engine: str, expected: str
+) -> None:
+    """Fix-only entries with no engine change are a PATCH; anything else a MINOR (ADR-028)."""
+    assert cut_release.next_version(current, sections, engine_change=engine) == expected
+
+
+def test_next_version_refuses_an_empty_release() -> None:
+    """No entries since the last cut means no release PR (ADR-028)."""
+    with pytest.raises(ValueError, match="nothing to release"):
+        cut_release.next_version("0.2.0", set(), engine_change="no")
+
+
+@given(st.integers(0, 9), st.integers(0, 30), st.integers(0, 30), st.sampled_from(["yes", "no"]))
+def test_next_version_always_passes_the_cut_checks(
+    minor: int, patch: int, extra: int, engine: str
+) -> None:
+    """A picked version is newer and never breaks the engine-change rule."""
+    current = f"0.{minor + 1}.{patch}"
+    sections = {"Fixed"} if extra % 2 else {"Added"}
+    new = cut_release.next_version(current, sections, engine_change=engine)
+
+    assert_accepted(cut_release.check_newer, current, new)
+    assert_accepted(cut_release.check_bump, current, new, engine_change=engine, real_capital=False)
+
+
+def test_entry_sections_counts_hand_written_and_fragment_entries() -> None:
+    """Both the [Unreleased] block and the fragments decide the bump."""
+    sections = cut_release.entry_sections(
+        _CHANGELOG, {"Fixed": [(10, "- A fix.\n")], "Security": []}
+    )
+
+    assert sections == {"Added", "Notes", "Fixed"}
+
+
+def test_next_cut_from_fix_only_fragments_is_a_patch(tmp_path: Path) -> None:
+    """--next with only Fixed fragments and engine no cuts the next PATCH."""
+    root = _repo(tmp_path, version="0.2.0")
+    (root / "CHANGELOG.md").write_text(
+        "# Changelog\n\n## [Unreleased]\n\n[Unreleased]: https://example.invalid\n",
+        encoding="utf-8",
+    )
+    (root / "changelog.d" / "20-added.md").unlink()
+
+    code = cut_release.main(
+        [
+            "--next",
+            "--engine-change",
+            "no",
+            "--root",
+            str(root),
+            "--no-lock",
+            "--body-out",
+            str(tmp_path / "body.md"),
+        ]
+    )
+
+    assert code == 0
+    assert 'version = "0.2.1"' in (root / "pyproject.toml").read_text(encoding="utf-8")
+
+
+def test_next_without_an_engine_answer_is_a_usage_error(tmp_path: Path) -> None:
+    """--next cannot pick a bump without the engine line."""
+    root = _repo(tmp_path, version="0.2.0")
+
+    with pytest.raises(SystemExit) as exit_info:
+        cut_release.main(["--next", "--root", str(root), "--no-lock"])
+
+    assert exit_info.value.code == 2
+
+
+def test_a_note_the_aggregator_cannot_read_stops_the_cut(tmp_path: Path) -> None:
+    """A changelog.d file outside the fragment names exits 2 and changes nothing (#1172)."""
+    root = _repo(tmp_path)
+    (root / "changelog.d" / "wave-old.md").write_text("- Legacy note.\n", encoding="utf-8")
+    before = {p: p.read_bytes() for p in root.rglob("*") if p.is_file()}
+
+    code = cut_release.main(
+        [
+            "0.2.0",
+            "--root",
+            str(root),
+            "--no-lock",
+            "--body-out",
+            str(tmp_path / "body.md"),
+        ]
+    )
+
+    assert code == 2
     assert {p: p.read_bytes() for p in root.rglob("*") if p.is_file()} == before

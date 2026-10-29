@@ -11,13 +11,11 @@ a credential (see task spec Part 6) but keeping it plainly synthetic
 avoids any operator confusion.
 """
 
-from __future__ import annotations
-
 import httpx
 import pytest
 import respx
 
-from hermes.adapters.fx.rate_limiter import RateLimitConfig
+from hermes.adapters._shared.rate_limiter import RateLimitConfig
 from hermes.adapters.healthchecks import (
     HealthchecksAdapter,
     HealthchecksAdapterConfig,
@@ -93,12 +91,13 @@ class TestPingSuccessHappyPath:
     """Verify successful ``ping_success`` behaviour of the adapter."""
 
     def test_ping_success_without_details_uses_get(self, adapter: HealthchecksAdapter) -> None:
-        """ping_success(None) fires GET to the raw ping URL."""
+        """ping_success(None) sends exactly one bodiless GET to the raw ping URL."""
         with respx.mock(assert_all_called=True) as router:
-            route = router.get(_TEST_PING_URL).mock(return_value=httpx.Response(200, text="OK"))
+            route = router.route().mock(return_value=httpx.Response(200, text="OK"))
             adapter.ping_success()
-        assert route.called
-        assert route.call_count == 1
+        assert [(c.request.method, str(c.request.url), c.request.content) for c in route.calls] == [
+            ("GET", _TEST_PING_URL, b"")
+        ]
 
     def test_ping_success_with_details_uses_post(self, adapter: HealthchecksAdapter) -> None:
         """ping_success('body') fires POST with the body encoded as UTF-8 text/plain."""
@@ -127,11 +126,13 @@ class TestPingStart:
     """Verify ``ping_start`` posts to /start — the informational heartbeat used by health probes."""
 
     def test_ping_start_without_details_uses_get(self, adapter: HealthchecksAdapter) -> None:
-        """ping_start(None) fires GET to <ping-url>/start (no body, no alert)."""
+        """ping_start(None) sends exactly one bodiless GET to <ping-url>/start."""
         with respx.mock(assert_all_called=True) as router:
-            route = router.get(_START_URL).mock(return_value=httpx.Response(200, text="OK"))
+            route = router.route().mock(return_value=httpx.Response(200, text="OK"))
             adapter.ping_start()
-        assert route.called
+        assert [(c.request.method, str(c.request.url), c.request.content) for c in route.calls] == [
+            ("GET", _START_URL, b"")
+        ]
 
     def test_ping_start_with_details_uses_post(self, adapter: HealthchecksAdapter) -> None:
         """ping_start('body') fires POST to <ping-url>/start with the body payload."""
@@ -177,15 +178,25 @@ class TestPingFailurePaths:
 class TestErrorHierarchy:
     """:class:`HealthchecksError` extends :class:`InfraError` → :class:`HermesError`."""
 
-    def test_healthchecks_error_is_infra_error(self) -> None:
-        """HealthchecksError inherits from InfraError — catch every adapter failure broadly."""
-        err = HealthchecksError(msg="boom")
-        assert isinstance(err, InfraError)
+    def test_adapter_failure_is_caught_by_an_infra_error_handler(
+        self, adapter: HealthchecksAdapter
+    ) -> None:
+        """A failed ping is caught by ``except InfraError`` and keeps its message."""
+        with respx.mock() as router:
+            router.get(_TEST_PING_URL).mock(return_value=httpx.Response(503, text="down"))
+            with pytest.raises(InfraError) as excinfo:
+                adapter.ping_success()
+        assert excinfo.value.msg == "HTTP 503 from ping_success: down"
 
-    def test_healthchecks_error_is_hermes_error(self) -> None:
-        """HealthchecksError also inherits from HermesError — one root for the whole hierarchy."""
-        err = HealthchecksError(msg="boom")
-        assert isinstance(err, HermesError)
+    def test_adapter_failure_is_caught_by_a_hermes_error_handler(
+        self, adapter: HealthchecksAdapter
+    ) -> None:
+        """A transport failure is caught by ``except HermesError`` (the single root)."""
+        with respx.mock() as router:
+            router.get(_START_URL).mock(side_effect=httpx.ConnectError("DNS failed"))
+            with pytest.raises(HermesError) as excinfo:
+                adapter.ping_start()
+        assert type(excinfo.value.__cause__) is httpx.ConnectError
 
     def test_str_includes_msg(self) -> None:
         """__str__ prefixes the message with 'Healthchecks error:' for grep-friendly logs."""
@@ -199,9 +210,11 @@ class TestAdapterLifecycle:
     """Adapter honours the close() contract and rate-limits pings."""
 
     def test_close_is_idempotent(self, adapter: HealthchecksAdapter) -> None:
-        """Calling close() twice does not raise — safe for finally blocks."""
+        """Closing twice does not raise and leaves the client closed, so finally blocks are safe."""
         adapter.close()
-        adapter.close()  # second call must not raise
+        adapter.close()
+
+        assert adapter.client.is_closed is True
 
     def test_rate_limiter_size_derived_from_config(self) -> None:
         """The internal rate-limit config carries the requested requests_per_minute."""

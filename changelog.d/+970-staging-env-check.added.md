@@ -1,0 +1,1 @@
+- A staging deploy now checks `/etc/hermes/env.staging` with the new release's `hermes config check --env-file -` before anything restarts, and stops naming each setting that breaks the staging tier (a trading key, a loopback endpoint). `hermes config check` reports tier problems as `tier` findings and can check an env file alone (part of #970).

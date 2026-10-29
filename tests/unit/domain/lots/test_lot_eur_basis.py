@@ -3,8 +3,6 @@
 Reference: ADR-016 item 3.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -48,14 +46,16 @@ class TestPendingLot:
 
     def test_fifo_selection_refuses_a_pending_lot(self) -> None:
         """Invariant: no gain is computed against an unknown EUR basis."""
+        lot = _pending_lot()
         result = select_lots_fifo(
-            [_pending_lot()],
+            [lot],
             Quantity(amount=Decimal("1"), asset=Currency.BTC),
             Money(amount=Decimal("60000"), currency=Currency.EUR),
             _AT,
         )
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), InvalidLot)
+        assert result == Failure(
+            InvalidLot(reason=(f"select_lots_fifo: lot {lot.lot_id} has a pending EUR cost basis"))
+        )
 
 
 class TestConsumptionFee:

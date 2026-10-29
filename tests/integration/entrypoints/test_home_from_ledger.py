@@ -5,10 +5,8 @@ seed and its EUR pricing, bar checks, the entry signal, a buy and a partial
 sale with their EUR values, three portfolio marks). The commands then read it
 read-only, with no demo scenario, exactly as on the VPS.
 
-Reference: openspec/changes/live-home-screen/change.md (A-1.1, A-2.1, A-4.1).
+Reference: openspec/archive/live-home-screen/change.md (A-1.1, A-2.1, A-4.1).
 """
-
-from __future__ import annotations
 
 import asyncio
 import hashlib
@@ -26,6 +24,7 @@ from hermes.entrypoints.activity import run_activity
 from hermes.entrypoints.commands.tui import run_tui
 from hermes.entrypoints.console import shadow_sources
 from hermes.entrypoints.tui import HomeApp
+from tests.support.paths import REPO_ROOT
 from tests.unit.adapters.console._ledger_builder import T0, home_ledger
 
 pytestmark = pytest.mark.integration
@@ -33,10 +32,7 @@ pytestmark = pytest.mark.integration
 _READ_AT = T0 + timedelta(hours=9)
 _CARDS = ("demo-tag", "portfolio", "positions", "shadow")
 _RECORD = (
-    Path(__file__).resolve().parents[2]
-    / "fixtures"
-    / "shadow_runs"
-    / "swing-donchian-4h-20261015T000000Z.json"
+    REPO_ROOT / "tests" / "fixtures" / "shadow_runs" / "swing-donchian-4h-20261015T000000Z.json"
 )
 
 

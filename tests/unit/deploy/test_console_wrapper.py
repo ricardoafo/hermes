@@ -7,8 +7,6 @@ release binary are stand-ins, and the production paths are rewritten to a
 scratch directory in a copy.
 """
 
-from __future__ import annotations
-
 import os
 import re
 import shutil
@@ -19,8 +17,9 @@ import pytest
 
 from hermes.entrypoints import console as console_module
 from hermes.entrypoints import vps as vps_module
+from tests.support.paths import REPO_ROOT
 
-_SCRIPT = Path(__file__).resolve().parents[3] / "deploy" / "hermes-console.sh"
+_SCRIPT = REPO_ROOT / "deploy" / "hermes-console.sh"
 _BASH = os.environ.get("HERMES_TEST_BASH") or shutil.which("bash")
 
 pytestmark = pytest.mark.skipif(_BASH is None, reason="the wrapper needs bash")

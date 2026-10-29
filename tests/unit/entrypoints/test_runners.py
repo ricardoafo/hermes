@@ -4,8 +4,6 @@ Every GitHub call is mocked with ``respx``; no real token or socket is used.
 Reference: change ``177-runner-health``, docs/guides/ai-authored-tests.md.
 """
 
-from __future__ import annotations
-
 import io
 import json
 from typing import Any

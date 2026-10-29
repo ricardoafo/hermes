@@ -8,8 +8,6 @@ not on the individual ``Weight``).
 Reference: code-conventions.md §1 (Value Object) and §4 (Factory methods).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
@@ -61,23 +59,6 @@ class Weight:
         return Success(cls(value=value))
 
     @classmethod
-    def from_decimal(cls, d: Decimal) -> Result[Weight, DomainError]:
-        """Construct a Weight from a Decimal, validating the [0, 1] constraint.
-
-        Args:
-            d: Decimal value to wrap.
-
-        Returns:
-            ``Success(Weight)`` for values in [0, 1],
-            ``Failure(InvalidLot)`` for out-of-range values.
-
-        Reference: code-conventions.md §4.
-        """
-        if not (_ZERO <= d <= _ONE):
-            return Failure(InvalidLot(reason=f"Weight must be in [0, 1], got {d!r}"))
-        return Success(cls(value=d))
-
-    @classmethod
     def zero(cls) -> Weight:
         """Return a weight of 0 (no allocation).
 
@@ -85,15 +66,6 @@ class Weight:
             ``Weight(Decimal("0"))``.
         """
         return cls(value=_ZERO)
-
-    @classmethod
-    def one(cls) -> Weight:
-        """Return a weight of 1 (full allocation).
-
-        Returns:
-            ``Weight(Decimal("1"))``.
-        """
-        return cls(value=_ONE)
 
     def __str__(self) -> str:
         """Return the decimal string representation."""

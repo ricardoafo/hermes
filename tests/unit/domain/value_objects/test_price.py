@@ -3,14 +3,13 @@
 Reference: R-5 (A-5.3, A-5.6, A-5.7).
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from hypothesis import given
-from returns.result import Failure, Success
+from returns.result import Success
 
 import tests.strategies.price  # noqa: F401
+from hermes.domain.errors import InvalidLot
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
@@ -39,18 +38,25 @@ class TestPriceFromStr:
 
     def test_from_str_invalid_amount(self) -> None:
         """from_str returns Failure when the amount part is not a valid decimal."""
-        result = Price.from_str("abc BTC/USDT")
-        assert isinstance(result, Failure)
+        error = Price.from_str("abc BTC/USDT").failure()
+        assert error == InvalidLot(reason="Cannot parse amount 'abc' as Decimal")
 
     def test_from_str_invalid_pair(self) -> None:
         """from_str returns Failure when the pair string contains unknown currency tickers."""
-        result = Price.from_str("50000 DOGE/XYZ")
-        assert isinstance(result, Failure)
+        error = Price.from_str("50000 DOGE/XYZ").failure()
+        assert error == InvalidLot(reason="Unknown base currency 'DOGE' in pair 'DOGE/XYZ'")
 
     def test_from_str_missing_parts(self) -> None:
         """from_str returns Failure when the input lacks the expected 'amount PAIR' structure."""
-        result = Price.from_str("50000")
-        assert isinstance(result, Failure)
+        error = Price.from_str("50000").failure()
+        assert error == InvalidLot(reason="Cannot parse Price from '50000': expected 'AMOUNT PAIR'")
+
+    def test_from_str_extra_parts(self) -> None:
+        """from_str rejects three tokens: exactly 'amount PAIR' is accepted, nothing more."""
+        error = Price.from_str("50000 BTC/USDT now").failure()
+        assert error == InvalidLot(
+            reason="Cannot parse Price from '50000 BTC/USDT now': expected 'AMOUNT PAIR'"
+        )
 
 
 class TestPriceApplyTo:
@@ -76,8 +82,13 @@ class TestPriceApplyTo:
             pair=Pair(base=Currency.BTC, quote=Currency.USDT),
         )
         qty = Quantity(amount=Decimal("2"), asset=Currency.ETH)
-        result = price.apply_to(qty)
-        assert isinstance(result, Failure)
+        error = price.apply_to(qty).failure()
+        assert error == InvalidLot(
+            reason=(
+                "Price.apply_to: quantity asset <Currency.ETH: 'ETH'> "
+                "does not match pair base <Currency.BTC: 'BTC'>"
+            )
+        )
 
     def test_apply_to_zero_quantity(self) -> None:
         """apply_to() with zero quantity returns zero Money in the quote currency."""

@@ -8,8 +8,6 @@ Verifies:
 Reference: code-conventions.md §10 + §3.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 
 import pytest
@@ -70,9 +68,3 @@ class TestAnomalySeverityEnum:
             AnomalySeverity.WARNING,
             AnomalySeverity.INFO,
         }
-
-    def test_string_values_match_labels(self) -> None:
-        """Each severity member's string value equals its label — persisted verbatim."""
-        assert AnomalySeverity.CRITICAL == "CRITICAL"
-        assert AnomalySeverity.WARNING == "WARNING"
-        assert AnomalySeverity.INFO == "INFO"

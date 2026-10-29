@@ -18,8 +18,6 @@ Each failure mode is in one of three states:
 - ``accepted``: ``approved by Rick YYYY-MM-DD: why we live with it``.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 
 _U = "tests/unit/"
@@ -37,9 +35,11 @@ _TG_429 = _U + "adapters/notifier/test_telegram_adapter.py::TestRateLimitBackOff
 _LOOP = _I + "entrypoints/test_serve_bar_loop.py::"
 _CHAOS = _S + "test_chaos_crash_mid_bar.py::"
 _FILLS = _I + "entrypoints/test_serve_fills.py::"
+_TAX = _I + "entrypoints/test_serve_tax_guard.py::"
 _SERVE = _U + "entrypoints/test_serve.py::"
 _UNITS = _U + "deploy/test_systemd_units.py::"
 _RELEASE = _I + "deploy/test_release_scripts.py::"
+_EXEC_QUALITY = _I + "entrypoints/test_serve_execution_quality.py::"
 _LEDGER = _U + "adapters/ledger/test_sqlite_ledger.py::"
 _TRADES = _U + "adapters/ledger/test_sqlite_trade_ledger.py::"
 _ROLLBACK = _U + "adapters/ledger/test_sqlite_ledger_rollback_any_error.py::"
@@ -56,14 +56,20 @@ _LEDGER_MACHINE = _U + "adapters/ledger/test_sqlite_ledger_state_machine.py::"
 _BOOK_MACHINE = _U + "adapters/market_data/test_orderbook_diff_state_machine.py::"
 _LOTS_MACHINE = _U + "domain/lots/test_fifo_lots_state_machine.py::"
 _ALERTS = _U + "deploy/test_alert_scripts.py::"
+_NULL = _U + "scripts_backtest/test_null_check.py::"
 _WIRE = _U + "adapters/test_wire_numbers.py::"
 _PATHS = _S + "test_generated_paths.py::"
+_DOWN = _S + "test_downtime_recovery.py::"
+_BUDGET = _S + "test_missed_bar_budget.py::"
+_READS = _U + "entrypoints/test_tui_reads.py::"
 _LOTS_AGREE = _S + "test_portfolio_matches_ledger_lots.py::"
 _KLINES_DOWN = _S + "test_chaos_klines_down_at_boot.py::"
 _SIGTERM = _S + "test_chaos_sigterm_mid_bar.py::"
 _EVERY_BAR = _PATHS + "test_every_rule_holds_after_every_bar_and_a_restart_changes_nothing"
 _FUZZ_BINANCE = _U + "adapters/market_data/test_wire_fuzz_binance.py::"
 _FUZZ_KRAKEN = _U + "adapters/exchanges/test_wire_fuzz_kraken.py::"
+_BINANCE_SPOT = _U + "adapters/exchanges/test_binance_spot.py::"
+_KRAKEN_SPOT = _U + "adapters/exchanges/test_kraken_spot.py::"
 _FUZZ_LEDGER = _U + "adapters/ledger/test_reader_fuzz.py::"
 _FUZZ_CONFIG = _U + "infrastructure/config/test_loader_fuzz.py::"
 _CONTENTION = _I + "adapters/ledger/test_ledger_contention.py::"
@@ -121,7 +127,7 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 _FUZZ_BINANCE
                 + "test_a_websocket_adapter_depth_snapshot_parses_or_raises_exchange_error",
                 _FUZZ_BINANCE + "test_a_live_kline_row_parses_or_raises_exchange_error",
-                _FUZZ_BINANCE + "test_a_ticker_body_parses_or_raises_exchange_error",
+                _FUZZ_KRAKEN + "test_a_ticker_reply_parses_or_raises_kraken_public_error",
             ),
         ),
         FailureMode(
@@ -286,20 +292,47 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             "A Kraken fee reply holds a percentage too large for decimal maths",
             proved_by=(
                 _FUZZ_KRAKEN + "test_an_accepted_trade_volume_schedule_has_non_negative_fees",
-                _FUZZ_KRAKEN + "test_an_accepted_asset_pairs_schedule_has_finite_non_negative_fees",
             ),
         ),
         FailureMode(
             "An order reply is lost, so the order state is unknown",
-            gap="issue #858: a Binance 5xx reads as a refusal and no client order id exists",
+            proved_by=(
+                _BINANCE_SPOT + "test_every_order_carries_a_fresh_client_order_id",
+                _BINANCE_SPOT
+                + "test_an_order_whose_reply_was_lost_returns_the_fill_found_by_its_client_id",
+                _BINANCE_SPOT + "test_a_failed_lookup_names_the_client_id_to_reconcile",
+                _BINANCE_SPOT + "test_a_stop_loss_whose_reply_was_lost_returns_the_found_order_id",
+                _KRAKEN_SPOT + "test_every_order_carries_a_userref",
+                _KRAKEN_SPOT + "test_a_failed_read_back_after_addorder_carries_the_txid",
+                _KRAKEN_SPOT + "test_a_lost_addorder_reply_names_the_userref",
+            ),
+        ),
+        FailureMode(
+            "An order still in flight inside Binance reads as never placed on the first lookup",
+            proved_by=(
+                _BINANCE_SPOT + "test_an_order_binance_never_saw_is_looked_up_twice_a_wait_apart",
+                _BINANCE_SPOT
+                + "test_an_order_in_flight_at_the_first_lookup_returns_the_fill_found_on"
+                "_the_recheck",
+                _BINANCE_SPOT
+                + "test_a_stop_loss_in_flight_at_the_first_lookup_returns_the_order_found"
+                "_on_the_recheck",
+            ),
         ),
         FailureMode(
             "A filled order is reported as an error",
-            gap="issue #858: a commission in a third asset raises after the fill",
+            proved_by=(
+                _BINANCE_SPOT + "test_third_asset_commission_is_priced_at_its_ticker",
+                _BINANCE_SPOT + "test_third_asset_commission_falls_back_to_the_taker_rate",
+            ),
         ),
         FailureMode(
             "The Kraken nonce goes backwards after a restart",
-            gap="issue #858: the nonce lives only in memory; inferred, untested",
+            proved_by=(
+                _KRAKEN_SPOT
+                + "test_a_restart_with_the_clock_stepped_back_still_sends_a_higher_nonce",
+                _KRAKEN_SPOT + "test_a_bad_nonce_file_fails_an_order_before_sending_it",
+            ),
         ),
         FailureMode(
             "The FX service is down or answers garbage",
@@ -332,11 +365,19 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "The FX answer is dated well before the fill day",
-            gap="issue #996: any earlier date is accepted; the allowed gap is a tax-rule call",
+            proved_by=(
+                _U + "application/ledger/test_eur_pricer.py"
+                "::test_a_rate_five_days_older_than_a_past_fill_stays_pending_with_a_warning",
+            ),
         ),
         FailureMode(
             "A slow FX service stalls the bar loop",
-            gap="issue #996: a sync client runs on the event loop; inferred, untested",
+            proved_by=(
+                _U + "entrypoints/test_serve_eur_pricing.py"
+                "::test_a_live_fill_with_a_cold_cache_makes_no_provider_call_on_the_loop",
+                _U + "entrypoints/test_serve_eur_pricing.py"
+                "::test_the_daily_pass_prices_a_fill_the_first_pass_left_pending",
+            ),
         ),
     ),
     "ledger and disk": (
@@ -534,6 +575,23 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
     ),
     "clock": (
         FailureMode(
+            "A test clock is set where real time must rule",
+            proved_by=(
+                _U + "infrastructure/config/test_endpoint_tiers.py"
+                "::test_every_other_tier_refuses_a_test_clock_by_name",
+                _U + "infrastructure/config/test_endpoint_tiers.py"
+                "::test_qa_refuses_a_test_clock_off_loopback",
+            ),
+        ),
+        FailureMode(
+            "The test clock stops answering or answers a naive time",
+            proved_by=(
+                _U + "adapters/clock/test_remote.py::test_an_unreachable_clock_is_refused",
+                _U + "adapters/clock/test_remote.py"
+                "::test_an_answer_without_an_aware_instant_is_refused",
+            ),
+        ),
+        FailureMode(
             "The exchange or local clock is ahead and closes a bar early",
             proved_by=(
                 _LIVE + "TestExchangeClock::test_exchange_clock_ahead_never_advances_closure",
@@ -589,6 +647,8 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 _STORAGE + "test_hermes_serve_on_a_ledger_in_use_exits_with_the_refusal_code",
                 _STORAGE + "test_the_serve_lock_is_released_when_the_first_serve_exits",
                 _FILE_LOCK + "test_a_holder_process_that_is_killed_frees_the_lock",
+                _I + "lower_env/test_installed_operations.py"
+                "::test_a_second_serve_on_the_ledger_in_use_is_refused_and_changes_nothing",
             ),
         ),
         FailureMode(
@@ -597,6 +657,85 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 _S + "test_restart.py::test_a_restart_with_a_position_open_keeps_it_until_its_exit",
                 _LOOP + "test_restart_while_held_writes_the_same_stop_marks_as_an_unbroken_run",
             ),
+        ),
+        FailureMode(
+            "A lab shadow runs on another shadow's ledger and mixes their capital and trades",
+            proved_by=(
+                _S + "test_shadow_line.py::"
+                "test_a_shadow_pointed_at_another_shadows_ledger_is_refused_before_writing",
+                _S + "test_shadow_line.py::test_each_shadow_ledger_holds_only_its_own_strategy",
+                _UNITS + "test_shadow_template_runs_the_instance_strategy_on_its_own_ledger",
+            ),
+        ),
+        FailureMode(
+            "A shadow instance names a strategy the roster lacks and runs the enabled one instead",
+            proved_by=(
+                _U + "entrypoints/test_cli.py::TestServeSubcommand::"
+                "test_serve_with_a_strategy_missing_from_the_roster_exits_three",
+            ),
+        ),
+        FailureMode(
+            "An entry on a bar that closed while serve was down fills back-dated or halts",
+            proved_by=(
+                _DOWN + "test_an_entry_on_a_bar_that_closed_while_serve_was_down_is_not_filled",
+                _FILLS + "test_bar_re_evaluated_after_a_crash_fills_nothing_twice",
+            ),
+        ),
+        FailureMode(
+            "An exit on a bar that closed while serve was down is dated at the old close",
+            proved_by=(
+                _DOWN
+                + "test_an_exit_on_a_bar_that_closed_while_serve_was_down_fills_when_serve_is_back",
+                _SHADOW + "test_a_missed_exit_fills_on_the_live_book_stamped_when_serve_is_back",
+                _SHADOW + "test_a_missed_exit_without_a_live_book_is_stamped_now_on_the_newest_bar",
+            ),
+        ),
+        FailureMode(
+            "Bars missed during an outage go unrecorded, or the operator is not told",
+            proved_by=(
+                _DOWN + "test_bars_missed_over_a_day_are_recorded_per_stream_and_reported_once",
+                _U + "application/monitoring/test_restart_report.py::"
+                "test_the_report_counts_missed_bars_per_pair_and_stream",
+            ),
+        ),
+        FailureMode(
+            "A quick restart treats live bars as missed",
+            proved_by=(_DOWN + "test_a_restart_inside_the_live_window_misses_nothing",),
+        ),
+        FailureMode(
+            "One shadow's outage spends another shadow's missed-bar budget",
+            proved_by=(
+                _BUDGET + "test_an_outage_spends_only_the_budget_of_the_shadow_that_was_down",
+            ),
+        ),
+        FailureMode(
+            "A bar re-handled after a crash is spent twice from the missed-bar budget",
+            proved_by=(
+                _U + "adapters/ledger/test_sqlite_ledger_missed_bars.py::"
+                "test_a_bar_re_handled_after_a_crash_counts_once",
+            ),
+        ),
+        FailureMode(
+            "A shadow crosses its missed-bar budget and nobody is told, or is told every restart",
+            proved_by=(
+                _BUDGET
+                + "test_crossing_the_budget_alerts_once_and_a_later_restart_does_not_repeat_it",
+                _BUDGET
+                + "test_a_shadow_that_stays_up_through_a_klines_outage_alerts_when_it_crosses",
+            ),
+        ),
+        FailureMode(
+            "An outage day raises parity mismatches for its unfilled missed entries",
+            proved_by=(
+                _U
+                + "application/parity/test_check.py::test_a_day_with_missed_bars_is_not_compared",
+                _U + "entrypoints/test_parity.py::"
+                "test_an_outage_day_prints_not_compared_and_sends_no_alert",
+            ),
+        ),
+        FailureMode(
+            "Serve boots before the clock syncs and misreads which bars it missed",
+            proved_by=(_UNITS + "test_serve_starts_after_the_clock_is_synced",),
         ),
         FailureMode(
             "SIGTERM while idle",
@@ -636,6 +775,43 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 "::test_health_ping_reports_a_late_check_as_fail_with_the_status_body",
             ),
         ),
+        FailureMode(
+            "A slow ledger or journal read freezes the console's keys and screen switches",
+            proved_by=(_READS + "test_a_screen_switch_paints_before_a_slow_read_returns",),
+        ),
+        FailureMode(
+            "Redraws asked for during a slow read are lost, or pile up as one read each",
+            proved_by=(
+                _READS + "test_redraws_during_a_held_read_run_one_more_read_with_the_newest_state",
+            ),
+        ),
+        FailureMode(
+            "A ledger connection opened on the console's UI thread fails in its read worker",
+            proved_by=(
+                _U + "entrypoints/test_tui_tax.py::"
+                "test_the_tax_source_reads_the_ledger_from_the_console_worker_thread",
+                _U + "adapters/ledger/test_connection.py::"
+                "test_an_any_thread_read_only_connection_answers_another_thread",
+            ),
+        ),
+        FailureMode(
+            "Quitting the console while a read is in flight raises an error",
+            proved_by=(_READS + "test_quitting_while_a_read_is_held_ends_quietly",),
+        ),
+        FailureMode(
+            "A new activity row arriving while another fades leaves a highlight that never ends",
+            proved_by=(
+                _U + "entrypoints/test_tui_activity_fade.py::"
+                "test_a_second_new_row_in_mid_fade_restarts_the_fade_and_still_ends",
+            ),
+        ),
+        FailureMode(
+            "An activity read that fails while rows fade leaves a stale highlight or no error",
+            proved_by=(
+                _U + "entrypoints/test_tui_activity_fade.py::"
+                "test_a_failed_activity_read_in_mid_fade_shows_the_error_and_no_highlight",
+            ),
+        ),
     ),
     "config and deploy": (
         FailureMode(
@@ -663,6 +839,25 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             ),
         ),
         FailureMode(
+            "A staging env file holds a trading key or a loopback endpoint",
+            proved_by=(
+                _RELEASE + "test_real_config_check_refuses_a_staging_env_file_that_breaks_the_tier",
+                _RELEASE + "test_staging_deploy_stops_on_a_config_finding_before_any_restart",
+                _U + "entrypoints/test_config_check.py::TestEnvFile"
+                "::test_stdin_env_file_with_a_trading_key_names_it",
+            ),
+        ),
+        FailureMode(
+            "The env file a staging deploy checks is missing or not UTF-8",
+            proved_by=(
+                _U + "entrypoints/test_config_check.py::TestEnvFile"
+                "::test_missing_env_file_exits_three",
+                _U + "entrypoints/test_config_check.py::TestEnvFile"
+                "::test_env_file_that_is_not_utf8_exits_three",
+                _RELEASE + "test_staging_deploy_stops_when_the_config_check_cannot_run",
+            ),
+        ),
+        FailureMode(
             "A release is half installed",
             proved_by=(
                 _RELEASE + "test_hash_mismatch_removes_the_half_built_release",
@@ -675,6 +870,52 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             proved_by=(
                 _RELEASE + "test_deploy_of_a_release_older_than_the_ledger_is_refused",
                 _RELEASE + "test_rollback_onto_a_release_older_than_the_ledger_is_refused",
+            ),
+        ),
+        FailureMode(
+            "Two batches merged close together deploy under one version number",
+            proved_by=(
+                _U + "deploy/test_next_version.py"
+                "::test_settle_adopts_the_next_number_when_an_earlier_deploy_took_it",
+                _U + "deploy/test_cd_workflow.py"
+                "::test_the_version_is_settled_under_the_deploy_lock_before_the_box",
+            ),
+        ),
+        FailureMode(
+            "A good deploy leaves no version tag, so the next push reuses its number",
+            proved_by=(
+                _U + "deploy/test_cd_workflow.py"
+                "::test_a_missing_version_tag_fails_the_deploy_after_the_announcement",
+            ),
+        ),
+        FailureMode(
+            "A staging deploy leaves a lab shadow on the old release or an unmigrated ledger",
+            proved_by=(
+                _RELEASE + "test_staging_deploy_restarts_and_gates_every_shadow_after_the_flip",
+                _RELEASE
+                + "test_staging_deploy_migrates_every_shadow_ledger_with_its_instance_stopped",
+            ),
+        ),
+        FailureMode(
+            "A staging deploy reaches a shadow ledger it cannot snapshot or cannot read",
+            proved_by=(
+                _RELEASE + "test_a_release_that_cannot_read_a_shadow_ledger_is_refused",
+                _RELEASE + "test_a_failed_shadow_snapshot_stops_the_deploy",
+            ),
+        ),
+        FailureMode(
+            "A deploy fails after some ledgers were migrated",
+            proved_by=(
+                _RELEASE + "test_a_failed_gate_on_one_shadow_rolls_back_every_instance",
+                _RELEASE + "test_a_failed_shadow_migration_restores_the_ledgers_already_migrated",
+                _RELEASE + "test_failed_unit_install_after_a_migration_restores_the_ledger",
+            ),
+        ),
+        FailureMode(
+            "A failed deploy copies a snapshot over a ledger it never changed, losing its writes",
+            proved_by=(
+                _RELEASE + "test_a_failed_staging_gate_leaves_shadows_the_release_never_reached",
+                _RELEASE + "test_a_migration_that_fails_restores_no_ledger",
             ),
         ),
         FailureMode(
@@ -709,10 +950,47 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
     ),
     "notifications": (
         FailureMode(
+            "A tax-guard breach (ADR-002 Decision 6) is never recorded or alerted",
+            proved_by=(
+                _TAX
+                + "test_one_trade_past_the_ceiling_records_one_critical_row_at_the_daily_close",
+                _TAX + "test_one_trade_past_the_ceiling_is_alerted_once_on_the_routed_channel",
+                _FILLS + "test_a_tax_guard_breach_is_recorded_and_changes_no_decision_or_fill",
+            ),
+        ),
+        FailureMode(
+            "A tax-guard breach is recorded twice for one daily close, across pairs or a restart",
+            proved_by=(
+                _TAX + "test_two_pairs_closing_the_same_day_record_the_breach_once",
+                _TAX + "test_a_restart_that_re_handles_the_second_pairs_bar_records_nothing_new",
+            ),
+        ),
+        FailureMode(
+            "The tax guard cannot read the ledger and stops serve",
+            proved_by=(
+                _TAX
+                + "test_a_guard_that_cannot_read_the_ledger_is_logged_and_the_bar_still_processed",
+            ),
+        ),
+        FailureMode(
+            "The bot's /pos and /money read another ledger than its --db",
+            proved_by=(
+                _I + "lower_env/test_installed_release.py"
+                "::test_the_bot_shows_the_runs_position_and_money_from_its_db",
+            ),
+        ),
+        FailureMode(
             "Telegram is down",
             proved_by=(
                 _OUTAGES + "test_a_telegram_outage_does_not_stop_trading",
                 _LOOP + "test_notifier_outage_does_not_stop_the_loop",
+            ),
+        ),
+        FailureMode(
+            "Telegram, Slack and Sentry are all down while a trade fires",
+            proved_by=(
+                _I + "lower_env/test_installed_operations.py"
+                "::test_every_alert_sink_down_through_a_trade_changes_nothing_the_run_records",
             ),
         ),
         FailureMode(
@@ -739,7 +1017,7 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 _LOOP + "test_a_settled_push_is_not_retried_after_a_restart",
                 _U
                 + "application/test_signal_notifier.py::"
-                + "test_a_non_infra_exception_is_isolated_and_the_fan_out_goes_on",
+                + "test_deliver_names_the_channels_that_took_the_push_and_the_ones_that_raised",
             ),
         ),
         FailureMode(
@@ -759,10 +1037,19 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
             ),
         ),
         FailureMode(
+            "Telegram answers 429 to hermes bot",
+            proved_by=(
+                _U + "adapters/telegram_bot/test_client.py"
+                "::test_a_429_on_send_is_waited_out_and_the_message_sent_once",
+                _U + "adapters/telegram_bot/test_client.py"
+                "::test_a_429_that_outlasts_the_retries_raises_the_bot_error",
+            ),
+        ),
+        FailureMode(
             "A slow Telegram holds up the bar that sent the push",
-            gap=(
-                "issue #996: the push runs in a thread, but serve awaits it before it "
-                "finishes the bar (up to 30 s per channel on 429); inferred, untested"
+            proved_by=(
+                _U + "entrypoints/test_serve_push_budget.py"
+                "::test_the_worst_case_push_wait_stays_inside_the_live_book_window",
             ),
         ),
     ),
@@ -777,6 +1064,31 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 _RISK + "test_a_fill_slipping_over_half_a_percent_halts_later_entries",
                 _FAULTS + "test_an_entry_while_the_depth_endpoint_is_down_is_skipped",
                 _RISK + "test_a_btc_daily_drop_over_ten_percent_halts_entries_on_any_pair",
+            ),
+        ),
+        FailureMode(
+            "Fill costs drift out of control (fees, slippage, latency) and nobody hears",
+            proved_by=(
+                _EXEC_QUALITY
+                + "test_a_slippage_step_after_the_baseline_is_recorded_once_with_its_reason",
+                _EXEC_QUALITY + "test_the_slippage_breach_is_alerted_once_on_every_channel",
+                _EXEC_QUALITY + "test_a_breach_episode_that_continues_is_not_alerted_again",
+                _EXEC_QUALITY
+                + "test_a_fill_without_latency_still_feeds_slippage_and_leaves_latency_alone",
+            ),
+        ),
+        FailureMode(
+            "A restart forgets the execution-quality baseline or alerts an old breach again",
+            proved_by=(
+                _EXEC_QUALITY + "test_a_restart_keeps_the_baseline_from_the_ledger",
+                _EXEC_QUALITY + "test_a_restart_does_not_alert_an_episode_already_alerted",
+            ),
+        ),
+        FailureMode(
+            "An execution-quality monitor error stops a fill from being recorded",
+            proved_by=(
+                _EXEC_QUALITY + "test_a_monitor_error_is_logged_and_the_fills_are_still_recorded",
+                _EXEC_QUALITY + "test_a_failed_replay_at_start_up_is_logged_and_serve_still_fills",
             ),
         ),
         FailureMode(
@@ -812,7 +1124,12 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
         ),
         FailureMode(
             "RO-08 drawdown and time-to-recovery are never driven through serve",
-            gap="issue #514: serve feeds days since the equity high as 0",
+            proved_by=(
+                _SHADOW + "test_a_drawdown_past_fifteen_percent_stops_the_entry_through_serve",
+                _SHADOW + "test_ninety_one_days_without_a_new_high_kill_the_live_entry",
+                _U + "entrypoints/test_serve_live_risk_inputs.py"
+                "::test_real_money_hands_the_executor_live_inputs_and_runs_ro02",
+            ),
         ),
         FailureMode(
             "A halt survives, or is lost across, a restart",
@@ -990,6 +1307,30 @@ CATALOGUE: dict[str, tuple[FailureMode, ...]] = {
                 _U
                 + "entrypoints/test_parity.py::"
                 + "test_offline_with_299_daily_bars_exits_three_naming_the_300_bar_floor",
+            ),
+        ),
+        FailureMode(
+            "A sweep sends a Train failure, or two candidates of one family, to Validation",
+            proved_by=(
+                _U + "application/calibration/test_sweep_selection.py::"
+                "test_a_candidate_that_failed_train_is_never_sent_whatever_its_dsr",
+                _U + "application/calibration/test_sweep_selection.py::"
+                "test_each_family_sends_its_passer_with_the_highest_train_dsr",
+                _NULL + "test_only_one_candidate_per_family_runs_validation",
+            ),
+        ),
+        FailureMode(
+            "The null check misses an edge that is there, or names one on pure noise",
+            proved_by=(
+                _NULL + "test_a_planted_edge_is_found_as_the_champion",
+                _NULL + "test_a_sweep_with_no_edge_names_no_champion",
+            ),
+        ),
+        FailureMode(
+            "The null check passes on too few series to show q, or a crash reads as a verdict",
+            proved_by=(
+                _NULL + "test_fewer_series_than_one_over_q_is_a_usage_error",
+                _NULL + "test_a_series_that_crashes_exits_3_and_writes_no_record",
             ),
         ),
     ),

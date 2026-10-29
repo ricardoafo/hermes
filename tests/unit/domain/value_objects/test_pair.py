@@ -3,13 +3,12 @@
 Reference: R-5 (A-5.3, A-5.6, A-5.7).
 """
 
-from __future__ import annotations
-
 import pytest
 from hypothesis import given
 from returns.result import Failure, Success
 
 import tests.strategies.pair  # noqa: F401
+from hermes.domain.errors import InvalidLot
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from tests.strategies.pair import pair_strategy
@@ -36,12 +35,16 @@ class TestPairFromStrSlash:
     def test_from_str_unknown_base_fails(self) -> None:
         """from_str returns Failure when the base currency is not in the allowlist."""
         result = Pair.from_str("DOGE/USDT")
-        assert isinstance(result, Failure)
+        assert result == Failure(
+            InvalidLot(reason="Unknown base currency 'DOGE' in pair 'DOGE/USDT'")
+        )
 
     def test_from_str_same_base_quote_fails(self) -> None:
         """from_str returns Failure when base and quote are the same currency (self-pair)."""
         result = Pair.from_str("BTC/BTC")
-        assert isinstance(result, Failure)
+        assert result == Failure(
+            InvalidLot(reason="Pair base and quote must differ, got <Currency.BTC: 'BTC'> twice")
+        )
 
 
 class TestPairFromStrConcatenated:
@@ -67,7 +70,16 @@ class TestPairFromStrConcatenated:
         """from_str returns Failure for concatenated strings that do not resolve to a known pair."""
         # Not a known pair combination
         result = Pair.from_str("DOGEXYZ")
-        assert isinstance(result, Failure)
+        assert result == Failure(
+            InvalidLot(reason="Cannot split concatenated pair 'DOGEXYZ' into known currencies")
+        )
+
+    def test_unknown_quote_fails(self) -> None:
+        """from_str names the unknown quote currency when only the quote is unknown."""
+        result = Pair.from_str("BTC/DOGE")
+        assert result == Failure(
+            InvalidLot(reason="Unknown quote currency 'DOGE' in pair 'BTC/DOGE'")
+        )
 
 
 class TestPairConstraints:

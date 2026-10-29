@@ -3,8 +3,6 @@
 Reference: ADR-016 item 4.
 """
 
-from __future__ import annotations
-
 import dataclasses
 from collections import defaultdict
 from datetime import UTC, date, datetime, timedelta
@@ -195,7 +193,9 @@ class TestQuoteLegQty:
     def test_sell_whose_fee_eats_the_proceeds_is_refused(self) -> None:
         """Invariant: a quote leg never moves a non-positive quantity."""
         trade = _trade(7, OrderSide.SELL, qty="1", price="1", fee="1")
-        assert isinstance(quote_leg_qty(trade), Failure)
+        assert quote_leg_qty(trade) == Failure(
+            QuoteLegError(ref="7", reason="quote quantity 0 is not > 0")
+        )
 
 
 class TestQuoteLegTrades:
@@ -245,17 +245,20 @@ class TestQuoteLegTrades:
 
     def test_trade_quoted_in_another_currency_is_refused(self) -> None:
         """Invariant: only trades quoted in the replayed asset feed its leg."""
-        trade = dataclasses.replace(
-            _trade(1, OrderSide.BUY), pair=Pair(base=Currency.BTC, quote=Currency.EUR)
+        eur_pair = Pair(base=Currency.BTC, quote=Currency.EUR)
+        trade = dataclasses.replace(_trade(1, OrderSide.BUY), pair=eur_pair)
+        assert quote_leg_trades(Currency.USDT, {}, [trade]) == Failure(
+            QuoteLegError(ref="1", reason=f"pair is quoted in {eur_pair}")
         )
-        assert isinstance(quote_leg_trades(Currency.USDT, {}, [trade]), Failure)
 
     def test_seed_held_in_another_currency_is_refused(self) -> None:
         """Invariant: a seed feeds only the leg of the currency it is held in."""
         eur_seed = CapitalSeed(
             strategy_id=_SWING, amount=Money(Decimal("5"), Currency.EUR), seeded_at=_T0
         )
-        assert isinstance(quote_leg_trades(Currency.USDT, {"seed:1": eur_seed}, []), Failure)
+        assert quote_leg_trades(Currency.USDT, {"seed:1": eur_seed}, []) == Failure(
+            QuoteLegError(ref="seed:1", reason=f"seed is held in {Currency.EUR}")
+        )
 
     def test_a_refused_trade_fails_the_whole_leg(self) -> None:
         """Invariant: a trade with an unsupported fee fails the derivation."""
@@ -466,7 +469,7 @@ _DRIFT_PAST_1E_18 = (
 )
 
 
-@settings(max_examples=300, deadline=None)
+@settings(max_examples=300)
 @given(history=_seeded_history())
 # Missed by 1.06e-18 against the former fixed 1e-18 tolerance (#608).
 @example(history=_DRIFT_PAST_1E_18)

@@ -22,7 +22,7 @@
 #   - /etc/hermes/env.production, root:root 0600, HERMES_ALLOW_MAINNET=no
 #
 # See docs/guides/vps-operations.md for the operator checklist and
-# openspec/changes/179-cd-first-real-deploy/change.md for the design.
+# openspec/archive/179-cd-first-real-deploy/change.md for the design.
 #
 # ## Trigger set
 #
@@ -32,12 +32,14 @@
 #     a few manual runs. `dry_run` defaults to true: it builds the bundle
 #     and touches nothing else (no tailnet, scp or ssh).
 #
-# ## Deploy cadence (ADR-022 §6)
+# ## Deploy cadence (ADR-030)
 #
-# The repository variable DEPLOY_ON is every-green (unset means the
-# same: every green main deploys) or version (only a cut version's first
-# deploy ships; other commits are gated and bundled, not deployed). The
-# Code Owner sets it at day 0; agents never change it.
+# Every push to main whose CI passed deploys when it changes a file the
+# release bundle carries, as the next version: MINOR for a feature,
+# breaking change or engine file, PATCH otherwise, computed from the
+# last v tag by scripts/deploy/next_version.py. A push that changes
+# nothing shipped (docs, tests, CI, research batches) is gated and
+# bundled but not deployed. The retired DEPLOY_ON variable is ignored.
 #
 # ## Serialization
 #
@@ -103,7 +105,7 @@ jobs:
     # The ops runner, not the CI pool: the e2e serve cycle failed on
     # contention beside PR CI (run 37304489094, #694). With one ops
     # runner it never overlaps the merge queue's Revalidate either.
-    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]') }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -148,24 +150,27 @@ jobs:
   # BUILD — package the app into a wheel via the reusable workflow.
   # ─────────────────────────────────────────────────────────────────
   build:
-    needs: gate
+    needs: [gate, notes]
     uses: ./.github/workflows/_build-wheel.yml
     with:
       runner-label: ${{ vars.OPS_RUNNER_LABEL }}
       ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      version: ${{ needs.notes.outputs.version }}
 
   # ─────────────────────────────────────────────────────────────────
-  # NOTES — what this deploy carries: the commits on main since the
-  # previous deploy tag and the changelog.d lines they added (#626),
-  # and whether this commit deploys at all (ADR-022 §6). A notes
-  # problem never fails it; only a DEPLOY_ON value it does not know does.
+  # NOTES — whether this push deploys and as which version (ADR-030),
+  # and what it carries: the commits on main since the previous deploy
+  # tag and the changelog.d lines they added (#626). A notes problem
+  # never fails it; a version that cannot be computed does, so nothing
+  # ships under a guessed number.
   # ─────────────────────────────────────────────────────────────────
   notes:
     name: Release notes
     needs: gate
     outputs:
-      deploy: ${{ steps.cadence.outputs.deploy }}
-    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+      deploy: ${{ steps.version.outputs.deploy }}
+      version: ${{ steps.version.outputs.version }}
+    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]') }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -178,15 +183,38 @@ jobs:
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with: { version: "0.12.5" }
 
+      # ADR-030 §2-§3: ships when a bundle file changed since the last v
+      # tag; the bump comes from the fragments and engine files since it.
+      - name: Compute the version
+        id: version
+        env:
+          DEPLOY_ON: ${{ vars.DEPLOY_ON }}
+        run: |
+          set -euo pipefail
+          mkdir -p notes
+          uv run --no-project --python 3.14 scripts/deploy/next_version.py \
+              --release "$RELEASE_SHA" > notes/version.json
+          cat notes/version.json
+          read -r ships version < <(uv run --no-project --python 3.14 python -c \
+              'import json; v = json.load(open("notes/version.json")); print(str(v["ships"]).lower(), v["version"])')
+          if [ "$ships" != true ]; then
+              echo "::notice::this push changes nothing the release bundle carries, so it is checked but not deployed (ADR-030 §2)"
+          fi
+          if [ -n "$DEPLOY_ON" ]; then
+              echo "::warning::DEPLOY_ON is retired by ADR-030 and ignored; the Code Owner can delete the variable"
+          fi
+          echo "deploy=$ships" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - name: Write the release notes
         env:
           REPO: ${{ github.repository }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           set -uo pipefail
-          mkdir -p notes
           for format in markdown telegram; do
               if ! uv run --no-project --python 3.14 scripts/deploy/release_notes.py \
-                  --release "$RELEASE_SHA" --repo "$REPO" --format "$format" > "notes/$format.txt" \
+                  --release "$RELEASE_SHA" --repo "$REPO" --format "$format" --version "$VERSION" > "notes/$format.txt" \
                   || ! grep -q '[^[:space:]]' "notes/$format.txt"; then
                   echo "::warning::release notes ($format) failed or came out empty; shipping a placeholder"
                   printf 'hermes %s is live on hermes-01. Release notes could not be built; commits: %s\n' \
@@ -194,43 +222,6 @@ jobs:
               fi
           done
           cat notes/markdown.txt
-
-      # The cut version this commit carries, if any, for the deploy job to
-      # tag v<version> on its first deploy (ADR-022 §3). Never fails: `{}`
-      # means nothing to tag.
-      - name: Describe the version release
-        run: |
-          set -uo pipefail
-          if ! uv run --no-project --python 3.14 scripts/deploy/version_release.py \
-                  --release "$RELEASE_SHA" > notes/version.json; then
-              echo "::warning::version release could not be described; nothing will be tagged"
-              echo '{}' > notes/version.json
-          fi
-          cat notes/version.json
-
-      # ADR-022 §6: DEPLOY_ON=every-green (the default) deploys every green
-      # main; DEPLOY_ON=version deploys only a cut version's first deploy,
-      # so the shadow changes only through a release PR. Every other commit
-      # is still gated and bundled. The Code Owner flips it at day 0.
-      - name: Decide whether this commit deploys
-        id: cadence
-        env:
-          DEPLOY_ON: ${{ vars.DEPLOY_ON || 'every-green' }}
-        run: |
-          set -euo pipefail
-          case "$DEPLOY_ON" in
-              every-green) deploy=true ;;
-              version)
-                  deploy=$(uv run --no-project --python 3.14 python -c \
-                      'import json; print(str(json.load(open("notes/version.json")).get("first_deploy") is True).lower())')
-                  if [ "$deploy" != true ]; then
-                      echo "::notice::DEPLOY_ON=version: this commit carries no new version, so it is checked but not deployed"
-                  fi ;;
-              *)
-                  echo "::error::DEPLOY_ON must be every-green or version, not '$DEPLOY_ON'"
-                  exit 1 ;;
-          esac
-          echo "deploy=$deploy" >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
@@ -246,7 +237,7 @@ jobs:
   bundle:
     name: Build release bundle
     needs: build
-    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]') }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -265,45 +256,7 @@ jobs:
           path: dist/
 
       - name: Assemble release bundle
-        run: |
-          set -euo pipefail
-          sha12=${RELEASE_SHA::12}
-          stage=$(mktemp -d)
-
-          # The wheel keeps its original filename: uv rejects a renamed one.
-          cp dist/hermes-*.whl "$stage/"
-          if [ "$(ls "$stage"/hermes-*.whl | wc -l)" -ne 1 ]; then
-              echo "::error::expected exactly one wheel in dist/"
-              exit 1
-          fi
-
-          # Same lock, same SHA-256 hashes as CI (ADR-010 section 4). The VPS
-          # installs from this file with --require-hashes.
-          uv export --frozen --no-dev --no-emit-project --output-file "$stage/requirements.txt"
-          if ! grep -q -- '--hash=sha256:' "$stage/requirements.txt"; then
-              echo "::error::uv export wrote no hashes"
-              exit 1
-          fi
-
-          cp -r config "$stage/config"
-          # hermes serve reads the signed pre-registration (kill rules) and the
-          # fee history (pre-reg §6.1) from the release root (#353 D-6).
-          install -d "$stage/docs/experiments/swing-mvp1"
-          install -m 0644 docs/experiments/swing-mvp1/pre-registration-v1.md \
-              docs/experiments/swing-mvp1/fee-history.csv "$stage/docs/experiments/swing-mvp1/"
-          # The units run these from /opt/hermes/current/deploy/ (health ping,
-          # failure notifier, backup): each release carries its own copy.
-          install -d "$stage/deploy" "$stage/bin"
-          install -m 0755 deploy/hermes-health-ping.sh deploy/hermes-notify-failure.sh deploy/hermes-notify-crash.sh deploy/hermes-daily-line.sh deploy/hermes-backup.sh deploy/hermes-console.sh "$stage/deploy/"
-          install -m 0755 scripts/deploy/install_release.sh scripts/deploy/health_gate.sh \
-              scripts/deploy/rollback.sh scripts/deploy/schema_guard.py "$stage/bin/"
-          # install_release.sh installs the units and timers that changed, as
-          # vps-bootstrap does, so a unit change ships with its release (#626).
-          install -d "$stage/deploy/systemd"
-          install -m 0644 deploy/systemd/*.service deploy/systemd/*.timer "$stage/deploy/systemd/"
-
-          tar -czf "hermes-release-${sha12}.tar.gz" -C "$stage" .
-          tar -tzf "hermes-release-${sha12}.tar.gz"
+        run: bash scripts/deploy/assemble_bundle.sh "${RELEASE_SHA::12}" dist
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
@@ -320,7 +273,7 @@ jobs:
     name: Deploy to VPS
     needs: [bundle, notes]
     if: inputs.dry_run == true || needs.notes.outputs.deploy == 'true'
-    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]') }}
     # install_release.sh may hold up to 10 min for the bar close (#626).
     timeout-minutes: 25
     # Only real deploys reach this job, so a pending one can be replaced
@@ -361,12 +314,63 @@ jobs:
               exit 2
           fi
 
+      # Before the downloads: checkout cleans the workspace. Full history and
+      # tags, so the version can be recomputed from the last v tag below.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        if: inputs.dry_run != true
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+          fetch-depth: 0
+          # This job's token can write; smoke never needs it in .git/config.
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+        if: inputs.dry_run != true
+        with: { version: "0.12.5" }
+
       - name: Download release bundle
         if: inputs.dry_run != true
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: hermes-release
           path: release/
+
+      - name: Download release notes
+        if: inputs.dry_run != true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: hermes-release-notes
+          path: notes/
+
+      # ADR-030 §4: the version is settled under the deploy lock. A push
+      # that merged while an earlier one was deploying computed its version
+      # before that deploy tagged its own, so both would carry one number.
+      # Recomputed here from the tags as they are now; when it differs, the
+      # wheel and bundle are rebuilt with it. When nothing shipped since the
+      # last tag, this is a redeploy of that version under its own number.
+      - name: Settle the version under the deploy lock
+        if: inputs.dry_run != true
+        env:
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          built=$(uv run --no-project --python 3.14 python -c 'import json; print(json.load(open("notes/version.json"))["version"])')
+          # Rewrites notes/version.json and stamps the tree when the number moved.
+          uv run --no-project --python 3.14 scripts/deploy/next_version.py \
+              --release "$RELEASE_SHA" --settle notes/version.json > /tmp/hermes-version.json
+          read -r moved now < <(uv run --no-project --python 3.14 python -c 'import json, sys; r = json.load(open(sys.argv[1])); print(str(r["moved"]).lower(), r["version"])' /tmp/hermes-version.json)
+          if [ "$moved" != true ]; then
+              echo "Version $now still holds under the lock."
+              exit 0
+          fi
+          echo "::notice::a deploy that finished first took v$built; this push ships as v$now"
+          rm -rf dist release
+          uv build --wheel
+          mkdir -p release
+          bash scripts/deploy/assemble_bundle.sh "${RELEASE_SHA::12}" dist
+          mv "hermes-release-${RELEASE_SHA::12}.tar.gz" release/
+          uv run --no-project --python 3.14 scripts/deploy/release_notes.py \
+              --release "$RELEASE_SHA" --repo "$REPO" --format telegram --version "$now" > notes/telegram.txt
 
       - name: Join tailnet
         if: inputs.dry_run != true
@@ -462,18 +466,6 @@ jobs:
       # is why smoke lives in this job). No tests collected (pytest exit
       # 5) or any failure fails the deploy and rolls back.
       # ───────────────────────────────────────────────────────────
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        if: inputs.dry_run != true
-        with:
-          ref: ${{ env.RELEASE_SHA }}
-          fetch-depth: 1
-          # This job's token can write; smoke never needs it in .git/config.
-          persist-credentials: false
-
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
-        if: inputs.dry_run != true
-        with: { version: "0.12.5" }
-
       - name: Smoke tests
         id: smoke
         if: inputs.dry_run != true
@@ -499,13 +491,6 @@ jobs:
           echo "::error::Smoke tests failed; rolling hermes-01 back to the previous release."
           ssh -i ~/.ssh/vps_id -o StrictHostKeyChecking=yes -o ServerAliveInterval=15 \
               "$VPS_SSH_USER@$VPS_SSH_HOST" /opt/hermes/bin/rollback.sh
-
-      - name: Download release notes
-        if: inputs.dry_run != true
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: hermes-release-notes
-          path: notes/
 
       # A GitHub release per good deploy, tagged deploy-<sha12> on the commit
       # that shipped, with the notes as its body (#626). The tag is how the
@@ -541,13 +526,15 @@ jobs:
             });
             core.notice(`Published ${data.html_url}`);
 
-      # The first deploy of a cut version also tags it v<version>, with that
-      # version's CHANGELOG section as the release body (ADR-022 §3). The tag
-      # goes on the commit that first shipped the version (version.target), so
-      # it names one build; a later deploy of the same version leaves it. The
-      # deploy-<sha12> release stays the latest one, since the notes chain runs
-      # on those tags. A failure here is a warning: the box already runs the release.
+      # Each deploy that ships a new version tags it v<version> on the
+      # shipped commit, with this deploy's notes as the release body
+      # (ADR-030 §5). A redeploy of a version already tagged leaves the tag.
+      # The deploy-<sha12> release stays the latest one, since the notes
+      # chain runs on those tags. The box already runs the release, so a
+      # failure here lets Telegram still announce it, then fails the job
+      # below: without the tag the next push would reuse this number.
       - name: Tag the version
+        id: tag
         if: inputs.dry_run != true
         continue-on-error: true
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9
@@ -555,10 +542,6 @@ jobs:
           script: |
             const fs = require('fs');
             const version = JSON.parse(fs.readFileSync('notes/version.json', 'utf8'));
-            if (!version.tag) {
-              core.notice('This release carries no cut version: nothing to tag.');
-              return;
-            }
             try {
               await github.rest.repos.getReleaseByTag({ ...context.repo, tag: version.tag });
               core.notice(`${version.tag} was tagged by an earlier deploy: left as is.`);
@@ -569,10 +552,10 @@ jobs:
             const { data } = await github.rest.repos.createRelease({
               ...context.repo,
               tag_name: version.tag,
-              target_commitish: version.target,
-              name: version.name,
-              body: version.body,
-              prerelease: version.tag.includes('-shadow.'),
+              target_commitish: process.env.RELEASE_SHA,
+              name: `hermes ${version.tag}`,
+              body: fs.readFileSync('notes/markdown.txt', 'utf8'),
+              prerelease: false,
               make_latest: 'false',
             });
             core.notice(`Published ${data.html_url}`);
@@ -597,6 +580,12 @@ jobs:
               --data-urlencode "disable_web_page_preview=true" \
               "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage"
 
+      - name: Fail when the version was not tagged
+        if: inputs.dry_run != true && steps.tag.outcome == 'failure'
+        run: |
+          echo "::error::the release is live on hermes-01 but its version tag was not created; the Code Owner creates it on this commit before the next merge, or the next push reuses the number"
+          exit 1
+
       - name: Dry-run notice
         if: inputs.dry_run == true
         run: echo "::notice::dry_run=true — built the bundle, skipped tailnet + scp + install + smoke."
@@ -610,7 +599,7 @@ jobs:
     # Runs after a failure so it can report it, but not when the gate
     # skipped: a CD run for a cancelled or failed CI takes no runner.
     if: "!cancelled() && needs.gate.result != 'skipped'"
-    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]') }}
     timeout-minutes: 1
     steps:
       - name: Fail when any gate failed

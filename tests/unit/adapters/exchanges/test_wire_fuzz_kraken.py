@@ -1,7 +1,7 @@
 """Fuzz properties for every Kraken wire parser (issue #842).
 
 For any reply body, ``fetch_klines`` (OHLC), ``get_orderbook`` (Depth),
-``get_ticker`` (Ticker) and ``get_pair_fees`` (AssetPairs) return a valid value
+and ``get_ticker`` (Ticker) return a valid value
 or raise ``KrakenPublicError``, and the spot adapter's ``get_fees``
 (TradeVolume) returns a schedule or raises ``ExchangeError``; nothing else.
 Accepted values satisfy the domain: finite, positive prices, OHLC ordered,
@@ -21,13 +21,13 @@ import httpx
 from hypothesis import example, given
 from hypothesis import strategies as st
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.exchanges.kraken_public import KrakenPublicAdapter, KrakenPublicConfig
 from hermes.adapters.exchanges.kraken_spot import (
     KRAKEN_BASE_URL,
     KrakenSpotAdapter,
     KrakenSpotConfig,
 )
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.domain.errors import ExchangeError, KrakenPublicError
 from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.market_data.kline import KlineInterval
@@ -78,16 +78,6 @@ _TICKER: Final = {
             "b": ["100.0", "1", "1.000"],
             "c": ["100.5", "0.5"],
             "v": ["10.0", "20.0"],
-        }
-    },
-}
-_ASSET_PAIRS: Final = {
-    "error": [],
-    "result": {
-        _SYMBOL: {
-            "altname": _SYMBOL,
-            "fees": [[0, 0.40], [10000, 0.35], [50000, 0.24]],
-            "fees_maker": [[0, 0.25], [10000, 0.20], [50000, 0.14]],
         }
     },
 }
@@ -218,28 +208,7 @@ def test_an_accepted_ticker_reply_holds_only_finite_numbers(body: object) -> Non
     assert clean_violations(ticker) == []
 
 
-# --- fees ---------------------------------------------------------------------
-
-
-@FUZZ
-@given(body=mutated(_ASSET_PAIRS))
-def test_an_asset_pairs_reply_parses_or_raises_kraken_public_error(body: object) -> None:
-    """Invariant: any AssetPairs reply gives a FeeSchedule or KrakenPublicError."""
-    assert foreign_error(lambda: _public(body).get_pair_fees(_PAIR), KrakenPublicError) == ""
-
-
-@FUZZ
-@given(body=mutated(_ASSET_PAIRS, values=_numeric_fields))
-@example(
-    body={
-        "error": [],
-        "result": {_SYMBOL: {"fees": [[0, "1E+999999"]], "fees_maker": [[0, "0.1"]]}},
-    }
-)
-def test_an_accepted_asset_pairs_schedule_has_finite_non_negative_fees(body: object) -> None:
-    """Invariant: an accepted public fee schedule has finite thresholds and fees >= 0 bps."""
-    schedule = accepted(lambda: _public(body).get_pair_fees(_PAIR), KrakenPublicError)
-    assert _fee_violations(schedule) == []
+# --- account fees -------------------------------------------------------------
 
 
 @FUZZ

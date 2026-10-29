@@ -2,9 +2,9 @@
 
 Invariants:
 
-- every key has one action; 1-8 jump to screens, Tab / Shift+Tab cycle them,
+- every key has one action; 1-9 jump to screens, Tab / Shift+Tab cycle them,
   Esc goes back, Ctrl+P opens the command palette, D W M Y still set the range;
-- screens not built yet name the issue that builds them;
+- screens not built yet name the issue that builds them (System is built, #717);
 - every home card sits in a HudPanel labelled "computed";
 - the live dot is drawn in the live colour (not dim) when OK; late is amber
   and down is red, as before;
@@ -19,8 +19,6 @@ Invariants:
 
 Every app here gets a frozen clock; none reads or writes the real home folder.
 """
-
-from __future__ import annotations
 
 import asyncio
 import io
@@ -54,21 +52,12 @@ from hermes.entrypoints.tui import (
 from hermes.entrypoints.tui_settings import ThemeChoice, load_settings
 from hermes.entrypoints.tui_theme import BASE, CONTROL_ROOM, MOTION, NEON, NIGHT, pulse_steps
 from hermes.entrypoints.tui_widgets import HudPanel, TabBar, ThemePicker, WindowBar
+from tests.support.clock import FakeClock
 
 _MADRID = ZoneInfo("Europe/Madrid")
 # The fixture's read time: 14:12 Madrid, next check 18:00 Madrid.
 _DAY = datetime(2026, 10, 3, 12, 12, tzinfo=UTC)
 _NIGHT = datetime(2026, 10, 3, 21, 30, tzinfo=UTC)  # 23:30 Madrid
-
-
-class _Clock:
-    """A clock the test moves by hand."""
-
-    def __init__(self, now: datetime) -> None:
-        self.now = now
-
-    def __call__(self) -> datetime:
-        return self.now
 
 
 def _run[T](
@@ -125,14 +114,14 @@ def test_no_key_is_bound_twice() -> None:
     assert sorted({key for key in keys if keys.count(key) > 1}) == []
 
 
-def test_number_keys_one_to_eight_each_name_a_screen() -> None:
-    """Keys 1-8 are bound, one per tab, and nothing binds 9 or 0 yet."""
+def test_number_keys_one_to_nine_each_name_a_screen() -> None:
+    """Keys 1-9 are bound, one per tab, and nothing binds 0 yet."""
     keys = set(_bound_keys())
-    assert ({str(n) for n in range(1, 9)} <= keys, {"9", "0"} & keys) == (True, set())
+    assert ({str(n) for n in range(1, 10)} <= keys, {"0"} & keys) == (True, set())
 
 
 def test_number_keys_switch_screens() -> None:
-    """Pressing 3 shows Positions, pressing 1 returns Home."""
+    """Pressing 3 shows the Positions list, pressing 1 returns Home."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[int, str, int]:
         await _press(pilot, ["3"])
@@ -141,7 +130,7 @@ def test_number_keys_switch_screens() -> None:
         return shown, text, app.tab
 
     shown, text, back = _run(probe)
-    assert (shown, "Positions · coming next · issue #715" in text, back) == (2, True, 0)
+    assert (shown, "State" in text and "Stop room" in text, back) == (2, True, 0)
 
 
 def test_every_unbuilt_screen_names_its_issue() -> None:
@@ -167,7 +156,7 @@ def test_tab_and_shift_tab_cycle_the_screens() -> None:
         await _press(pilot, ["1", "shift+tab"])
         return forward, app.tab
 
-    assert _run(probe) == (1, 7)
+    assert _run(probe) == (1, 8)
 
 
 def test_escape_goes_back_to_the_previous_screen() -> None:
@@ -254,7 +243,7 @@ def test_briefs_screen_is_the_ai_variant() -> None:
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[bool, str]:
         del pilot
-        panel = app.query_one("#screen-6").parent
+        panel = app.query_one("#screen-7").parent
         assert isinstance(panel, HudPanel)
         return panel.ai, panel.label
 
@@ -262,17 +251,17 @@ def test_briefs_screen_is_the_ai_variant() -> None:
 
 
 def test_window_bar_and_tabs_lead_the_screen() -> None:
-    """Row 0 is the window bar with the clock; row 1 the tabs with names at 120 columns."""
+    """Row 0 is the text-free window bar; row 1 the tabs with names at 120 columns."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> list[str]:
         del pilot
         return _screen_text(app).splitlines()[:2]
 
     bar, tabs = _run(probe)
-    assert (bar.startswith("▐ HERMES // SHADOW CONSOLE"), bar.endswith("14:12:00"), tabs) == (
-        True,
-        True,
-        "  1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Shadow test · 6 Briefs · 7 System · 8 Logs",
+    assert (bar, tabs) == (
+        "",
+        "  1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Lab · 6 Shadow test"
+        " · 7 Briefs · 8 System · 9 Logs",
     )
 
 
@@ -286,31 +275,35 @@ def test_compact_tabs_are_numbers_only_and_the_countdown_is_in_the_footer() -> N
 
     tabs, footer = _run(probe, size=(80, 24))
     assert (tabs, footer.endswith("next 3h 48m 00s · read-only")) == (
-        "  1   2   3   4   5   6   7   8",
+        "  1   2   3   4   5   6   7   8   9",
         True,
     )
 
 
 def test_wide_status_row_shows_the_countdown() -> None:
-    """At 120 columns the countdown follows the heartbeat on the status row."""
+    """At 140 columns the countdown follows the heartbeat on the status row.
+
+    Since issue #1097 the mainnet badge leads the row in Neon too, so the
+    countdown needs more than the 120 columns it fitted in before.
+    """
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str]:
         del pilot
         return app.plain_text("countdown").strip(), app.plain_text("footer-status").strip()
 
-    assert _run(probe) == ("in 3h 48m 00s", "read-only")
+    assert _run(probe, size=(140, 36)) == ("in 3h 48m 00s", "read-only")
 
 
 def test_clock_and_countdown_tick_every_second() -> None:
-    """One second later the window bar clock and the countdown have both moved."""
-    clock = _Clock(_DAY)
+    """One second later the status-row clock and the countdown have both moved."""
+    clock = FakeClock(_DAY)
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str]:
-        clock.now = _DAY + timedelta(seconds=1)
+        clock.current = _DAY + timedelta(seconds=1)
         await pilot.pause(1.3)
-        return app.query_one(WindowBar).clock, app.plain_text("countdown").strip()
+        return app.plain_text("clock").strip(), app.plain_text("countdown").strip()
 
-    assert _run(probe, clock=clock) == ("14:12:01", "in 3h 47m 59s")
+    assert _run(probe, clock=clock, size=(200, 36)) == ("14:12:01", "in 3h 47m 59s")
 
 
 def test_footer_keys_are_reverse_video_chips() -> None:
@@ -485,11 +478,11 @@ def test_auto_is_neon_by_day() -> None:
 
 def test_auto_switches_to_night_at_23() -> None:
     """When the clock passes 23:00 Madrid, the next tick switches Auto to the night theme."""
-    clock = _Clock(datetime(2026, 10, 3, 20, 59, 59, tzinfo=UTC))
+    clock = FakeClock(datetime(2026, 10, 3, 20, 59, 59, tzinfo=UTC))
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str]:
         before = app.theme
-        clock.now = datetime(2026, 10, 3, 21, 0, 0, tzinfo=UTC)
+        clock.current = datetime(2026, 10, 3, 21, 0, 0, tzinfo=UTC)
         await pilot.pause(1.3)
         return before, app.theme
 
@@ -618,28 +611,29 @@ def test_motion_off_runs_no_effect_timer() -> None:
 
 
 def test_motion_on_runs_the_pulse_shimmer_and_radar() -> None:
-    """With motion on by day the pulse, the shimmer and the radar run.
+    """With motion on by day the pulse, the shimmer, the radar and the spinner run.
 
     Issue #712 added the shimmer and the radar; issue #713 removed the binary
-    strip (Code Owner 2026-10-06), so no strip timer runs.
+    strip (Code Owner 2026-10-06), so no strip timer runs; issue #721 added the
+    checking spinner.
     """
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> list[str]:
         await pilot.pause(1.3)
         return sorted(app.effect_timers)
 
-    assert _run(probe, motion=True) == ["pulse", "radar", "shimmer"]
+    assert _run(probe, motion=True) == ["pulse", "radar", "shimmer", "spinner"]
 
 
 def test_night_runs_only_the_slow_pulse() -> None:
-    """At night only the pulse runs, stepping every 0.8 s instead of 0.4 s."""
+    """At night the slow pulse and the checking spinner run; no shimmer, no radar."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[list[str], float]:
         del pilot
         pulse = app.effect_timers["pulse"]
         return sorted(app.effect_timers), pulse._interval
 
-    assert _run(probe, motion=True, clock=lambda: _NIGHT) == (["pulse"], 0.8)
+    assert _run(probe, motion=True, clock=lambda: _NIGHT) == (["pulse", "spinner"], 0.8)
 
 
 @pytest.fixture
@@ -746,7 +740,7 @@ def _switcher_and_bar(app: HomeApp) -> tuple[int, str | None, int]:
 
 
 def test_each_number_key_selects_its_screen_in_the_switcher_and_the_tab_bar() -> None:
-    """Keys 1-8 each show their own screen body and highlight their own tab."""
+    """Keys 1-9 each show their own screen body and highlight their own tab."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> list[tuple[int, str | None, int]]:
         seen = []
@@ -763,12 +757,13 @@ def test_each_number_key_selects_its_screen_in_the_switcher_and_the_tab_bar() ->
         (5, "tab-6", 5),
         (6, "tab-7", 6),
         (7, "tab-8", 7),
+        (8, "tab-9", 8),
         (0, "tab-1", 0),
     ]
 
 
 def test_tab_walks_every_screen_in_order_and_wraps_home() -> None:
-    """Eight Tab presses visit Signals ... Logs, then Home again."""
+    """Nine Tab presses visit Signals ... Logs, then Home again."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> list[int]:
         seen = []
@@ -777,11 +772,11 @@ def test_tab_walks_every_screen_in_order_and_wraps_home() -> None:
             seen.append(app.tab)
         return seen
 
-    assert _run(probe) == [1, 2, 3, 4, 5, 6, 7, 0]
+    assert _run(probe) == [1, 2, 3, 4, 5, 6, 7, 8, 0]
 
 
 def test_shift_tab_walks_every_screen_backwards() -> None:
-    """Eight Shift+Tab presses visit Logs ... Signals, then Home again."""
+    """Nine Shift+Tab presses visit Logs ... Signals, then Home again."""
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> list[int]:
         seen = []
@@ -790,7 +785,7 @@ def test_shift_tab_walks_every_screen_backwards() -> None:
             seen.append(app.tab)
         return seen
 
-    assert _run(probe) == [7, 6, 5, 4, 3, 2, 1, 0]
+    assert _run(probe) == [8, 7, 6, 5, 4, 3, 2, 1, 0]
 
 
 def test_tab_does_nothing_while_the_theme_picker_is_open() -> None:
@@ -836,10 +831,10 @@ def _title_bar_start(app: HomeApp) -> str:
     return bgcolor.name
 
 
-def test_picking_control_room_hides_the_window_bar_and_recolours_the_title_bars(
+def test_picking_control_room_keeps_the_window_bar_and_recolours_the_chrome(
     tmp_path: Path,
 ) -> None:
-    """After picking Control room the window bar is gone and title bars start on its chrome."""
+    """After picking Control room the window bar stays, blank, and title bars take its chrome."""
     path = tmp_path / "console.toml"
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[bool, str, bool, str, str]:
@@ -852,26 +847,26 @@ def test_picking_control_room_hides_the_window_bar_and_recolours_the_title_bars(
     assert _run(probe, settings_path=path) == (
         True,
         NEON.chrome[0].lower(),
-        False,
+        True,
         CONTROL_ROOM.chrome[0].lower(),
-        "  1 Home · 2 Signals · 3 Positions · 4 Tax · 5 Shadow test · 6 Briefs · 7 System · 8 Logs",
+        "",
     )
 
 
 @pytest.mark.parametrize(
-    ("theme", "now", "shown"),
+    ("theme", "now"),
     [
-        (ThemeChoice.NEON, _DAY, True),
-        (ThemeChoice.CONTROL, _DAY, False),
-        (ThemeChoice.AUTO, _DAY, True),
-        (ThemeChoice.AUTO, _NIGHT, False),
+        (ThemeChoice.NEON, _DAY),
+        (ThemeChoice.CONTROL, _DAY),
+        (ThemeChoice.AUTO, _DAY),
+        (ThemeChoice.AUTO, _NIGHT),
     ],
     ids=["neon", "control", "auto-day", "auto-night"],
 )
-def test_window_bar_shows_only_in_neon(theme: ThemeChoice, now: datetime, shown: bool) -> None:
-    """The Neon window bar leads the screen in Neon only."""
+def test_window_bar_leads_every_theme(theme: ThemeChoice, now: datetime) -> None:
+    """The window bar leads the screen in every theme, with no text on it (issue #1097)."""
 
-    async def drive() -> tuple[bool, bool]:
+    async def drive() -> tuple[bool, str]:
         app = HomeApp(
             FixtureReadModel.load("ok-two-positions"),
             clock=lambda: now,
@@ -882,9 +877,9 @@ def test_window_bar_shows_only_in_neon(theme: ThemeChoice, now: datetime, shown:
         async with app.run_test(size=(120, 36)) as pilot:
             await pilot.pause()
             first = _screen_text(app).splitlines()[0]
-            return app.query_one(WindowBar).display, first.startswith("▐ HERMES // SHADOW CONSOLE")
+            return app.query_one(WindowBar).display, first
 
-    assert asyncio.run(drive()) == (shown, shown)
+    assert asyncio.run(drive()) == (True, "")
 
 
 def test_demo_tag_is_drawn_on_the_warn_amber() -> None:
@@ -913,7 +908,7 @@ def test_palette_search_goes_to_a_screen() -> None:
         await _palette_pick(pilot, "Go to Logs")
         return app.tab, isinstance(app.screen, CommandPalette)
 
-    assert _run(probe) == (7, False)
+    assert _run(probe) == (8, False)
 
 
 def test_palette_search_switches_and_saves_the_theme(tmp_path: Path) -> None:
@@ -1075,11 +1070,11 @@ def test_late_and_down_have_no_live_dot() -> None:
 
 def test_auto_leaves_night_at_eight() -> None:
     """When the clock passes 08:00 Madrid, the next tick switches Auto back to Neon."""
-    clock = _Clock(datetime(2026, 10, 4, 5, 59, 59, tzinfo=UTC))
+    clock = FakeClock(datetime(2026, 10, 4, 5, 59, 59, tzinfo=UTC))
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str]:
         before = app.theme
-        clock.now = datetime(2026, 10, 4, 6, 0, 0, tzinfo=UTC)
+        clock.current = datetime(2026, 10, 4, 6, 0, 0, tzinfo=UTC)
         await pilot.pause(1.3)
         return before, app.theme
 
@@ -1090,11 +1085,11 @@ def test_a_hand_picked_control_room_ignores_the_night(tmp_path: Path) -> None:
     """A saved Control room choice stays Control room across 23:00."""
     path = tmp_path / "console.toml"
     path.write_text('theme = "control"\n', encoding="utf-8")
-    clock = _Clock(datetime(2026, 10, 3, 20, 59, 59, tzinfo=UTC))
+    clock = FakeClock(datetime(2026, 10, 3, 20, 59, 59, tzinfo=UTC))
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[str, str]:
         before = app.theme
-        clock.now = datetime(2026, 10, 3, 21, 0, 1, tzinfo=UTC)
+        clock.current = datetime(2026, 10, 3, 21, 0, 1, tzinfo=UTC)
         await pilot.pause(1.3)
         return before, app.theme
 
@@ -1107,19 +1102,20 @@ def test_a_hand_picked_control_room_ignores_the_night(tmp_path: Path) -> None:
 def test_entering_night_slows_the_pulse_and_stops_the_day_effects() -> None:
     """With motion on, crossing 23:00 restarts the pulse at 0.8 s per step.
 
-    Issue #712's day effects (radar, shimmer) stop at night; the binary strip
+    Issue #712's day effects (radar, shimmer) stop at night, the checking
+    spinner (issue #721) keeps running; the binary strip
     is gone since issue #713.
     """
-    clock = _Clock(datetime(2026, 10, 3, 20, 59, 59, tzinfo=UTC))
+    clock = FakeClock(datetime(2026, 10, 3, 20, 59, 59, tzinfo=UTC))
 
     async def probe(app: HomeApp, pilot: Pilot[None]) -> tuple[list[str], list[str], float]:
         before = sorted(app.effect_timers)
-        clock.now = datetime(2026, 10, 3, 21, 0, 0, tzinfo=UTC)
+        clock.current = datetime(2026, 10, 3, 21, 0, 0, tzinfo=UTC)
         await pilot.pause(1.3)
         return before, sorted(app.effect_timers), app.effect_timers["pulse"]._interval
 
     assert _run(probe, clock=clock, motion=True) == (
-        ["pulse", "radar", "shimmer"],
-        ["pulse"],
+        ["pulse", "radar", "shimmer", "spinner"],
+        ["pulse", "spinner"],
         0.8,
     )

@@ -3,10 +3,8 @@
 Only the operator's chat gets replies. Each command gets at most one reply per
 5 seconds; extra requests inside that window are dropped without a reply.
 
-Reference: openspec/changes/379-telegram-bot/change.md (D-1).
+Reference: openspec/archive/379-telegram-bot/change.md (D-1).
 """
-
-from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta

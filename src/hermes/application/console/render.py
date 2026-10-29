@@ -12,19 +12,18 @@ Three rules hold in every renderer:
 - a DEMO DATA tag heads the output whenever the data comes from a fixture;
 - when hermes is down, money is dimmed and marked "as of" the stop time.
 
-Reference: openspec/changes/console-read-model/change.md (D-2, D-4, D-5);
+Reference: openspec/archive/console-read-model/change.md (D-2, D-4, D-5);
 the approved console UX proposal (2026-10-03).
 """
 
-from __future__ import annotations
-
 import io
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, tzinfo
 from decimal import Decimal
+from fractions import Fraction
+from math import ceil
 from typing import Final
-from zoneinfo import ZoneInfo
 
 from rich import box
 from rich.console import Console, Group, RenderableType
@@ -73,12 +72,15 @@ from hermes.application.console.views import (
     WaterfallColumn,
 )
 from hermes.application.console.visibility import Surface, pnl_visible
+from hermes.domain.value_objects.cents import to_cents
+from hermes.domain.value_objects.time import MADRID
 
 __all__ = [
     "DEMO_TAG",
     "MADRID",
     "RenderContext",
     "day_clock",
+    "is_checking",
     "range_label",
     "render_activity",
     "render_heartbeat",
@@ -95,7 +97,6 @@ __all__ = [
     "to_plain_text",
 ]
 
-MADRID: Final = ZoneInfo("Europe/Madrid")
 DEMO_TAG: Final = "DEMO DATA"
 _DEFAULT_DOWN_HINT: Final = "run hermes logs for why"
 _WIDE_FROM: Final = 100
@@ -105,7 +106,7 @@ _HIDDEN_NOTE: Final = "money hidden on this surface"
 _EUR_PENDING: Final = "EUR pending"
 _EUR_PENDING_NOTE: Final = "EUR pending · priced on the next restart, or run hermes fx backfill"
 _ZERO: Final = Decimal(0)
-_CENT: Final = Decimal("0.01")
+_CHECKING_WINDOW: Final = timedelta(seconds=60)
 
 _RANGE_LABEL: Final[dict[PortfolioRange, str]] = {
     PortfolioRange.TODAY: "today",
@@ -142,11 +143,12 @@ class RenderContext:
         surface: Where the output goes; decides whether money shows.
         now: The read time every relative time is measured from.
         tz: Display timezone (Europe/Madrid unless the operator asks for UTC).
-        width: Target width in columns; 100 and over adds wide-only columns.
+        width: Target width in columns.
         demo_scenario: Fixture scenario name; set means DEMO DATA is shown.
         stale_since: When numbers froze because hermes is down, else ``None``.
         down_hint: Call to action on the down row (the TUI says "press L").
         live_dot: Style of the OK line's dot; the TUI pulses it (issue #711).
+        spinner: Glyph of the "checking" line; the TUI turns it (issue #721).
     """
 
     surface: Surface
@@ -157,6 +159,7 @@ class RenderContext:
     stale_since: datetime | None = None
     down_hint: str = _DEFAULT_DOWN_HINT
     live_dot: str = "bold cyan"
+    spinner: str = "◌"
 
     @classmethod
     def for_model(
@@ -195,11 +198,6 @@ class RenderContext:
     def shows_money(self) -> bool:
         """Return whether money may appear on this surface."""
         return pnl_visible(self.surface)
-
-    @property
-    def wide(self) -> bool:
-        """Return whether the width allows the wide-only columns."""
-        return self.width >= _WIDE_FROM
 
 
 def to_plain_text(renderable: RenderableType, *, width: int) -> str:
@@ -313,6 +311,23 @@ def _grid(*, wide_padding: bool = False) -> Table:
 # ----------------------------------------------------------------------
 
 
+def is_checking(heartbeat: Heartbeat, now: datetime) -> bool:
+    """Return whether a bar check is due and under a minute overdue.
+
+    Past a minute the line goes back to the plain OK text, and past
+    ``LATE_AFTER`` the heartbeat itself is LATE.
+
+    Args:
+        heartbeat: The heartbeat view.
+        now: The time to judge at (the console clock between reads).
+
+    Returns:
+        ``True`` while the scheduled check has just come due.
+    """
+    overdue = now - heartbeat.next_check_at
+    return heartbeat.state is HeartbeatState.OK and timedelta(0) <= overdue < _CHECKING_WINDOW
+
+
 def render_heartbeat(heartbeat: Heartbeat, ctx: RenderContext) -> Group:
     """Render the status line: quiet when OK, amber when late, a red row when down.
 
@@ -335,6 +350,10 @@ def render_heartbeat(heartbeat: Heartbeat, ctx: RenderContext) -> Group:
             style="yellow",
             justify="right",
         )
+    elif is_checking(heartbeat, ctx.now):
+        line = Text(justify="right")
+        line.append(ctx.spinner, style=ctx.live_dot)
+        line.append(f" checking {_clock(ctx, heartbeat.next_check_at)} bar…", style="dim")
     else:
         # The dot carries the live colour; only the words stay muted (#711:
         # a fully dim line read as "live is gray").
@@ -419,12 +438,12 @@ def _column_money(ctx: RenderContext, column: WaterfallColumn, value: Decimal) -
 
 
 def _fmt_quote(value: Decimal) -> str:
-    return f"{value.quantize(_CENT):,} USDT"
+    return f"{to_cents(value):,} USDT"
 
 
 def _fmt_seed(value: Decimal, currency: str) -> str:
     """Return a seed amount as the operator funded it: ``5,000 USDT``, cents only if any."""
-    cents = value.quantize(_CENT)
+    cents = to_cents(value)
     shown = f"{cents:,.0f}" if cents == cents.to_integral_value() else f"{cents:,}"
     return f"{shown} {currency}"
 
@@ -972,12 +991,25 @@ _ICONS: Final[dict[ActivityKind, tuple[str, str]]] = {
 }
 
 
+def _emphasised(cell: RenderableType, style: str) -> Text:
+    """Return an activity cell as text with ``style`` laid over it."""
+    text = cell.copy() if isinstance(cell, Text) else Text(str(cell))
+    text.stylize(style)
+    return text
+
+
 def _icon(ctx: RenderContext, item: ActivityItem) -> Text:
     """Return the row's icon; a closed row's tick takes the colour of its net."""
     glyph, style = _ICONS[item.kind]
     if item.kind is ActivityKind.CLOSED:
         style = _money_style(ctx, item.net) if item.net is not None and ctx.shows_money else ""
     return Text(glyph, style=style)
+
+
+def _revealed(text: Text, share: Fraction | None) -> Text:
+    if share is None or share >= 1:
+        return text
+    return text[: ceil(len(text.plain) * share)]
 
 
 def _activity_text(ctx: RenderContext, item: ActivityItem, *, icons: bool = False) -> Text:
@@ -1011,6 +1043,8 @@ def render_activity(
     *,
     limit: int | None = None,
     icons: bool = False,
+    emphasis: Mapping[ActivityItem, str] | None = None,
+    reveal: Mapping[ActivityItem, Fraction] | None = None,
 ) -> Group:
     """Render the day-grouped activity feed, newest first.
 
@@ -1020,6 +1054,10 @@ def render_activity(
         limit: Maximum number of rows across all days (the home screen shows 3-4).
         icons: Lead each row with one icon per kind (◆ opened, ✓ closed,
             ▲ stop raised, • restart, ⚠ warning, ✖ error); the TUI's Cockpit.
+        emphasis: A Rich style per row to lay over the whole row, for the
+            Cockpit's fade on a new row; rows not listed are drawn as usual.
+        reveal: How much of a row's text to show, left to right, for the new
+            row's slide-in; rows not listed are drawn whole.
 
     Returns:
         The feed, or the empty-state line.
@@ -1042,9 +1080,16 @@ def render_activity(
         for item in items:
             cells: list[RenderableType] = [
                 _when(ctx, item, is_today=header == "Today"),
-                _activity_text(ctx, item, icons=icons),
+                _revealed(
+                    _activity_text(ctx, item, icons=icons),
+                    None if reveal is None else reveal.get(item),
+                ),
             ]
-            table.add_row(*([_icon(ctx, item), *cells] if icons else cells))
+            row = [_icon(ctx, item), *cells] if icons else cells
+            style = None if emphasis is None else emphasis.get(item)
+            if style is not None:
+                row = [_emphasised(cell, style) for cell in row]
+            table.add_row(*row)
         parts.append(table)
         if remaining is not None:
             remaining -= len(items)

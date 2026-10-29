@@ -6,8 +6,9 @@ Invariants:
   (240,120,20), warning amber; Neon restyles only the chrome;
 - night keeps the hues of gains and losses in darker shades and warnings fully
   bright;
-- every night colour that draws text reads at 4.5:1 or more on the night
-  panel, focused panel and overlay, and labels stay brighter than hints;
+- every colour that draws text reads at 4.5:1 or more on the void, panel,
+  focused panel and overlay of every theme, tab numbers and the theme chip
+  included, and labels stay brighter than hints;
 - night mode runs from 23:00 up to 08:00 local, and only Auto follows it;
 - the breakpoints are compact < 100, standard 100-159, wide 160-219, ultra >= 220
   columns, with height classes at 30 and 45 rows;
@@ -15,13 +16,13 @@ Invariants:
 - the Neon tokens are the values the Code Owner agreed.
 """
 
-from __future__ import annotations
-
 from datetime import time
 
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
+from rich.color import Color
+from rich.style import Style
 
 from hermes.entrypoints import tui_theme as theme
 from hermes.entrypoints.tui_settings import ThemeChoice
@@ -34,7 +35,7 @@ from hermes.entrypoints.tui_theme import (
     Tokens,
     contrast_ratio,
 )
-from hermes.entrypoints.tui_widgets import top_edge
+from hermes.entrypoints.tui_widgets import Tab, tab_text, theme_chip_text, top_edge
 
 _HEX = st.from_regex(r"#[0-9A-F]{6}", fullmatch=True)
 
@@ -106,7 +107,7 @@ def test_neon_overrides_are_the_agreed_values() -> None:
         "#8A5CFF",
         "#C8FBFF",
         "#8FA8D8",
-        "#5A5F9A",
+        "#798BB6",
         ("#FF3DF0", "#8A5CFF", "#00F0FF"),
         ("#00F0FF", "#8A5CFF", "#FF3DF0"),
     )
@@ -261,28 +262,70 @@ def test_big_total_digits_read_at_7_to_1_on_their_panel(name: str, tokens: Token
     ) == (True, True)
 
 
-_NIGHT_TEXT_TOKENS = ("text", "muted", "dim", "live", "up", "down", "warn", "ai")
+_SHEETS = (
+    (theme.NEON_THEME, NEON),
+    (theme.CONTROL_THEME, CONTROL_ROOM),
+    (theme.NIGHT_THEME, NIGHT),
+)
+_TEXT_TOKENS = ("text", "muted", "dim", "live", "up", "down", "warn", "ai", "frame_text")
+_TEXT_CASES = [
+    pytest.param(name, source, token, id=f"{name}-{source}-{token}")
+    for name, _ in _SHEETS
+    for source in ("chrome", "data")
+    for token in _TEXT_TOKENS
+]
 
 
-@pytest.mark.parametrize("token", _NIGHT_TEXT_TOKENS)
-def test_night_text_reads_at_4_5_to_1_on_every_night_surface(token: str) -> None:
-    """Night text never fades into its panel (issue #1046: labels at 4.0:1, hints at 2.3:1).
+@pytest.mark.parametrize(("name", "source", "token"), _TEXT_CASES)
+def test_text_reads_at_4_5_to_1_on_every_surface_in_every_theme(
+    name: str, source: str, token: str
+) -> None:
+    """No text colour fades into a surface in any theme (issues #1046, #1096).
 
-    Checked on the panel, the focused panel and the overlay, the three
-    surfaces night draws text on.
+    Each text token of the theme's chrome sheet and of its data sheet (Neon
+    colours data from the base sheet) is checked on the void, the panel, the
+    focused panel and the overlay: the surfaces text is drawn on.
     """
-    colour = getattr(NIGHT, token)
-    surfaces = (NIGHT.panel, NIGHT.panel_focus, NIGHT.overlay)
-    assert [contrast_ratio(colour, surface) >= TEXT_MIN_CONTRAST for surface in surfaces] == [
-        True,
-        True,
-        True,
+    surfaces = theme.tokens_for(name)
+    sheet = surfaces if source == "chrome" else theme.data_tokens(name)
+    colour = getattr(sheet, token)
+    ratios = [
+        contrast_ratio(colour, surface)
+        for surface in (surfaces.void, surfaces.panel, surfaces.panel_focus, surfaces.overlay)
     ]
+    assert [ratio >= TEXT_MIN_CONTRAST for ratio in ratios] == [True, True, True, True], ratios
 
 
-def test_night_labels_stay_brighter_than_hints() -> None:
-    """Raising night contrast keeps the hierarchy: labels (muted) outshine hints (dim)."""
-    assert _luminance(NIGHT.muted) > _luminance(NIGHT.dim)
+@pytest.mark.parametrize(("name", "tokens"), _SHEETS)
+def test_labels_stay_brighter_than_hints_in_every_theme(name: str, tokens: Tokens) -> None:
+    """Raising hint contrast keeps the hierarchy: labels (muted) outshine hints (dim)."""
+    del name
+    assert _luminance(tokens.muted) > _luminance(tokens.dim)
+
+
+@pytest.mark.parametrize(("name", "tokens"), _SHEETS)
+def test_tab_numbers_and_theme_chip_read_at_4_5_to_1(name: str, tokens: Tokens) -> None:
+    """Tab numbers on the void and the chip's void text on its fill clear 4.5:1 (issue #1096).
+
+    The tab bar draws the numbers in ``frame_text`` on the void; the theme
+    chip draws void text on a ``frame_text`` fill.
+    """
+    del name
+    tab, _ = tab_text(
+        (Tab(key="1", name="Now"), Tab(key="2", name="Trades")), 0, tokens, compact=False
+    )
+    number = next(span for span in tab.spans if tab.plain[span.start : span.end] == " 2 ")
+    number_colour = Style.parse(str(number.style)).color
+    chip = Style.parse(str(theme_chip_text(ThemeChoice.NEON, tokens, night=False).style))
+    assert (number_colour, chip.color, chip.bgcolor) == (
+        Color.parse(tokens.frame_text),
+        Color.parse(tokens.void),
+        Color.parse(tokens.frame_text),
+    )
+    assert (
+        contrast_ratio(tokens.frame_text, tokens.void) >= TEXT_MIN_CONTRAST,
+        contrast_ratio(tokens.void, tokens.frame_text) >= TEXT_MIN_CONTRAST,
+    ) == (True, True)
 
 
 def test_contrast_ratio_matches_the_wcag_extremes() -> None:

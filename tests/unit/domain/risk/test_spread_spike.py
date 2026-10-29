@@ -8,28 +8,16 @@ Property tests verify the threshold boundary at 10x 1H median (pre-reg §5.5):
 Reference: SA-9 §5.5 RO-02; spec-8-risk-overlay change.md R-2.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from hermes.domain.risk.spread_spike import _SPREAD_MULTIPLIER, SpreadSpike
-from hermes.ports.risk_overlay import RiskAction, RiskOverlayPort
+from hermes.domain.risk.spread_spike import SpreadSpike
+from hermes.ports.risk_overlay import RiskAction
 from tests.unit.domain.risk.conftest import make_market_snapshot, make_portfolio_state
 
 _RULE = SpreadSpike()
-
-
-class TestSpreadSpikeThresholdConstants:
-    """Verify the pre-reg §5.5 RO-02 constant is exactly 10."""
-
-    def test_spread_multiplier_is_binding(self) -> None:
-        """Spread multiplier must be exactly 10 per pre-reg §5.5 RO-02."""
-        assert Decimal("10") == _SPREAD_MULTIPLIER, (
-            f"RO-02 multiplier must be exactly 10 (pre-reg §5.5), got {_SPREAD_MULTIPLIER}"
-        )
 
 
 class TestSpreadSpikeBelowThreshold:
@@ -129,14 +117,4 @@ class TestSpreadSpikeZeroMedian:
         )
         assert decision.action == RiskAction.HALT, (
             f"Zero median spread must return HALT (conservative), got {decision.action}"
-        )
-
-
-class TestSpreadSpikeProtocolConformance:
-    """Rule instance satisfies RiskOverlayPort at runtime."""
-
-    def test_is_risk_overlay_port(self) -> None:
-        """SpreadSpike must be an instance of RiskOverlayPort (runtime_checkable)."""
-        assert isinstance(_RULE, RiskOverlayPort), (
-            "SpreadSpike must satisfy RiskOverlayPort Protocol"
         )

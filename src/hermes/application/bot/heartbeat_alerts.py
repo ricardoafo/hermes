@@ -12,10 +12,8 @@ minute; it returns the messages to push:
 Quiet hours (23:00 to 08:00 Madrid by default) hold reminders until they end;
 the first down message still rings. Pushed messages never carry money.
 
-Reference: openspec/changes/379-telegram-bot/change.md (D-3).
+Reference: openspec/archive/379-telegram-bot/change.md (D-3).
 """
-
-from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, time, timedelta, tzinfo

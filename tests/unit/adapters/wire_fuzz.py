@@ -52,7 +52,6 @@ _EXAMPLES: Final = int(os.environ.get("HERMES_FUZZ_EXAMPLES", "40"))
 
 FUZZ: Final = settings(
     max_examples=_EXAMPLES,
-    deadline=None,
     suppress_health_check=[HealthCheck.too_slow, HealthCheck.function_scoped_fixture],
 )
 """Examples per parser: modest, so the unit tier grows by seconds, not minutes.

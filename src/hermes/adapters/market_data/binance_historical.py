@@ -37,8 +37,6 @@ Design decisions:
 Reference: spec-4c-market-data-adapters change.md D-1, D-4.
 """
 
-from __future__ import annotations
-
 import csv
 import io
 import os
@@ -46,12 +44,13 @@ import zipfile
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from pathlib import Path
 from typing import Final
 
 import structlog
 
+from hermes.adapters._shared.wire import binance_symbol, wire_decimal
 from hermes.domain.errors import ExchangeError, InfraError
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.bar_schedule import interval_duration, previous_boundary
@@ -172,7 +171,7 @@ class BinanceHistoricalAdapter:
                 malformed CSV row, or domain-invariant violation.
         """
         data_dir = self._get_data_dir()
-        pair_str = _pair_to_binance_symbol(pair)
+        pair_str = binance_symbol(pair)
         klines_dir = data_dir / "klines" / pair_str / interval.value
 
         if not klines_dir.exists():
@@ -212,7 +211,7 @@ class BinanceHistoricalAdapter:
                 or malformed CSV row.
         """
         data_dir = self._get_data_dir()
-        pair_str = _pair_to_binance_symbol(pair)
+        pair_str = binance_symbol(pair)
         trades_dir = data_dir / "agg_trades" / pair_str
 
         if not trades_dir.exists():
@@ -266,18 +265,6 @@ class BinanceHistoricalAdapter:
 # ---------------------------------------------------------------------------
 # Private helpers
 # ---------------------------------------------------------------------------
-
-
-def _pair_to_binance_symbol(pair: Pair) -> str:
-    """Convert a :class:`Pair` to a Binance Vision directory name.
-
-    Args:
-        pair: Trading pair.
-
-    Returns:
-        Uppercase concatenated symbol, e.g. ``"BTCUSDT"``.
-    """
-    return f"{pair.base.value}{pair.quote.value}"
 
 
 def _sorted_zip_files(directory: Path) -> list[Path]:
@@ -410,17 +397,12 @@ def _decimal_field(raw: str, *, field_name: str, source: Path) -> Decimal:
     Raises:
         hermes.domain.errors.ExchangeError: On unparseable input.
     """
-    try:
-        value = Decimal(raw)
-    except InvalidOperation as exc:
-        raise ExchangeError(
-            f"BinanceHistoricalAdapter: {field_name} is not a decimal ({raw!r}) in {source}"
-        ) from exc
-    if not value.is_finite():
-        raise ExchangeError(
-            f"BinanceHistoricalAdapter: {field_name} is not a finite number ({raw!r}) in {source}"
-        )
-    return value
+    return wire_decimal(
+        raw,
+        field=f"BinanceHistoricalAdapter: {field_name} in {source}",
+        error=ExchangeError,
+        numbers=False,
+    )
 
 
 def _row_to_bar(

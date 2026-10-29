@@ -11,17 +11,14 @@ from the live console read model over the ledger, read-only, over the last
 
 Exit codes: 0 success, 2 usage or unknown scenario, 3 no ledger or unreadable.
 
-Reference: openspec/changes/374-hermes-activity/change.md;
-openspec/changes/live-home-screen/change.md (D-5, D-6).
+Reference: openspec/archive/374-hermes-activity/change.md;
+openspec/archive/live-home-screen/change.md (D-5, D-6).
 """
-
-from __future__ import annotations
 
 import argparse
 import json
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta, tzinfo
-from pathlib import Path
 from typing import Final, TextIO
 
 from rich.console import Console
@@ -33,6 +30,7 @@ from hermes.application.console.activity import activity_to_json
 from hermes.application.console.render import MADRID, RenderContext, render_activity
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints import console as console_module
+from hermes.entrypoints._cli import add_db_arg
 from hermes.entrypoints._streams import resolve_err
 
 __all__ = ["run_activity"]
@@ -109,7 +107,7 @@ def _parse(
     parser.add_argument("--all", action="store_true")
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--utc", action="store_true")
-    parser.add_argument("--db", type=Path, default=None)
+    add_db_arg(parser, default=None)
     parser.add_argument("--days", type=int, default=_DEFAULT_DAYS)
     parser.add_argument("-h", "--help", action="store_true")
     try:

@@ -1,6 +1,6 @@
 """Unit tests for loading historical bars through the data manifest.
 
-Invariants under test (openspec/changes/356-data-manifest/change.md R-1..R-3, D-3, D-4):
+Invariants under test (openspec/archive/356-data-manifest/change.md R-1..R-3, D-3, D-4):
 
 - Bars are returned only when every split they touch is pinned and the whole
   pinned dataset still hashes to its manifest entry.
@@ -12,18 +12,14 @@ The bar source is an in-memory fake; the real archive adapter is exercised by
 ``scripts/data/build_dataset_manifest.py`` and the backtest driver dry run.
 """
 
-from __future__ import annotations
-
 import asyncio
 from collections.abc import AsyncIterator
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 
-from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.strategy_protocol.data_split_enforcer import certification_context
 from hermes.application.strategy_protocol.pinned_dataset import (
     PinnedBars,
@@ -32,6 +28,7 @@ from hermes.application.strategy_protocol.pinned_dataset import (
     pin_dataset,
 )
 from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.domain.calibration.certification import CertificationState
 from hermes.domain.errors import (
     DatasetHashMismatchError,
     DatasetNotPinnedError,
@@ -48,6 +45,8 @@ from hermes.domain.market_data.dataset_manifest import (
 from hermes.domain.market_data.kline import KlineInterval
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
+from hermes.infrastructure.project_root import load_pre_registration
+from tests.support.paths import REPO_ROOT
 
 _BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
 _H4 = KlineInterval.H4
@@ -319,11 +318,7 @@ def test_pinning_oos_is_refused_outside_certification() -> None:
 @pytest.fixture(scope="module")
 def pre_reg() -> PreRegistration:
     """Return the signed pre-registration from the repo."""
-    here = Path(__file__).resolve().parent
-    for candidate in [here, *here.parents]:
-        if (candidate / "pyproject.toml").exists():
-            return PreRegistration(project_root=candidate)
-    pytest.skip("Could not find project root")
+    return load_pre_registration(REPO_ROOT)
 
 
 def _signed_manifest(pre_reg: PreRegistration) -> DatasetManifest:

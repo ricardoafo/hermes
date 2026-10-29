@@ -11,13 +11,17 @@
 #
 #   runner-label (optional string):
 #     JSON-array runner label to override the default. Empty string means
-#     "fall back to `vars.RUNNER_LABEL` or `ubuntu-latest`" — matches the
+#     "fall back to `vars.RUNNER_LABEL` or the self-hosted CI pool" — matches the
 #     pattern the callers used before extraction so behaviour is preserved.
 #
 #   ref (optional string):
 #     Commit to build. Empty means the triggering commit. CD passes the
 #     commit whose CI passed, which under workflow_run differs from
 #     GITHUB_SHA (main's tip when CD starts).
+#
+#   version (optional string):
+#     Version to stamp into pyproject.toml and hermes/__init__.py before
+#     the build (ADR-030 §4). Empty builds the committed version.
 #
 # ## Outputs
 #
@@ -44,11 +48,16 @@ on:
         type: string
         required: false
         default: ''
+      version:
+        description: 'Version to stamp before building; empty keeps the committed one'
+        type: string
+        required: false
+        default: ''
 
 jobs:
   build:
     name: Build wheel
-    runs-on: ${{ inputs.runner-label != '' && fromJSON(inputs.runner-label) || (vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest') }}
+    runs-on: ${{ inputs.runner-label != '' && fromJSON(inputs.runner-label) || (vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]')) }}
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -62,6 +71,11 @@ jobs:
           version: "0.12.5"
 
       - run: uv sync --frozen
+      - name: Stamp the computed version
+        if: inputs.version != ''
+        env:
+          VERSION: ${{ inputs.version }}
+        run: uv run --no-project --python 3.14 scripts/deploy/next_version.py --set "$VERSION"
       - run: uv build --wheel
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7

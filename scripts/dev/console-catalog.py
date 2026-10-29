@@ -21,8 +21,6 @@ Read-only on the repo. Needs ``git`` only for the release name and the
 checklist; without it the page says so.
 """
 
-from __future__ import annotations
-
 import argparse
 import base64
 import html
@@ -45,6 +43,7 @@ SCREENS = (
     "Signals",
     "Positions",
     "Tax",
+    "Lab",
     "Shadow test",
     "Briefs",
     "System",

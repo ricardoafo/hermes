@@ -6,8 +6,6 @@ rule evaluated, and recording it must not change which bars signal.
 Reference: pre-registration-v1.md §5.1, §11; ADR-012 D-06.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 

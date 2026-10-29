@@ -9,10 +9,8 @@ Usage: ``hermes bot [--config-dir DIR] [--db PATH] [--once]``
 
 Exit codes: 0 clean stop, 2 usage, 3 missing Telegram settings or bad config.
 
-Reference: openspec/changes/379-telegram-bot/change.md.
+Reference: openspec/archive/379-telegram-bot/change.md.
 """
-
-from __future__ import annotations
 
 import argparse
 import os
@@ -28,7 +26,14 @@ from typing import Final, TextIO
 import structlog
 from pydantic import SecretStr
 
+from hermes.adapters.clock.remote import remote_clock_from_env
 from hermes.adapters.console.ledger_activity import LedgerActivityReader
+from hermes.adapters.endpoint import (
+    DEFAULT_TELEGRAM_API_BASE,
+    TELEGRAM_API_BASE_ENV,
+    EndpointConfigError,
+    api_base_from_env,
+)
 from hermes.adapters.ledger.status_reader import SqliteStatusReader
 from hermes.adapters.systemd_journal import JournalctlReader, JournalUnavailableError
 from hermes.adapters.telegram_bot import TelegramBotClient, TelegramBotError, Update
@@ -41,11 +46,9 @@ from hermes.application.console.views import ActivityItem
 from hermes.application.status import StatusReport, build_report, ledger_missing_report
 from hermes.domain.errors import LedgerError
 from hermes.entrypoints import console as console_module
-from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints._cli import add_config_dir_arg, add_db_arg, load_config_or_exit
 from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.status import systemd_unit_state
-from hermes.infrastructure.config.errors import ConfigError
-from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.config.root import HermesConfig
 
 __all__ = ["BotLoop", "main"]
@@ -128,8 +131,8 @@ def main(
     """
     err = resolve_err(err)
     parser = argparse.ArgumentParser(prog="hermes bot", add_help=False)
-    parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
-    parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
+    add_config_dir_arg(parser)
+    add_db_arg(parser)
     parser.add_argument("--once", action="store_true")
     parser.add_argument("-h", "--help", action="store_true")
     try:
@@ -147,38 +150,53 @@ def main(
         err.write("ERROR: HERMES_TELEGRAM__BOT_TOKEN and HERMES_TELEGRAM__CHAT_ID must be set.\n")
         return 3
     try:
-        config = load_config(parsed.config_dir)
-    except ConfigError as exc:
-        err.write(f"ERROR: config load failed: {exc}\n")
+        api_base = api_base_from_env(environ, TELEGRAM_API_BASE_ENV, DEFAULT_TELEGRAM_API_BASE)
+    except EndpointConfigError as exc:
+        err.write(f"ERROR: {exc}\n")
         return 3
+    config = load_config_or_exit(parsed.config_dir, err)
+    if isinstance(config, int):
+        return config
 
-    sources = build_sources(config, parsed.db, environ)
+    test_clock = remote_clock_from_env(environ)
+    clock = _utc_now if test_clock is None else test_clock.now
+    sources = build_sources(config, parsed.db, environ, clock=clock)
     bot = BotLoop(
-        client=client or TelegramBotClient(token=SecretStr(token)),
+        client=client or TelegramBotClient(token=SecretStr(token), api_base=api_base),
         chat_id=chat_id,
         replies=Replies(sources=sources),
         gate=CommandGate(allowed_chat_id=chat_id),
         alerter=HeartbeatAlerter(),
         status=sources.status,
+        clock=clock,
     )
     return _run(bot, once=parsed.once)
 
 
-def build_sources(config: HermesConfig, db: Path, env: Mapping[str, str]) -> ReplySources:
+def build_sources(
+    config: HermesConfig,
+    db: Path,
+    env: Mapping[str, str],
+    *,
+    clock: Callable[[], datetime] | None = None,
+) -> ReplySources:
     """Wire the reply sources to the ledger, the journal, systemd and the read model.
 
     Args:
         config: Loaded config (pairs, intervals, settle and stale delays).
         db: The ledger file, opened read-only per call.
         env: Environment, for the console demo switch.
+        clock: Current UTC time; defaults to the wall clock. A test clock
+            in dev or qa (#972).
 
     Returns:
         The sources.
     """
     market = config.market_data
+    current = _utc_now if clock is None else clock
 
     def status() -> StatusReport:
-        now = datetime.now(UTC)
+        now = current()
         unit = systemd_unit_state()
         try:
             with SqliteStatusReader.open(db) as reader:
@@ -196,7 +214,9 @@ def build_sources(config: HermesConfig, db: Path, env: Mapping[str, str]) -> Rep
 
     def read_model() -> ConsoleReadModel | None:
         try:
-            return console_module.resolve_read_model(demo_flag=None, env=env)
+            return console_module.resolve_read_model(
+                demo_flag=None, env=env, db_path=db, clock=current
+            )
         except console_module.LiveReadModelUnavailableError:
             return None
 
@@ -216,6 +236,10 @@ def build_sources(config: HermesConfig, db: Path, env: Mapping[str, str]) -> Rep
             return []
 
     return ReplySources(status=status, read_model=read_model, activity=activity, warnings=warnings)
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
 
 
 def _run(bot: BotLoop, *, once: bool) -> int:

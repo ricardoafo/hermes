@@ -4,10 +4,8 @@ Invariants protected here: the row the SHADOW_CERTIFIED gate reads can never
 hold a drift without the model price it was measured against (or a slippage
 without its mid), never a naive time, and never a non-positive fill.
 
-Reference: openspec/changes/353-fill-kernel-in-serve/change.md D-4.
+Reference: openspec/archive/353-fill-kernel-in-serve/change.md D-4.
 """
-
-from __future__ import annotations
 
 from datetime import UTC, datetime
 from decimal import Decimal

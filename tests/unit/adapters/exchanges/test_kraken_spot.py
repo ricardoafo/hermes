@@ -6,8 +6,6 @@ spot testnet, so there is no live contract test: a signed call would touch a
 real account.
 """
 
-from __future__ import annotations
-
 import dataclasses
 import json
 from collections.abc import Callable, Iterator
@@ -21,6 +19,7 @@ import httpx
 import pytest
 import respx
 
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.exchanges.kraken_public import KrakenPublicAdapter, KrakenPublicConfig
 from hermes.adapters.exchanges.kraken_spot import (
     KRAKEN_BASE_URL,
@@ -29,7 +28,6 @@ from hermes.adapters.exchanges.kraken_spot import (
     OrderUnreadError,
     sign,
 )
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.domain.errors import ExchangeError, NetworkError
 from hermes.domain.trading.fill import Fill, Rejection
 from hermes.domain.trading.order import Order, OrderSide
@@ -37,10 +35,11 @@ from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
-from hermes.ports.exchange import ExchangePort, StopLossPort
+from tests.support.accepted import assert_accepted
 from tests.support.mainnet_permit import issued_permit
+from tests.support.paths import REPO_ROOT
 
-_FIXTURES = Path(__file__).resolve().parents[3] / "fixtures" / "kraken_spot"
+_FIXTURES = REPO_ROOT / "tests" / "fixtures" / "kraken_spot"
 _PRIVATE = f"{KRAKEN_BASE_URL}/0/private"
 _BTC = Pair(base=Currency.BTC, quote=Currency.USDT)
 _NOW_MS = 1_790_000_000_000
@@ -170,12 +169,6 @@ def test_from_env_reads_the_kraken_variables() -> None:
     )
     assert config.api_key == _KEY
     assert config.mainnet_permit is None
-
-
-def test_adapter_satisfies_both_ports(read_only: KrakenSpotAdapter) -> None:
-    """The adapter is an ExchangePort and a StopLossPort."""
-    assert isinstance(read_only, ExchangePort)
-    assert isinstance(read_only, StopLossPort)
 
 
 # SEV-1: real capital stays behind the live-approval gate (AGENTS.md rule 7, ADR-014)
@@ -394,7 +387,7 @@ def test_cancel_sends_the_txid(trading: KrakenSpotAdapter) -> None:
 def test_cancelling_an_unknown_order_is_not_an_error(trading: KrakenSpotAdapter) -> None:
     """EOrder:Unknown order means the order is already gone, so the cancel succeeds."""
     respx.post(f"{_PRIVATE}/CancelOrder").mock(return_value=_ok("cancel_order_unknown"))
-    trading.cancel_order(order_id=_MARKET_TXID)
+    assert_accepted(trading.cancel_order, order_id=_MARKET_TXID)
 
 
 @respx.mock

@@ -31,10 +31,8 @@ Design invariants
   passes ``CERTIFIED``.
 
 Reference: docs/decisions/2026-10-04-notification-templates-v2.md;
-    openspec/changes/144-notification-system/change.md.
+    openspec/archive/144-notification-system/change.md.
 """
-
-from __future__ import annotations
 
 import csv
 import io

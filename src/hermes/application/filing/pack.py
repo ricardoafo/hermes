@@ -6,23 +6,20 @@ the ``hermes tax`` estimate when the caller has one, and adds the trail, the
 readiness checklist and the changes since the previous refresh. Nothing here
 touches the disk; the ``tax-pack`` entrypoint writes what this returns.
 
-Reference: openspec/changes/568-tax-pack/change.md.
+Reference: openspec/archive/568-tax-pack/change.md.
 """
 
-from __future__ import annotations
-
-import csv
 import hashlib
-import io
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 from typing import Final
-from zoneinfo import ZoneInfo
 
 from hermes.application.filing.document import Document
+from hermes.application.filing.render import csv_text as _csv
+from hermes.application.filing.render import madrid_day as _day
 from hermes.application.filing.render import render_csv_files, render_markdown
 from hermes.application.filing.renta_sheet import (
     DOSSIER_FILE,
@@ -36,6 +33,8 @@ from hermes.domain.filing.readiness import PackStatus, Readiness, assess_readine
 from hermes.domain.filing.renta_campaign import RentaCampaign
 from hermes.domain.filing.tax_year import tax_year_bounds
 from hermes.domain.filing.trail import TradeRate, TrailLine, build_trail
+from hermes.domain.value_objects.cents import cents_text as _eur
+from hermes.domain.value_objects.time import MADRID
 from hermes.ports.filing import FilingLedgerReaderPort
 from hermes.ports.tax_pack import TradeRatesPort
 
@@ -61,8 +60,6 @@ _README_FILE: Final[str] = "README.md"
 _REPORT_FILE: Final[str] = "report.md"
 _TRAIL_FILE: Final[str] = "trail.csv"
 
-_CENT: Final[Decimal] = Decimal("0.01")
-_MADRID: Final = ZoneInfo("Europe/Madrid")
 
 _FILE_NOTES: Final[tuple[tuple[str, str], ...]] = (
     (RENTA_SHEET_FILE, "the Renta Web entries to copy, in Spanish, and the 721 fields when due"),
@@ -309,14 +306,6 @@ def _trail_csv(trail: Sequence[TrailLine]) -> str:
     )  # fmt: skip
 
 
-def _csv(header: Sequence[str], rows: Sequence[Sequence[str]]) -> str:
-    buffer = io.StringIO()
-    writer = csv.writer(buffer, lineterminator="\n")
-    writer.writerow(header)
-    writer.writerows(rows)
-    return buffer.getvalue()
-
-
 def _rate(rate: TradeRate | None) -> tuple[str, str]:
     if rate is None:
         return ("pending", "")
@@ -327,13 +316,5 @@ def _pending(amount: Decimal | None) -> str:
     return "pending" if amount is None else _eur(amount)
 
 
-def _eur(amount: Decimal) -> str:
-    return str(amount.quantize(_CENT, rounding=ROUND_HALF_UP))
-
-
-def _day(at: datetime) -> str:
-    return at.astimezone(_MADRID).date().isoformat()
-
-
 def _stamp(at: datetime) -> str:
-    return at.astimezone(_MADRID).strftime("%Y-%m-%d %H:%M") + " Madrid"
+    return at.astimezone(MADRID).strftime("%Y-%m-%d %H:%M") + " Madrid"

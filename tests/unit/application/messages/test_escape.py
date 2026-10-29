@@ -9,8 +9,6 @@ Verifies:
 Reference: docs/decisions/2026-08-23-slack-alongside-telegram.md.
 """
 
-from __future__ import annotations
-
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
@@ -61,10 +59,6 @@ class TestCorrelationTail:
     def test_tail_of_short_string_returns_entire_string(self) -> None:
         """A string shorter than the tail length is returned unchanged."""
         assert correlation_tail("abc") == "abc"
-
-    def test_tail_length_constant_matches_documentation(self) -> None:
-        """The exported constant equals 6 (as documented in ADR-008)."""
-        assert CORRELATION_TAIL_LEN == 6
 
 
 class TestEscapeSlack:

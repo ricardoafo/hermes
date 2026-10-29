@@ -1,17 +1,22 @@
 """Tests for the console's Tax screen (issue #719, design spec screen 4).
 
-Reference: openspec/changes/719-tax-screen/change.md (R-1..R-7).
+Reference: openspec/archive/719-tax-screen/change.md (R-1..R-7).
 """
 
 import asyncio
+import sqlite3
+import threading
 from collections.abc import Awaitable, Callable, Mapping
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
 from rich.console import RenderableType
+from textual.pilot import Pilot
 
 from hermes.adapters.console import FixtureReadModel
+from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.console.format import MINUS
 from hermes.application.console.render import MADRID, to_plain_text
 from hermes.application.console.views import TaxBand, TaxEstimate, TaxPending
@@ -313,9 +318,9 @@ def _app(source: _FakeTaxSource, profile: TaxpayerProfileView = _PROFILE) -> Hom
     )
 
 
-def _drive_async[T](
+def _drive_pilot[T](
     keys: list[str],
-    check: Callable[[HomeApp], Awaitable[T]],
+    check: Callable[[HomeApp, Pilot[None]], Awaitable[T]],
     *,
     source: _FakeTaxSource | None = None,
     size: tuple[int, int] = (160, 45),
@@ -327,9 +332,35 @@ def _drive_async[T](
             for key in keys:
                 await pilot.press(key)
                 await pilot.pause()
-            return await check(app)
+            return await check(app, pilot)
 
     return asyncio.run(run())
+
+
+def _drive_async[T](
+    keys: list[str],
+    check: Callable[[HomeApp], Awaitable[T]],
+    *,
+    source: _FakeTaxSource | None = None,
+    size: tuple[int, int] = (160, 45),
+) -> T:
+    async def with_pilot(app: HomeApp, pilot: Pilot[None]) -> T:
+        del pilot
+        return await check(app)
+
+    return _drive_pilot(keys, with_pilot, source=source, size=size)
+
+
+async def _until(done: Callable[[], bool], *, seconds: float = 5.0) -> None:
+    """Wait until ``done()`` holds, so a slow runner cannot read a stale screen.
+
+    Raises:
+        TimeoutError: ``done()`` did not hold within ``seconds``.
+
+    """
+    async with asyncio.timeout(seconds):
+        while not done():
+            await asyncio.sleep(0.01)
 
 
 def _drive[T](
@@ -385,8 +416,8 @@ def test_lots_show_every_lot_and_filter_by_state() -> None:
     async def check(app: HomeApp) -> tuple[int, list[str]]:
         query_list = app.query_one("#tax-lots", QueryList)
         total = len(query_list.shown)
-        app.query_one(QueryInput).value = "state:open"
-        await asyncio.sleep(0.05)
+        _tax(app).query_one(QueryInput).value = "state:open"
+        await _until(lambda: len(query_list.shown) != total)
         return total, sorted(str(row["lot"]) for row in query_list.shown)
 
     total, kept = _drive_async(["4", "right_square_bracket"], check)
@@ -398,10 +429,10 @@ def test_highlighting_a_lot_shows_its_fifo_detail() -> None:
     """Invariant: moving the table cursor onto the SOL lot shows the sale that used it."""
 
     async def check(app: HomeApp) -> str:
-        table = app.query_one(SortableTable)
+        table = _tax(app).query_one(SortableTable)
         table.focus()
         table.move_cursor(row=1)
-        await asyncio.sleep(0.05)
+        await _until(lambda: _plain(_tax(app).texts["tax-lot-detail"]).startswith("SOL lot b-2"))
         return _plain(_tax(app).texts["tax-lot-detail"])
 
     text = _drive_async(["4", "right_square_bracket"], check)
@@ -412,15 +443,15 @@ def test_highlighting_a_lot_shows_its_fifo_detail() -> None:
 def test_tab_in_the_query_completes_instead_of_switching_screens() -> None:
     """Invariant: Tab inside the Lots query completes a field name and keeps the Tax screen."""
 
-    async def check(app: HomeApp) -> tuple[int, str]:
-        field = app.query_one(QueryInput)
+    async def check(app: HomeApp, pilot: Pilot[None]) -> tuple[int, str]:
+        field = _tax(app).query_one(QueryInput)
         field.focus()
         field.value = "sta"
-        await asyncio.sleep(0.05)
+        await pilot.pause()
         await app.run_action("cycle_tab(1)")
         return app.tab, field.value
 
-    tab, value = _drive_async(["4", "right_square_bracket"], check)
+    tab, value = _drive_pilot(["4", "right_square_bracket"], check)
     assert tab == 3
     assert value == "state:"
 
@@ -477,3 +508,28 @@ def test_the_pack_sub_tab_shows_the_pack_state() -> None:
     )
     assert "Tax pack 2026 · refreshed" in text
     assert PACK_LINE in text
+
+
+def test_the_tax_source_reads_the_ledger_from_the_console_worker_thread(tmp_path: Path) -> None:
+    """The real Tax source, opened here, reads the 2026 screen from another thread (#1001).
+
+    The console builds it on its UI thread and reads it in a worker; a
+    same-thread-only connection would turn every read into "could not read
+    the ledger".
+    """
+    db = tmp_path / "ledger.sqlite3"
+    with closing(sqlite3.connect(db)) as conn:
+        SqliteLedger(conn)
+    inputs = tax_inputs(demo=False, env={}, db_path=db, config_dir=Path("config"), now=_FROZEN)
+    source = inputs.source
+    assert source is not None
+    screens: list[object] = []
+    worker = threading.Thread(
+        target=lambda: screens.append(source.tax_screen(as_of=_FROZEN, prices={}))
+    )
+    worker.start()
+    worker.join()
+    inputs.close()
+    assert [(type(screen).__name__, getattr(screen, "year", None)) for screen in screens] == [
+        ("TaxScreen", 2026)
+    ]

@@ -15,6 +15,7 @@
 Description=Hermes nightly backup (L2 + SQLite → Hetzner Storage Box)
 After=network-online.target
 Wants=network-online.target
+OnFailure=hermes-notify-failure@%N.service
 
 [Service]
 Type=oneshot
@@ -33,6 +34,20 @@ ReadWritePaths=/var/lib/hermes
 
 # Backups can take several minutes on cold-cache runs; give room but cap.
 TimeoutStartSec=30min
-
-[Install]
-WantedBy=multi-user.target
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+UMask=0027

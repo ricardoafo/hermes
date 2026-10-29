@@ -16,8 +16,6 @@ Invariants:
   shipped with the release.
 """
 
-from __future__ import annotations
-
 import io
 from decimal import Decimal
 from pathlib import Path
@@ -45,6 +43,7 @@ from hermes.entrypoints.console import (
     shadow_sources,
     split_demo_flag,
 )
+from tests.support.paths import REPO_ROOT
 
 
 @pytest.mark.parametrize(
@@ -244,7 +243,7 @@ def test_exposure_cap_is_read_from_the_roster(tmp_path: Path) -> None:
 
 def test_exposure_cap_of_the_repository_roster() -> None:
     """The shipped roster (pre-registration §5.5) caps exposure at 15%."""
-    repo_config = Path(__file__).parents[3] / "config"
+    repo_config = REPO_ROOT / "config"
     assert roster_exposure_cap({"HERMES_CONFIG_DIR": str(repo_config)}) == Decimal("0.15")
 
 
@@ -265,7 +264,7 @@ def test_exposure_cap_is_unknown_without_a_roster(tmp_path: Path) -> None:
 def test_roster_strategy_is_the_first_enabled_one(tmp_path: Path) -> None:
     """The Shadow test reads the day-0 record of the strategy serve trades: the first enabled."""
     two = _roster(tmp_path / "two", ("a", "0.5", "0.15"), ("b", "0.5", "0.15"))
-    repo_config = Path(__file__).parents[3] / "config"
+    repo_config = REPO_ROOT / "config"
     assert (
         roster_strategy_id(two),
         roster_strategy_id({"HERMES_CONFIG_DIR": str(repo_config)}),

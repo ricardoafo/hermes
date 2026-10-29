@@ -8,8 +8,6 @@ Verifies:
 Reference: R-4 (A-4.1 through A-4.4).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 from typing import ClassVar
@@ -90,12 +88,3 @@ class TestDomainEventInstantiation:
         # Access via class, not instance field
         assert VersionedEvent.__event_schema_version__ == 2
         assert type(event).__event_schema_version__ == 2
-
-
-class TestSchemaVersionTypeAlias:
-    """Verify SchemaVersion is exported and is the int type alias."""
-
-    def test_schema_version_is_int(self) -> None:
-        """SchemaVersion is a type alias for int — values of that type are instances of int."""
-        v: SchemaVersion = 1
-        assert isinstance(v, int)

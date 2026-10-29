@@ -1,6 +1,6 @@
 """Tests for the one-day parity check.
 
-Invariants protected here (openspec/changes/358-parity-check/change.md):
+Invariants protected here (openspec/archive/358-parity-check/change.md):
 
 - the same bars through serve's recorded decisions and the replay are in parity;
 - a delivery order that differs from serve's (open time instead of close
@@ -18,8 +18,6 @@ Invariants protected here (openspec/changes/358-parity-check/change.md):
   correlated entry serve refused is refused in the replay too (#514).
 """
 
-from __future__ import annotations
-
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
@@ -34,7 +32,6 @@ from hermes.application.parity.check import HistoryFetcher, ParityDataError, che
 from hermes.application.parity.decisions import ParityReport
 from hermes.domain.events.signal_emitted import SignalEmitted
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
-from hermes.domain.fees.fee_schedule import FeeSchedule
 from hermes.domain.market_data.bar import Bar
 from hermes.domain.market_data.bar_schedule import order_for_delivery
 from hermes.domain.market_data.kline import KlineInterval
@@ -50,7 +47,7 @@ from tests.support.fill_kernel import (
     BTC_USDT,
     SIZING,
     STRATEGY,
-    fees,
+    fees_at,
     kernel,
     kill_evaluator,
     seed,
@@ -76,11 +73,6 @@ _FIRST_FOUR_HOUR = DAY_START + timedelta(hours=4)
 _SEC = timedelta(seconds=5)
 
 
-def _fees_at(at: datetime, pair: Pair) -> FeeSchedule:
-    _ = at
-    return fees(pair)
-
-
 def _check(
     source: FakeSource,
     make_strategy: Callable[[], StrategyPort],
@@ -99,7 +91,7 @@ def _check(
         seed=seed(),
         make_strategy=make_strategy,
         make_kernel=kernel,
-        fees_at=_fees_at,
+        fees_at=fees_at,
         order=order,
         history=history,
         now=DAY_END + timedelta(minutes=10),
@@ -504,7 +496,31 @@ def test_ro01_refuses_in_the_replay_on_the_closes_before_the_day_as_in_serve() -
             strategy_id=STRATEGY,
             sizing=SIZING,
         ),
-        fees_at=_fees_at,
+        fees_at=fees_at,
     )
 
     assert (report.matched, report.mismatches) == (1, ())
+
+
+def test_a_day_with_missed_bars_is_not_compared() -> None:
+    """#1078: a missed entry is left unfilled by rule, so the outage day raises no mismatch.
+
+    The same day without the missed bar is the mismatch above; the missed bar
+    alone turns it into a report that says the day was not compared.
+    """
+    source = _source(signals=[signal_event(_FIRST_FOUR_HOUR)])
+    source.missed.append(_FIRST_FOUR_HOUR)
+
+    report = _check(source, lambda: ScriptedStrategy(frozenset({_FIRST_FOUR_HOUR})))
+
+    assert (report.missed_bars, report.matched, report.mismatches) == (1, 0, ())
+
+
+def test_a_missed_bar_on_the_previous_day_does_not_skip_this_one() -> None:
+    """#1078: only bars closing inside the checked day count; the day's start belongs before it."""
+    source = _source(signals=[signal_event(_FIRST_FOUR_HOUR)])
+    source.missed.append(DAY_START)
+
+    report = _check(source, lambda: ScriptedStrategy(frozenset({_FIRST_FOUR_HOUR})))
+
+    assert (report.missed_bars, len(report.mismatches)) == (0, 1)

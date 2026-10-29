@@ -11,16 +11,13 @@ Invariants (797-shadow-day-zero change.md R-1, R-2):
 - The tree hash depends on file paths and bytes, not on listing order.
 """
 
-from __future__ import annotations
-
 import json
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
-from hermes.application.calibration.certification_gates import CertificationRecord
-from hermes.application.calibration.lifecycle import CertificationState
+from hermes.adapters.files import LocalFiles
 from hermes.application.strategy_protocol.day_zero import (
     MANUAL_RULES,
     Check,
@@ -32,7 +29,10 @@ from hermes.application.strategy_protocol.day_zero import (
     roster_check,
     sha256_tree,
 )
+from hermes.domain.calibration.certification import CertificationRecord, CertificationState
+from tests.support.paths import REPO_ROOT
 
+_FILES = LocalFiles()
 _FP = "fp-1"
 _AT = datetime(2026, 10, 15, tzinfo=UTC)
 
@@ -79,7 +79,7 @@ class TestNotebookCheck:
     def test_signed_and_logged_passes(self, tmp_path: Path) -> None:
         """A SIGNED status and the hash in the notebook pass."""
         assert notebook_check(
-            *self._files(tmp_path, status="SIGNED", in_notebook=True)
+            *self._files(tmp_path, status="SIGNED", in_notebook=True), files=_FILES
         ).verdict is (Verdict.PASS)
 
     @pytest.mark.parametrize(
@@ -90,12 +90,14 @@ class TestNotebookCheck:
     ) -> None:
         """A draft, or a hash the notebook lacks, fails."""
         files = self._files(tmp_path, status=status, in_notebook=in_notebook)
-        assert notebook_check(*files).verdict is Verdict.FAIL
+        assert notebook_check(*files, files=_FILES).verdict is Verdict.FAIL
 
     def test_repository_pre_registration_passes(self) -> None:
         """The signed v1 document's hash is in the v1 lab notebook."""
-        root = Path(__file__).resolve().parents[4] / "docs" / "experiments" / "swing-mvp1"
-        check = notebook_check(root / "pre-registration-v1.md", root / "lab-notebook.md")
+        root = REPO_ROOT / "docs" / "experiments" / "swing-mvp1"
+        check = notebook_check(
+            root / "pre-registration-v1.md", root / "lab-notebook.md", files=_FILES
+        )
         assert check.verdict is Verdict.PASS
 
 
@@ -135,18 +137,18 @@ class TestTreeHash:
     def test_content_change_changes_hash(self, tmp_path: Path) -> None:
         """Editing one byte changes the hash; rewriting the same bytes does not."""
         (tmp_path / "a.yaml").write_text("x: 1\n")
-        before = sha256_tree(tmp_path)
+        before = sha256_tree(tmp_path, files=_FILES)
         (tmp_path / "a.yaml").write_text("x: 1\n")
-        same = sha256_tree(tmp_path)
+        same = sha256_tree(tmp_path, files=_FILES)
         (tmp_path / "a.yaml").write_text("x: 2\n")
-        assert (same, sha256_tree(tmp_path) != before) == (before, True)
+        assert (same, sha256_tree(tmp_path, files=_FILES) != before) == (before, True)
 
     def test_rename_changes_hash(self, tmp_path: Path) -> None:
         """Same bytes under another name is another config."""
         (tmp_path / "a.yaml").write_text("x: 1\n")
-        before = sha256_tree(tmp_path)
+        before = sha256_tree(tmp_path, files=_FILES)
         (tmp_path / "a.yaml").rename(tmp_path / "b.yaml")
-        assert sha256_tree(tmp_path) != before
+        assert sha256_tree(tmp_path, files=_FILES) != before
 
 
 class TestRecord:

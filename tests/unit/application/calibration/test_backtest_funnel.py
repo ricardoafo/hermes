@@ -481,6 +481,36 @@ class TestCorrelation:
         )
         assert (check.passed, check.observed) == (False, "not computed")
 
+    def test_a_flat_series_off_zero_is_not_computed_either(self) -> None:
+        """A running series of 0.1s is flat too; its one-ulp mean error is no correlation (#1179).
+
+        ``statistics.correlation`` read it as -1.6e-16, which passed the gate.
+        """
+        running = {"v1": (0.1, 0.1, 0.1)}
+        check = _check(
+            evaluate_funnel(
+                _evidence(equity=(1.0, 2.0, 6.0, 12.0), running_strategies=running),
+                _thresholds(),
+            ),
+            "correlation",
+        )
+        assert (check.passed, check.observed) == (False, "not computed")
+
+    def test_one_flat_series_beside_a_defined_one_is_not_computed(self) -> None:
+        """A flat running series voids the gate even when another series is defined (#1219).
+
+        Reporting the defined series alone would hide the strategy no coefficient exists for.
+        """
+        running = {"v1": (0.3, 0.1, 0.2), "v2": (0.1, 0.1, 0.1)}
+        check = _check(
+            evaluate_funnel(
+                _evidence(equity=(1.0, 2.0, 6.0, 12.0), running_strategies=running),
+                _thresholds(),
+            ),
+            "correlation",
+        )
+        assert (check.passed, check.observed) == (False, "not computed")
+
 
 def _front_matter(**funnel: Any) -> dict[str, Any]:
     block: dict[str, Any] = {

@@ -6,8 +6,6 @@ the clock are fakes. No network is touched.
 Reference: ADR-016 item 4, change ``405-usdt-fifo`` D-1.
 """
 
-from __future__ import annotations
-
 import sqlite3
 from datetime import timedelta
 from decimal import Decimal

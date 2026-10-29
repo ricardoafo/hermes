@@ -7,21 +7,18 @@ on the import error, and an exit-code check would pass for the wrong reason
 (#704).
 """
 
-from __future__ import annotations
-
-from pathlib import Path
-
 import pytest
 
+from tests.support.paths import REPO_ROOT
+
 _PLUGIN = ("-p", "tests.plugins.sev1_guard", "-p", "no:randomly")
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 _GUARD_LINE = "*SEV1_GUARD: SEV-1 test skipped without opt-in*test_placeholder*"
 
 
 @pytest.fixture(autouse=True)
 def _repo_on_path(monkeypatch: pytest.MonkeyPatch) -> None:
     """Let the subprocess import the plugin, and start without the opt-in set."""
-    monkeypatch.setenv("PYTHONPATH", str(_REPO_ROOT))
+    monkeypatch.setenv("PYTHONPATH", str(REPO_ROOT))
     monkeypatch.delenv("PYTEST_SEV1_ALLOW_SKIP", raising=False)
 
 

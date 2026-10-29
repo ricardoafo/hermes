@@ -12,8 +12,6 @@ The mocked wire is the Bot API seam; its real counterpart is
 Reference: docs/decisions/2026-08-23-slack-alongside-telegram.md.
 """
 
-from __future__ import annotations
-
 import json
 from datetime import UTC, datetime
 from decimal import Decimal
@@ -24,6 +22,7 @@ import pytest
 import respx
 from structlog.testing import capture_logs
 
+from hermes.adapters.endpoint import EndpointConfigError
 from hermes.adapters.notifier import (
     TelegramAdapter,
     TelegramConfig,
@@ -753,3 +752,30 @@ class TestEurRate:
             assert self._sent_headline(adapter) == "▲ Entry long BTC · €41,928\\.16"
         finally:
             adapter.close()
+
+
+_CREDENTIALS = {"HERMES_TELEGRAM__BOT_TOKEN": _TEST_TOKEN, "HERMES_TELEGRAM__CHAT_ID": _TEST_CHAT}
+
+
+def test_from_env_defaults_to_the_real_bot_api() -> None:
+    """Without HERMES_TELEGRAM__API_BASE the adapter's client targets api.telegram.org."""
+    adapter = TelegramAdapter.create(TelegramConfig.from_env(_CREDENTIALS))
+
+    assert str(adapter.client.base_url) == "https://api.telegram.org"
+
+
+def test_create_targets_the_configured_api_base() -> None:
+    """HERMES_TELEGRAM__API_BASE alone moves the client to another host (#970)."""
+    env = {**_CREDENTIALS, "HERMES_TELEGRAM__API_BASE": "http://127.0.0.1:8081/"}
+
+    adapter = TelegramAdapter.create(TelegramConfig.from_env(env))
+
+    assert str(adapter.client.base_url) == "http://127.0.0.1:8081"
+
+
+def test_a_bad_api_base_is_an_endpoint_error_not_missing_credentials() -> None:
+    """A mistyped base fails loudly; callers that drop a channel without credentials keep it."""
+    env = {**_CREDENTIALS, "HERMES_TELEGRAM__API_BASE": "http://api.telegram.org"}
+
+    with pytest.raises(EndpointConfigError, match="HERMES_TELEGRAM__API_BASE"):
+        TelegramConfig.from_env(env)

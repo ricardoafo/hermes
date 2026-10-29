@@ -14,15 +14,13 @@ not a cut from the top of the base.
 Reference: ADR-016 decisions 6 and 7, change ``tax-estimates`` D-1.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Final
 
 from hermes.domain.tax.netting import NettingResult, TaxpayerYear, net_savings_base
-from hermes.domain.tax.precision import exact
 from hermes.domain.tax.scale import SavingsScale
+from hermes.domain.value_objects.precision import exact
 
 __all__ = ["MarginalTax", "SavingsTax", "marginal_tax", "minimum_remainder", "savings_tax"]
 

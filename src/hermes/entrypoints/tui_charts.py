@@ -10,8 +10,6 @@ token change restyles every chart. Each function is pure, so tests check the tex
 charts are display-only and never decide anything.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from decimal import Decimal
 from typing import Final
@@ -88,8 +86,8 @@ def gradient_rule(
     width: int,
     stops: Sequence[str],
     *,
+    highlight: str,
     shimmer: float | None = None,
-    highlight: str = "#FFFFFF",
     flat: str | None = None,
 ) -> Text:
     """Return the 1-row rule under the big total, one gradient colour per cell.
@@ -97,9 +95,9 @@ def gradient_rule(
     Args:
         width: Cells.
         stops: Gradient stops, first cell to last (the ``hero-underline`` token).
+        highlight: The shimmer's colour.
         shimmer: Cell position of a shimmer pass, or ``None``; cells within
             the band blend toward ``highlight``.
-        highlight: The shimmer's colour.
         flat: One colour for every cell (stale), overriding gradient and shimmer.
 
     Returns:
@@ -115,14 +113,22 @@ def gradient_rule(
     return out
 
 
+def _sample(values: Sequence[float], share: float) -> float:
+    """Return the series at ``share`` (0 first point, 1 last), straight between neighbours."""
+    position = share * (len(values) - 1)
+    index = int(position)
+    if index >= len(values) - 1:
+        return values[-1]
+    return values[index] + (values[index + 1] - values[index]) * (position - index)
+
+
 def _heights(values: Sequence[float], columns: int, dots: int) -> list[int]:
     """Return how many dots each dot column fills: 1 for the low, ``dots`` for the high."""
     lo, hi = min(values), max(values)
     span = hi - lo
-    last = len(values) - 1
     heights = []
     for x in range(columns):
-        value = values[round(x * last / (columns - 1))] if columns > 1 else values[-1]
+        value = _sample(values, x / (columns - 1)) if columns > 1 else values[-1]
         if span > 0:
             heights.append(1 + round((value - lo) / span * (dots - 1)))
         else:
@@ -134,8 +140,9 @@ def braille_area(values: Sequence[float], *, width: int, rows: int) -> list[str]
     """Return an area chart of ``values`` in braille cells, filled from the bottom.
 
     Each cell holds 2x4 dots, so the chart has ``2 x width`` dot columns,
-    sampled evenly from the series, and ``4 x rows`` dot levels. The lowest
-    value fills one dot, the highest the full height; a flat series is the bottom line.
+    sampled evenly along the series (a straight line between neighbouring
+    points), and ``4 x rows`` dot levels. The lowest value fills one dot,
+    the highest the full height; a flat series is the bottom line.
 
     Args:
         values: The series, oldest first.

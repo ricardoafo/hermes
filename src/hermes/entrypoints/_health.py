@@ -30,8 +30,6 @@ Design notes
   path — a watchdog script would spam the channel on every tick.
 """
 
-from __future__ import annotations
-
 import json
 import re
 import time
@@ -43,6 +41,7 @@ from typing import Any, Final
 import httpx
 from pydantic import ValidationError
 
+from hermes.adapters.endpoint import EndpointConfigError
 from hermes.adapters.healthchecks import (
     HealthchecksAdapter,
     HealthchecksAdapterConfig,
@@ -169,6 +168,15 @@ def check_telegram(env: dict[str, str]) -> HealthCheckResult:
             last_check=_now_utc(),
             exit_code=EXIT_NOT_CONFIGURED,
         )
+    except EndpointConfigError as exc:
+        return HealthCheckResult(
+            integration="telegram",
+            status=HealthStatus.FAIL,
+            latency_ms=0.0,
+            detail=str(exc),
+            last_check=_now_utc(),
+            exit_code=EXIT_NOT_CONFIGURED,
+        )
 
     adapter = TelegramAdapter.create(config)
     start = time.perf_counter()
@@ -233,6 +241,15 @@ def check_slack(env: dict[str, str]) -> HealthCheckResult:
             status=HealthStatus.FAIL,
             latency_ms=0.0,
             detail=detail,
+            last_check=_now_utc(),
+            exit_code=EXIT_NOT_CONFIGURED,
+        )
+    except EndpointConfigError as exc:
+        return HealthCheckResult(
+            integration="slack",
+            status=HealthStatus.FAIL,
+            latency_ms=0.0,
+            detail=str(exc),
             last_check=_now_utc(),
             exit_code=EXIT_NOT_CONFIGURED,
         )

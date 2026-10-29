@@ -14,10 +14,8 @@ configured starting capital):
 
 Read-only throughout; the result is a report, never a correction.
 
-Reference: openspec/changes/35-monthly-reconciliation/change.md D-1, D-2, D-5.
+Reference: openspec/archive/35-monthly-reconciliation/change.md D-1, D-2, D-5.
 """
-
-from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -30,7 +28,6 @@ from returns.result import Failure
 from hermes.application.portfolio.tracker import PortfolioTracker
 from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
 from hermes.domain.events.trade_executed import TradeExecuted
-from hermes.domain.portfolio.precision import EXACT_CONTEXT
 from hermes.domain.portfolio.snapshot import PortfolioSnapshot
 from hermes.domain.reconciliation.holdings import (
     HoldingCheck,
@@ -42,6 +39,7 @@ from hermes.domain.reconciliation.report import ReconciliationReport, Verdict
 from hermes.domain.reconciliation.tax_view import tax_view
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
+from hermes.domain.value_objects.precision import EXACT_CONTEXT
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.ports.reconciliation import BalanceReadPort, ReconciliationReadPort
 

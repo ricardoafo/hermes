@@ -11,11 +11,9 @@ It checks shapes only, not values. Excluded from the default run by
 ``-m 'not contract'``; run it with
 ``uv run pytest -m contract tests/contract/test_binance_public_depth.py``.
 
-Reference: openspec/changes/353-fill-kernel-in-serve/change.md R-6;
+Reference: openspec/archive/353-fill-kernel-in-serve/change.md R-6;
 docs/decisions/2026-08-23-contract-test-tier.md.
 """
-
-from __future__ import annotations
 
 from decimal import Decimal
 

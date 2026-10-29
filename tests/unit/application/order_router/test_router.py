@@ -11,13 +11,10 @@ Tests cover:
 - Sizing failure (degenerate inputs) wrapped as RiskRejected.
 """
 
-from __future__ import annotations
-
 from collections.abc import MutableMapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from decimal import Decimal
-from pathlib import Path
 
 import pytest
 import structlog
@@ -34,6 +31,7 @@ from hermes.application.order_router.router import (
 from hermes.application.order_router.sizing import SizingCalculator, SizingInput, SizingPolicy
 from hermes.application.strategy_protocol.kill_trigger_evaluator import (
     ExperimentState,
+    KillDecision,
     KillTriggerEvaluator,
 )
 from hermes.application.strategy_protocol.preregistration import PreRegistration
@@ -48,8 +46,10 @@ from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
+from hermes.infrastructure.project_root import load_pre_registration
 from hermes.ports.fill_model import FillModelPort
 from hermes.ports.risk_overlay import RiskOverlayPort
+from tests.support.paths import REPO_ROOT
 
 _STRATEGY_ID = StrategyId("test-strategy")
 
@@ -83,6 +83,7 @@ class _FixedFillModel:
 
     def __init__(self, result: Fill | Rejection) -> None:
         self._result = result
+        self.orders: list[Order] = []
 
     def fill_order(
         self,
@@ -91,7 +92,8 @@ class _FixedFillModel:
         clock: datetime,
         fees: FeeSchedule,
     ) -> Fill | Rejection:
-        """Return the configured result regardless of inputs."""
+        """Record the order and return the configured result regardless of inputs."""
+        self.orders.append(order)
         return self._result
 
 
@@ -103,11 +105,7 @@ class _FixedFillModel:
 @pytest.fixture(scope="module")
 def pre_reg() -> PreRegistration:
     """Real pre-registration from the signed document."""
-    here = Path(__file__).resolve().parent
-    for candidate in [here, *here.parents]:
-        if (candidate / "pyproject.toml").exists():
-            return PreRegistration(project_root=candidate)
-    pytest.skip("Could not find project root for PreRegistration")
+    return load_pre_registration(REPO_ROOT)
 
 
 @pytest.fixture(scope="module")
@@ -221,15 +219,9 @@ def _make_routing_input(
         Tuple of (router, routing_input).
 
     """
-    here = Path(__file__).resolve().parent
-    project_root = next(
-        (c for c in [here, *here.parents] if (c / "pyproject.toml").exists()),
-        None,
-    )
-    if project_root is None:
-        pytest.skip("Could not find project root")
+    project_root = REPO_ROOT
 
-    pre_reg = PreRegistration(project_root=project_root)
+    pre_reg = load_pre_registration(project_root)
     evaluator = kill_evaluator or KillTriggerEvaluator(pre_reg=pre_reg)
     rules = risk_rules or []
     engine = RiskEngine(rules=rules)
@@ -284,10 +276,14 @@ class TestOrderRouterKillCircuitBreaker:
             experiment_state=_triggered_experiment_state(),
         )
         result = router.route(inp)
-        assert isinstance(result, KillCircuitBreaker), (
-            f"Expected KillCircuitBreaker for drawdown=20% >= 15% kill threshold. "
-            f"Got {type(result).__name__!r}: {result!r}."
+        assert result == KillCircuitBreaker(
+            decision=KillDecision(
+                triggered=True,
+                reason="Max drawdown 20.0% >= kill threshold 15.0% (pre-reg §10).",
+                rule="max_drawdown",
+            )
         )
+        assert fill_model.orders == []
 
     def test_kill_circuit_breaker_has_triggered_decision(self) -> None:
         """KillCircuitBreaker.decision must have triggered=True."""
@@ -328,10 +324,7 @@ class TestOrderRouterKillCircuitBreaker:
             experiment_state=_safe_experiment_state(),
         )
         result = router.route(inp)
-        assert not isinstance(result, KillCircuitBreaker), (
-            f"Safe state must not trigger KillCircuitBreaker. "
-            f"Got {type(result).__name__!r}: {result!r}."
-        )
+        assert result == fill
 
 
 # ---------------------------------------------------------------------------
@@ -358,10 +351,13 @@ class TestOrderRouterOrphanPositionGuard:
             open_position_count=3,
         )
         result = router.route(inp)
-        assert isinstance(result, RiskRejected), (
-            f"Expected RiskRejected when open_position_count=3 (SA-4 P0 cap). "
-            f"Got {type(result).__name__!r}: {result!r}."
+        assert result == RiskRejected(
+            reason=(
+                "SA-4 orphan-position cap: open positions 3 >= max 3 (pre-reg concurrent limit)."
+            ),
+            rule="orphan-position",
         )
+        assert fill_model.orders == []
 
     def test_at_max_concurrent_rule_is_orphan_position(self) -> None:
         """RiskRejected.rule must mention orphan-position for traceability."""
@@ -382,8 +378,8 @@ class TestOrderRouterOrphanPositionGuard:
         assert isinstance(result, RiskRejected), (
             f"Expected RiskRejected for orphan-position cap, got {type(result).__name__!r}."
         )
-        assert "orphan" in result.rule.lower() or "position" in result.rule.lower(), (
-            f"RiskRejected.rule must mention 'orphan' or 'position' for SA-4 traceability. "
+        assert result.rule == "orphan-position", (
+            f"RiskRejected.rule must be 'orphan-position' for SA-4 traceability. "
             f"Got rule={result.rule!r}."
         )
 
@@ -403,10 +399,13 @@ class TestOrderRouterOrphanPositionGuard:
             open_position_count=4,
         )
         result = router.route(inp)
-        assert isinstance(result, RiskRejected), (
-            f"Expected RiskRejected for open_position_count=4, "
-            f"got {type(result).__name__!r}: {result!r}."
+        assert result == RiskRejected(
+            reason=(
+                "SA-4 orphan-position cap: open positions 4 >= max 3 (pre-reg concurrent limit)."
+            ),
+            rule="orphan-position",
         )
+        assert fill_model.orders == []
 
     def test_below_max_concurrent_allows_routing(self) -> None:
         """open_position_count == 2 must not trigger the orphan-position guard."""
@@ -424,10 +423,7 @@ class TestOrderRouterOrphanPositionGuard:
             open_position_count=2,
         )
         result = router.route(inp)
-        assert (
-            not isinstance(result, RiskRejected)
-            or "orphan" not in getattr(result, "rule", "").lower()
-        ), (
+        assert result == fill, (
             f"open_position_count=2 must not trigger orphan-position guard. "
             f"Got {type(result).__name__!r}: {result!r}."
         )
@@ -458,10 +454,8 @@ class TestOrderRouterRiskOverlay:
             risk_rules=[halt_rule],
         )
         result = router.route(inp)
-        assert isinstance(result, RiskRejected), (
-            f"Expected RiskRejected when a HALT rule fires. "
-            f"Got {type(result).__name__!r}: {result!r}."
-        )
+        assert result == RiskRejected(reason="test HALT rule fired", rule="HALT")
+        assert fill_model.orders == []
 
     def test_halt_rule_result_mentions_halt(self) -> None:
         """RiskRejected.rule must be 'HALT' when overlay fires HALT."""
@@ -500,9 +494,18 @@ class TestOrderRouterRiskOverlay:
             risk_rules=[ok_rule],
         )
         result = router.route(inp)
-        assert isinstance(result, Fill), (
-            f"Expected Fill after OK risk overlay. Got {type(result).__name__!r}: {result!r}."
-        )
+        assert result == fill
+        # 1% of 5000 risked over a 1500 stop distance is 0.0333 BTC; the 5% position cap
+        # (250 USDT / 50000) binds first, so the dispatched order is 0.005 BTC.
+        assert fill_model.orders == [
+            Order(
+                side=OrderSide.BUY,
+                pair=_BTC_USDT,
+                qty=Quantity(amount=Decimal("0.005"), asset=Currency.BTC),
+                strategy_id=_STRATEGY,
+                limit_price=None,
+            )
+        ]
 
     def test_warn_rule_allows_dispatch(self) -> None:
         """A WARN rule allows the router to proceed (log + continue)."""
@@ -521,10 +524,18 @@ class TestOrderRouterRiskOverlay:
             risk_rules=[warn_rule],
         )
         result = router.route(inp)
-        assert isinstance(result, Fill), (
-            f"Expected Fill after WARN risk overlay (WARN log + proceed). "
-            f"Got {type(result).__name__!r}: {result!r}."
-        )
+        assert result == fill
+        # 1% of 5000 risked over a 1500 stop distance is 0.0333 BTC; the 5% position cap
+        # (250 USDT / 50000) binds first, so the dispatched order is 0.005 BTC.
+        assert fill_model.orders == [
+            Order(
+                side=OrderSide.BUY,
+                pair=_BTC_USDT,
+                qty=Quantity(amount=Decimal("0.005"), asset=Currency.BTC),
+                strategy_id=_STRATEGY,
+                limit_price=None,
+            )
+        ]
 
 
 # ---------------------------------------------------------------------------
@@ -548,9 +559,7 @@ class TestOrderRouterFillDispatch:
 
         router, inp = _make_routing_input(fill_model=fill_model)
         result = router.route(inp)
-        assert isinstance(result, Fill), (
-            f"Expected Fill from successful dispatch, got {type(result).__name__!r}."
-        )
+        assert result is expected_fill
 
     def test_fill_rejection_wrapped_as_risk_rejected(self) -> None:
         """FillModelPort Rejection is wrapped as RiskRejected with rule='fill_model'."""

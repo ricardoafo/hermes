@@ -1,7 +1,5 @@
 """Tests for the tax-filing config and the local Modelo 721 history (change 36 D-7, D-9)."""
 
-from __future__ import annotations
-
 from decimal import Decimal
 from pathlib import Path
 
@@ -16,9 +14,9 @@ from hermes.infrastructure.config.filing import (
     load_modelo721_history,
     resolve_modelo721_history_path,
 )
+from tests.support.paths import REPO_ROOT
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[4]
-_CONFIG_DIR = _PROJECT_ROOT / "config"
+_CONFIG_DIR = REPO_ROOT / "config"
 
 
 def test_repo_config_holds_the_721_thresholds() -> None:

@@ -5,10 +5,8 @@
 ``hermes.service`` is using. :func:`open_read_only` opens the file with the
 SQLite ``mode=ro`` URI so even a bug here could not modify the ledger.
 
-Reference: openspec/changes/538-ledger-verify/change.md.
+Reference: openspec/archive/538-ledger-verify/change.md.
 """
-
-from __future__ import annotations
 
 import sqlite3
 from collections.abc import Iterable

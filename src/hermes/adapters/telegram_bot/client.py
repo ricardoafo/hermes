@@ -7,14 +7,15 @@
   ``disable_notification`` for silent messages.
 - Sends are throttled to at most 1 per second and 20 per minute by waiting
   (injected sleeper), under Telegram's per-chat limits.
+- Calls go through the shared Bot API transport
+  (:mod:`hermes.adapters._shared.telegram_http`, issue #1187), which also
+  waits out an HTTP 429 a bounded number of times.
 
 The token is held as a ``SecretStr`` and never appears in errors or logs: the
 error text names the method and status only.
 
-Reference: openspec/changes/379-telegram-bot/change.md (D-4, D-5).
+Reference: openspec/archive/379-telegram-bot/change.md (D-4, D-5).
 """
-
-from __future__ import annotations
 
 import time
 from collections import deque
@@ -26,9 +27,16 @@ import httpx
 import structlog
 from pydantic import SecretStr
 
+from hermes.adapters._shared.telegram_http import (
+    TelegramHttp,
+    TelegramHttpError,
+    TelegramHttpFailure,
+)
+from hermes.adapters.endpoint import DEFAULT_TELEGRAM_API_BASE
+from hermes.domain.errors import InfraError
+
 __all__ = ["TelegramBotClient", "TelegramBotError", "Update"]
 
-_API_BASE: Final = "https://api.telegram.org"
 _PER_SECOND: Final = 1.0
 _PER_MINUTE: Final = 20
 _MINUTE_S: Final = 60.0
@@ -36,8 +44,12 @@ _MINUTE_S: Final = 60.0
 _log = structlog.get_logger(__name__)
 
 
-class TelegramBotError(RuntimeError):
-    """A Telegram call failed; the message never contains the token."""
+class TelegramBotError(InfraError, RuntimeError):
+    """A Telegram call failed; the message never contains the token.
+
+    An :class:`~hermes.domain.errors.InfraError` like every adapter I/O
+    failure (issue #1187); still a ``RuntimeError`` for older handlers.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,12 +73,15 @@ class TelegramBotClient:
 
     Attributes:
         token: The bot token.
+        api_base: The Bot API root; :func:`hermes.adapters.endpoint.api_base_from_env`
+            reads it from ``HERMES_TELEGRAM__API_BASE``.
         client: The HTTP client; tests pass one routed through respx.
         clock: Monotonic seconds, for the send throttle.
         sleep: Waits the given seconds, for the send throttle.
     """
 
     token: SecretStr
+    api_base: str = DEFAULT_TELEGRAM_API_BASE
     client: httpx.Client = field(default_factory=lambda: httpx.Client(timeout=60.0))
     clock: Callable[[], float] = time.monotonic
     sleep: Callable[[float], None] = time.sleep
@@ -145,27 +160,21 @@ class TelegramBotClient:
         data: dict[str, str] | None = None,
         read_timeout: float = 30.0,
     ) -> dict[str, Any]:
-        url = f"{_API_BASE}/bot{self.token.get_secret_value()}/{method}"
+        transport = TelegramHttp(
+            token=self.token.get_secret_value(),
+            client=self.client,
+            api_base=self.api_base,
+            sleep=self.sleep,
+            monotonic=self.clock,
+        )
         try:
-            response = self.client.post(
-                url,
-                params=params,
-                data=data,
-                timeout=httpx.Timeout(10.0, read=read_timeout),
-            )
-        except httpx.HTTPError as exc:
-            msg = f"{method} failed: {type(exc).__name__}"
+            return transport.call(method, params=params, data=data, read_timeout=read_timeout)
+        except TelegramHttpError as exc:
+            if exc.failure is TelegramHttpFailure.TRANSPORT:
+                msg = f"{method} failed: {exc.excerpt}"
+            else:
+                msg = f"{method} failed: HTTP {exc.status} {exc.description}".rstrip()
             raise TelegramBotError(msg) from None
-        try:
-            body = response.json()
-        except ValueError:
-            body = {}
-        if not isinstance(body, dict):
-            body = {}
-        if response.status_code != httpx.codes.OK or not body.get("ok"):
-            msg = f"{method} failed: HTTP {response.status_code} {body.get('description', '')}"
-            raise TelegramBotError(msg.rstrip())
-        return dict(body)
 
 
 def _parse_update(item: object) -> Update | None:

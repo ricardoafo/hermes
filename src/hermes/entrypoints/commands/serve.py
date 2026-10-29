@@ -1,7 +1,5 @@
 """``hermes serve``: run the shadow bar loop until SIGTERM or SIGINT."""
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import os
@@ -10,10 +8,9 @@ from typing import Any, TextIO
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
 from hermes.entrypoints import serve as serve_module
+from hermes.entrypoints._cli import add_config_dir_arg, add_db_arg, load_config_or_exit
 from hermes.entrypoints._streams import resolve_err
 from hermes.entrypoints.commands import Command
-from hermes.infrastructure.config.errors import ConfigError
-from hermes.infrastructure.config.loader import DEFAULT_CONFIG_DIR, load_config
 from hermes.infrastructure.logging import configure_logging
 
 __all__ = ["COMMAND", "EXIT_LEDGER_IN_USE", "serve_main"]
@@ -29,12 +26,15 @@ run that ends soon, after which the unit's next start takes the lock.
 def _run(rest: list[str], *, stream: Any, err: TextIO | None = None) -> int:
     """Handle the ``hermes serve`` subcommand.
 
-    Parses ``--config-dir``, ``--db`` and ``--new-ledger``, loads the composite
+    Parses ``--config-dir``, ``--db``, ``--strategy`` and ``--new-ledger``, loads the composite
     :class:`~hermes.infrastructure.config.HermesConfig`, checks it can run
     the shadow loop, wires the composition root, installs signal handlers,
     and runs the bar loop. Returns 0 on a clean shutdown, 1 on a runtime
     failure, 2 on argument-parse failure, 3 on a config load or startup
-    check failure, 4 when another serve already runs on the ledger. The
+    check failure, 4 when another serve already runs on the ledger.
+    ``--strategy`` names the roster entry to run, in place of the one
+    ``strategies.yaml`` enables, so one release can run each lab shadow as its
+    own serve on its own ledger (#1076). The
     environment tier comes from ``HERMES_ENV`` only. The signed
     pre-registration and the fee history are read from
     ``--config-dir``'s parent (the release directory on the VPS).
@@ -49,8 +49,9 @@ def _run(rest: list[str], *, stream: Any, err: TextIO | None = None) -> int:
     """
     err = resolve_err(err)
     parser = argparse.ArgumentParser(prog="hermes serve", add_help=False)
-    parser.add_argument("--config-dir", type=Path, default=DEFAULT_CONFIG_DIR)
-    parser.add_argument("--db", type=Path, default=serve_module.DEFAULT_DB_PATH)
+    add_config_dir_arg(parser)
+    add_db_arg(parser)
+    parser.add_argument("--strategy", default=None)
     parser.add_argument("--new-ledger", action="store_true")
     parser.add_argument("-h", "--help", action="store_true")
 
@@ -62,9 +63,10 @@ def _run(rest: list[str], *, stream: Any, err: TextIO | None = None) -> int:
 
     if parsed.help:
         stream.write(
-            "Usage: hermes serve [--config-dir DIR] [--db PATH] [--new-ledger]\n"
+            "Usage: hermes serve [--config-dir DIR] [--db PATH] [--strategy NAME] [--new-ledger]\n"
             "\n"
             "Runs the shadow bar loop until SIGTERM or SIGINT arrives.\n"
+            "--strategy runs that roster entry instead of the enabled one.\n"
             "A missing ledger is refused unless --new-ledger is given.\n"
             "The environment tier comes from HERMES_ENV.\n"
             "Exit codes: 0 clean shutdown, 1 runtime failure, 2 usage, 3 config,\n"
@@ -76,14 +78,14 @@ def _run(rest: list[str], *, stream: Any, err: TextIO | None = None) -> int:
     # and `hermes logs` parse serve's journal as JSON and skip anything else.
     configure_logging(env="prod")
 
-    try:
-        config = load_config(parsed.config_dir)
-    except ConfigError as exc:
-        err.write(f"ERROR: config load failed: {exc}\n")
-        return 3
+    config = load_config_or_exit(parsed.config_dir, err)
+    if isinstance(config, int):
+        return config
 
     experiment_root = parsed.config_dir.resolve().parent
     try:
+        if parsed.strategy is not None:
+            config = serve_module.with_only_enabled(config, parsed.strategy)
         serve_module.check_startup(
             config,
             dict(os.environ),

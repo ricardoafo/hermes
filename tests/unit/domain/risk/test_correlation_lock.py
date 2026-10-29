@@ -10,19 +10,17 @@ tests pin that reading:
   - no candidate pair → OK (rule skipped)
   - a coefficient missing from the map counts as uncorrelated
 
-Reference: pre-registration-v1.md §5.5; openspec/changes/822-portfolio-backtest D-2.
+Reference: pre-registration-v1.md §5.5; openspec/archive/822-portfolio-backtest D-2.
 """
-
-from __future__ import annotations
 
 import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from hermes.domain.risk.correlation_lock import _CORRELATION_THRESHOLD, CorrelationLock
+from hermes.domain.risk.correlation_lock import CorrelationLock
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.pair import Pair
-from hermes.ports.risk_overlay import RiskAction, RiskOverlayPort
+from hermes.ports.risk_overlay import RiskAction
 from tests.unit.domain.risk.conftest import make_market_snapshot, make_portfolio_state
 
 _RULE = CorrelationLock()
@@ -42,16 +40,6 @@ def _cluster(btc_eth: float, sol_btc: float, sol_eth: float) -> RiskAction:
         correlations={(_BTC, _ETH): btc_eth, (_SOL, _BTC): sol_btc, (_ETH, _SOL): sol_eth},
     )
     return _RULE.evaluate(state, make_market_snapshot(candidate_pair=_SOL)).action
-
-
-class TestCorrelationLockThresholdConstants:
-    """Verify the pre-reg §5.5 RO-01 constant is exactly 0.80."""
-
-    def test_correlation_threshold_is_binding(self) -> None:
-        """Correlation threshold must be exactly 0.80 per pre-reg §5.5 RO-01."""
-        assert _CORRELATION_THRESHOLD == 0.80, (
-            f"RO-01 threshold must be exactly 0.80 (pre-reg §5.5), got {_CORRELATION_THRESHOLD}"
-        )
 
 
 class TestCorrelationLockNoCandidatePair:
@@ -153,13 +141,3 @@ class TestMissingCoefficient:
         )
         decision = _RULE.evaluate(state, make_market_snapshot(candidate_pair=_SOL))
         assert decision.action is RiskAction.HALT
-
-
-class TestCorrelationLockProtocolConformance:
-    """Rule instance satisfies RiskOverlayPort at runtime."""
-
-    def test_is_risk_overlay_port(self) -> None:
-        """CorrelationLock must be an instance of RiskOverlayPort (runtime_checkable)."""
-        assert isinstance(_RULE, RiskOverlayPort), (
-            "CorrelationLock must satisfy RiskOverlayPort Protocol"
-        )

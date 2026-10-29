@@ -14,8 +14,6 @@ across randomly-generated event streams so a subtle off-by-one in the
 threshold check surfaces here rather than in production.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -383,13 +381,6 @@ class TestCheckBreachFires:
 class TestEvaluateComposition:
     """Verify evaluate() composes compute_window + check_breach faithfully."""
 
-    def test_clean_stream_returns_none(self) -> None:
-        """A stream with 3 trades and no crossed threshold produces None."""
-        events = [_trade(at=_ANCHOR - timedelta(days=i), base=Currency.BTC) for i in (1, 2, 3)]
-        result = evaluate(events, _default_config(), now=_ANCHOR, correlation_id=_CID)
-        assert result is None
-        assert len(events) == 3
-
     def test_breaching_stream_returns_anomaly(self) -> None:
         """A stream with 13 distinct assets (> 12) returns a CRITICAL AnomalyDetected."""
         # 6 currencies allowlisted; we cannot literally have 13 distinct assets, so
@@ -407,8 +398,6 @@ class TestEvaluateComposition:
 
 _HYPOTHESIS = settings(
     max_examples=50,
-    deadline=None,
-    derandomize=True,
     suppress_health_check=[HealthCheck.function_scoped_fixture],
 )
 

@@ -18,13 +18,12 @@ Verifies:
 - ``install_signal_handlers`` flips the shutdown event on SIGTERM (skipped on
   Windows, where ``os.kill`` on the pytest process is unsafe).
 
-Reference: ``openspec/changes/309-serve-bar-loop/change.md`` D-1, D-5, D-7, D-9.
+Reference: ``openspec/archive/309-serve-bar-loop/change.md`` D-1, D-5, D-7, D-9.
 """
-
-from __future__ import annotations
 
 import asyncio
 import dataclasses
+import json
 import os
 import signal
 import sqlite3
@@ -34,21 +33,22 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 
+import httpx
 import pytest
 from structlog.testing import capture_logs
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
+from hermes.adapters.clock.remote import TEST_CLOCK_URL_ENV, RemoteClock
 from hermes.adapters.clock.wall import WallClock
+from hermes.adapters.endpoint import EndpointConfigError
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.adapters.market_data.binance_depth_snapshot import BinanceDepthSnapshotAdapter
 from hermes.adapters.market_data.binance_live_klines import BinanceLiveKlinesAdapter
 from hermes.adapters.notifier.slack_adapter import SlackAdapter
 from hermes.adapters.notifier.telegram_adapter import TelegramAdapter
 from hermes.application.backtest.replay import ExecutionModel as ReplayExecutionModel
-from hermes.application.calibration.certification_gates import CertificationRecord
-from hermes.application.calibration.lifecycle import CertificationState
 from hermes.application.execution.prereg_book import ExecutionModel, ExitPricing
-from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.domain.calibration.certification import CertificationRecord, CertificationState
 from hermes.domain.errors import ExchangeError, InfraError, LedgerError
 from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
 from hermes.domain.events.bar_processed import BarProcessed
@@ -71,7 +71,10 @@ from hermes.entrypoints import serve as serve_module
 from hermes.infrastructure.config.loader import load_config
 from hermes.infrastructure.config.models import StrategiesConfig
 from hermes.infrastructure.config.root import HermesConfig
+from hermes.infrastructure.project_root import load_pre_registration
+from tests.support.accepted import assert_accepted
 from tests.support.anomaly_rows import recorded_anomalies
+from tests.support.paths import REPO_ROOT
 from tests.support.serve_loop import (
     BASE,
     BTC,
@@ -85,7 +88,6 @@ from tests.support.serve_loop import (
     history,
 )
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _TELEGRAM_ENV = {
     "HERMES_TELEGRAM__BOT_TOKEN": "123:fake",  # gitleaks:allow
     "HERMES_TELEGRAM__CHAT_ID": "1",
@@ -113,7 +115,7 @@ def _with_pricing(config: HermesConfig, index: int, pricing: ExitPricing) -> Her
 @pytest.fixture
 def v2_config() -> HermesConfig:
     """Load the shipped ``config/`` with swing-mvp1-v2 enabled in place of v1."""
-    return load_config(_PROJECT_ROOT / "config", env=_V2_ENABLED_ENV)
+    return load_config(REPO_ROOT / "config", env=_V2_ENABLED_ENV)
 
 
 @pytest.fixture
@@ -123,7 +125,7 @@ def shadow_config() -> HermesConfig:
     Uses an empty env dict so no ambient shell variable can flip the
     tier or bleed credentials into the composition.
     """
-    return load_config(_PROJECT_ROOT / "config", env={})
+    return load_config(REPO_ROOT / "config", env={})
 
 
 class TestBuildComposition:
@@ -145,6 +147,39 @@ class TestBuildComposition:
             assert isinstance(composition.feed, BinanceLiveKlinesAdapter)
             assert isinstance(composition.event_bus, EventBus)
             assert (composition.telegram, composition.slack) == (None, None)
+        finally:
+            asyncio.run(composition.feed.aclose())
+            composition.sqlite_connection.close()
+
+    def test_a_test_clock_in_the_env_becomes_serves_clock(
+        self, shadow_config: HermesConfig, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """HERMES_TEST_CLOCK_URL puts serve on the test clock (#972).
+
+        The clock's transport is mocked here; the real socket seam is covered by
+        tests/integration/lower_env/test_installed_release.py.
+        """
+        scripted = datetime(2024, 10, 28, tzinfo=UTC)
+        test_clock = RemoteClock(
+            "http://127.0.0.1:9/_fake/clock",
+            transport=httpx.MockTransport(
+                lambda _request: httpx.Response(200, json={"now": scripted.isoformat()})
+            ),
+        )
+        monkeypatch.setattr(
+            serve_module,
+            "remote_clock_from_env",
+            lambda env: test_clock if env.get(TEST_CLOCK_URL_ENV) else None,
+        )
+
+        composition = serve_module.build_composition(
+            shadow_config,
+            db_path=tmp_path / "test.sqlite3",
+            env={TEST_CLOCK_URL_ENV: "http://127.0.0.1:9/_fake/clock"},
+            new_ledger=True,
+        )
+        try:
+            assert (composition.clock is test_clock, composition.clock.now()) == (True, scripted)
         finally:
             asyncio.run(composition.feed.aclose())
             composition.sqlite_connection.close()
@@ -230,8 +265,10 @@ class TestBuildComposition:
             new_ledger=True,
         )
         try:
-            assert isinstance(composition.telegram, TelegramAdapter)
-            assert isinstance(composition.slack, SlackAdapter)
+            assert (type(composition.telegram), type(composition.slack)) == (
+                TelegramAdapter,
+                SlackAdapter,
+            )
         finally:
             assert composition.telegram is not None
             assert composition.slack is not None
@@ -302,7 +339,9 @@ class TestMainnetNeedsLiveApproval:
         config = self._mainnet(shadow_config)
         fingerprint = serve_module.parameter_fingerprint_for(config)
         store = self._store_with(tmp_path, CertificationState.LIVE_APPROVED, fingerprint)
-        serve_module.check_startup(config, _TELEGRAM_ENV, certification_store=store)
+        assert_accepted(
+            serve_module.check_startup, config, _TELEGRAM_ENV, certification_store=store
+        )
 
     # SEV-1: a v1 live approval must never unlock real capital for v2 (ADR-014)
     def test_a_v1_approval_does_not_start_v2_on_mainnet(
@@ -323,8 +362,11 @@ class TestMainnetNeedsLiveApproval:
     ) -> None:
         """Without allow_mainnet a corrupt store is irrelevant: shadow never needs approval."""
         (tmp_path / f"{serve_module.SHADOW_STRATEGY_NAME}.json").write_text("{", encoding="utf-8")
-        serve_module.check_startup(
-            shadow_config, {}, certification_store=JsonCertificationStore(tmp_path)
+        assert_accepted(
+            serve_module.check_startup,
+            shadow_config,
+            {},
+            certification_store=JsonCertificationStore(tmp_path),
         )
 
 
@@ -432,7 +474,7 @@ class TestCheckStartup:
         self, shadow_config: HermesConfig
     ) -> None:
         """The repo's own config in dev with no credentials passes (D-9)."""
-        serve_module.check_startup(shadow_config, {})
+        assert_accepted(serve_module.check_startup, shadow_config, {})
 
     def test_wrong_roster_is_refused(self, shadow_config: HermesConfig) -> None:
         """A roster whose enabled entry is not swing-donchian-4h is a config error."""
@@ -467,13 +509,15 @@ class TestCheckStartup:
         self, shadow_config: HermesConfig, env: dict[str, str]
     ) -> None:
         """Prod needs only one channel configured."""
-        serve_module.check_startup(shadow_config.model_copy(update={"env": "prod"}), env)
+        assert_accepted(
+            serve_module.check_startup, shadow_config.model_copy(update={"env": "prod"}), env
+        )
 
     def test_v2_enabled_alone_with_its_close_based_pricing_is_accepted(
         self, v2_config: HermesConfig
     ) -> None:
         """The shipped v2 entry, enabled in place of v1, may run in shadow."""
-        serve_module.check_startup(v2_config, {})
+        assert_accepted(serve_module.check_startup, v2_config, {})
 
     def test_v2_priced_as_a_stop_order_is_refused(self, v2_config: HermesConfig) -> None:
         """v2 priced like v1 would trade and measure drift off its signed §6.2 price."""
@@ -495,7 +539,7 @@ class TestCheckStartup:
 
     def test_v1_and_v2_enabled_together_are_refused(self, shadow_config: HermesConfig) -> None:
         """Serve runs one strategy at a time: both pre-registered entries enabled is refused."""
-        v1, v2 = shadow_config.strategies.strategies
+        v1, v2, *_ = shadow_config.strategies.strategies
         both = [v1, v2.model_copy(update={"enabled": True})]
         config = shadow_config.model_copy(update={"strategies": StrategiesConfig(strategies=both)})
 
@@ -523,7 +567,7 @@ def test_shadow_universe_equals_the_pre_registered_universe() -> None:
     """SHADOW_UNIVERSE is pre-registration §3 once the slash is removed (D-7)."""
     symbols = tuple(pair.replace("/", "") for pair in serve_module.SHADOW_UNIVERSE)
 
-    assert symbols == PreRegistration().universe()
+    assert symbols == load_pre_registration().universe()
 
 
 @pytest.mark.skipif(
@@ -646,7 +690,10 @@ class TestBarLoop:
         asyncio.run(loop.handle(h4_bar(1)))
         composition.sqlite_connection.close()
 
-        assert len(events(tmp_path / "test.sqlite3", "BarProcessed")) == 2
+        assert _cursor(tmp_path / "test.sqlite3") == [
+            ("4h", "2024-01-16T03:59:59.999000+00:00"),
+            ("4h", "2024-01-16T07:59:59.999000+00:00"),
+        ]
 
     def test_a_repeated_bar_is_skipped(self, tmp_path: Path) -> None:
         """Handing the same bar twice writes one cursor row."""
@@ -655,7 +702,7 @@ class TestBarLoop:
         asyncio.run(loop.handle(h4_bar(0)))
         composition.sqlite_connection.close()
 
-        assert len(events(tmp_path / "test.sqlite3", "BarProcessed")) == 1
+        assert _cursor(tmp_path / "test.sqlite3") == [("4h", "2024-01-16T03:59:59.999000+00:00")]
 
     def test_a_skipped_bar_raises_bar_gap_error(self, tmp_path: Path) -> None:
         """A bar that does not directly follow the last one raises BarGapError."""
@@ -718,7 +765,10 @@ class TestBarLoop:
         asyncio.run(loop.handle(h4_bar(0)))
         composition.sqlite_connection.close()
 
-        assert len(events(tmp_path / "test.sqlite3", "BarProcessed")) == 2
+        assert _cursor(tmp_path / "test.sqlite3") == [
+            ("1d", "2024-01-01T23:59:59.999000+00:00"),
+            ("4h", "2024-01-16T03:59:59.999000+00:00"),
+        ]
 
     def test_warm_up_seeds_in_delivery_order_daily_bar_first_at_equal_close(
         self, tmp_path: Path
@@ -785,6 +835,14 @@ class _EntryOnceStrategy(_RecordingStrategy):
             atr_context=Decimal("5"),
             signal_time=bar.close_time,
         )
+
+
+def _cursor(db_path: Path) -> list[tuple[str, str]]:
+    """Return ``(interval, occurred_at)`` of every ``BarProcessed`` cursor row, oldest first."""
+    return [
+        (json.loads(row["payload_json"])["interval"], row["occurred_at"])
+        for row in events(db_path, "BarProcessed")
+    ]
 
 
 def _processed(logs: list[dict[str, object]]) -> list[dict[str, object]]:
@@ -888,7 +946,7 @@ class TestBarLogging:
             asyncio.run(loop.handle(h4_bar(0)))
         composition.sqlite_connection.close()
 
-        assert len(_processed(logs)) == 1
+        assert [entry["interval"] for entry in _processed(logs)] == ["4h"]
 
     def test_next_due_lists_every_stream_after_catch_up(self, tmp_path: Path) -> None:
         """Going live logs when each stream's next bar should arrive."""
@@ -928,7 +986,7 @@ class TestFillKernelWiring:
             new_ledger=True,
         )
         try:
-            assert isinstance(composition.orderbooks, BinanceDepthSnapshotAdapter)
+            assert type(composition.orderbooks) is BinanceDepthSnapshotAdapter
         finally:
             asyncio.run(composition.orderbooks.aclose())
             composition.sqlite_connection.close()
@@ -979,7 +1037,7 @@ class TestFillKernelWiring:
         self, shadow_config: HermesConfig
     ) -> None:
         """The repo carries both files, so development runs start."""
-        serve_module.check_startup(shadow_config, {}, experiment_root=_PROJECT_ROOT)
+        assert_accepted(serve_module.check_startup, shadow_config, {}, experiment_root=REPO_ROOT)
 
     def test_build_refuses_an_experiment_root_without_the_pre_registration(
         self, shadow_config: HermesConfig, tmp_path: Path
@@ -1041,6 +1099,32 @@ def _shut(composition: serve_module.Composition) -> None:
 def _with_capital(config: HermesConfig, amount: str) -> HermesConfig:
     entry = config.strategies.strategies[0].model_copy(update={"capital_budget": Decimal(amount)})
     return config.model_copy(update={"strategies": StrategiesConfig(strategies=[entry])})
+
+
+class TestWithOnlyEnabled:
+    """#1076: ``--strategy`` makes the named roster entry the one enabled strategy."""
+
+    def test_the_named_entry_is_the_only_one_enabled(self, shadow_config: HermesConfig) -> None:
+        """Invariant: every later check reads the named entry as the enabled one."""
+        chosen = serve_module.with_only_enabled(shadow_config, serve_module.V2_STRATEGY_NAME)
+        enabled = [s.name for s in chosen.strategies.strategies if s.enabled]
+        names = [s.name for s in chosen.strategies.strategies]
+        assert (enabled, names) == (
+            [serve_module.V2_STRATEGY_NAME],
+            [s.name for s in shadow_config.strategies.strategies],
+        )
+
+    def test_the_rest_of_the_entry_is_unchanged(self, shadow_config: HermesConfig) -> None:
+        """Invariant: only ``enabled`` moves; capital, sizing and pricing stay as signed."""
+        chosen = serve_module.with_only_enabled(shadow_config, serve_module.V2_STRATEGY_NAME)
+        assert chosen.strategies.strategies[1] == shadow_config.strategies.strategies[1].model_copy(
+            update={"enabled": True}
+        )
+
+    def test_a_name_missing_from_the_roster_is_refused(self, shadow_config: HermesConfig) -> None:
+        """Invariant: an instance never falls back to whatever the file enables."""
+        with pytest.raises(serve_module.StartupError, match="has no 'no-such-shadow' entry"):
+            serve_module.with_only_enabled(shadow_config, "no-such-shadow")
 
 
 class TestLedgerAndSeedGuards:
@@ -1107,3 +1191,15 @@ class TestLedgerAndSeedGuards:
         )
         _shut(composition)
         assert composition.tracker.state().current_value == Decimal(5000)
+
+
+def test_a_bad_notifier_api_base_fails_startup_instead_of_muting_the_channel() -> None:
+    """Missing credentials quietly turn Telegram off; a mistyped endpoint must not (#970)."""
+    env = {
+        "HERMES_TELEGRAM__BOT_TOKEN": "123456:ABC-DEF",  # gitleaks:allow
+        "HERMES_TELEGRAM__CHAT_ID": "-100",
+        "HERMES_TELEGRAM__API_BASE": "http://api.telegram.org",
+    }
+
+    with pytest.raises(EndpointConfigError, match="HERMES_TELEGRAM__API_BASE"):
+        serve_module._telegram_config(env)

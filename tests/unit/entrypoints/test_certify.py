@@ -6,39 +6,45 @@ SHADOW_CERTIFIED the shadow round trips are reported and flagged weak under
 30, without changing the verdict (ADR-021 §3, #797).
 """
 
-from __future__ import annotations
-
 import dataclasses
+import hashlib
 import io
 import json
 import shutil
 import sqlite3
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from functools import partial
 from pathlib import Path
 
 import pytest
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
+from hermes.adapters.files import LocalFiles
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.application.calibration.certification_gates import (
     LIVE_APPROVAL_PHRASE,
-    CertificationRecord,
     GateEvidence,
+    ShadowEvidence,
 )
-from hermes.application.calibration.lifecycle import CertificationState
-from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.application.calibration.shadow_parity import MetricStatus
+from hermes.application.calibration.signed_gate import CandidateEvidence
+from hermes.domain.calibration.certification import CertificationRecord, CertificationState
 from hermes.domain.events.trade_executed import TradeExecuted, TradeSide
 from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints import certify as certify_module
 from hermes.entrypoints import serve as serve_module
 from hermes.entrypoints.certify import EvidenceError, load_evidence, run
+from hermes.infrastructure import project_root as project_root_module
 from hermes.infrastructure.config.loader import load_config
+from tests.support import candidate_evidence
+from tests.support.candidate_evidence import TRAIN_DAYS, write_candidate
+from tests.support.day_zero import write_day_zero
 from tests.support.notification_samples import samples
+from tests.support.paths import REPO_ROOT
+from tests.support.research_batch import BATCH_PATH
 
 _SID = "swing-donchian-4h"
 _FP = "f" * 64
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _METRICS = {
     "dsr": 0.8,
     "bootstrap_ci_lower": 0.1,
@@ -71,7 +77,8 @@ class TestRun:
         """A full backtest evidence set records BACKTEST_CERTIFIED and exits 0."""
         store = JsonCertificationStore(tmp_path)
         evidence = load_evidence(
-            _evidence_file(tmp_path, {"backtest": {**_METRICS, "calibration_fill_count": 40}})
+            _evidence_file(tmp_path, {"backtest": {**_METRICS, "calibration_fill_count": 40}}),
+            files=LocalFiles(),
         )
         code, out = _run(store, evidence, datetime(2026, 10, 3, tzinfo=UTC))
         record = store.load(_SID)
@@ -99,7 +106,7 @@ class TestRun:
             _SID, CertificationState.SHADOW_CERTIFIED, parameter_fingerprint=_FP
         )
         store.save(record)
-        evidence = load_evidence(_evidence_file(tmp_path, {"oos": _METRICS}))
+        evidence = load_evidence(_evidence_file(tmp_path, {"oos": _METRICS}), files=LocalFiles())
         code, out = _run(store, evidence, datetime(2026, 12, 31, tzinfo=UTC))
         assert code == 1
         assert "REFUSED" in out
@@ -127,7 +134,7 @@ class TestLoadEvidence:
 
     def test_absent_sections_are_none(self, tmp_path: Path) -> None:
         """An empty object yields no evidence at all."""
-        evidence = load_evidence(_evidence_file(tmp_path, {}))
+        evidence = load_evidence(_evidence_file(tmp_path, {}), files=LocalFiles())
         assert (evidence.backtest, evidence.shadow, evidence.oos, evidence.live) == (
             None,
             None,
@@ -150,7 +157,7 @@ class TestLoadEvidence:
     def test_malformed_evidence_is_rejected(self, tmp_path: Path, payload: object) -> None:
         """Wrong shapes, unknown keys and wrong types are errors, never zeros."""
         with pytest.raises(EvidenceError):
-            load_evidence(_evidence_file(tmp_path, payload))
+            load_evidence(_evidence_file(tmp_path, payload), files=LocalFiles())
 
 
 class TestMain:
@@ -176,7 +183,7 @@ class TestMain:
                 "--evidence",
                 str(path),
                 "--config-dir",
-                str(_PROJECT_ROOT / "config"),
+                str(REPO_ROOT / "config"),
                 "--store-dir",
                 str(tmp_path / "store"),
             ],
@@ -190,7 +197,7 @@ class TestMain:
         """With the shipped config and no evidence, the gate fails and nothing is stored."""
         store_dir = tmp_path / "store"
         code = certify_module.main(
-            [_SID, "--config-dir", str(_PROJECT_ROOT / "config"), "--store-dir", str(store_dir)],
+            [_SID, "--config-dir", str(REPO_ROOT / "config"), "--store-dir", str(store_dir)],
             stream=io.StringIO(),
         )
         assert code == 1
@@ -208,7 +215,7 @@ def _sign_off_argv(tmp_path: Path, *extra: str) -> list[str]:
     return [
         _SID,
         "--config-dir",
-        str(_PROJECT_ROOT / "config"),
+        str(REPO_ROOT / "config"),
         "--store-dir",
         str(tmp_path / "store"),
         "--sign-off",
@@ -297,7 +304,7 @@ class TestPerformance:
     def test_train_val_fills_the_backtest_metrics(self, tmp_path: Path) -> None:
         """A train_val file fills the backtest section and leaves OOS empty."""
         path = _performance_file(tmp_path, _strong_performance("train_val"))
-        evidence = certify_module.apply_performance(GateEvidence(), path)
+        evidence = certify_module.apply_performance(GateEvidence(), path, files=LocalFiles())
         assert evidence.backtest is not None
         assert evidence.backtest.is_complete()
         assert evidence.oos is None
@@ -305,14 +312,18 @@ class TestPerformance:
     def test_oos_fills_the_oos_metrics(self, tmp_path: Path) -> None:
         """An oos file fills the OOS section only."""
         path = _performance_file(tmp_path, _strong_performance("oos"))
-        evidence = certify_module.apply_performance(GateEvidence(), path)
+        evidence = certify_module.apply_performance(GateEvidence(), path, files=LocalFiles())
         assert (evidence.backtest, evidence.oos is not None) == (None, True)
 
     def test_hash_covers_both_files(self, tmp_path: Path) -> None:
         """Changing the evidence file changes the recorded hash even with the same performance."""
         path = _performance_file(tmp_path, _strong_performance("train_val"))
-        first = certify_module.apply_performance(GateEvidence(sha256="a" * 64), path)
-        second = certify_module.apply_performance(GateEvidence(sha256="b" * 64), path)
+        first = certify_module.apply_performance(
+            GateEvidence(sha256="a" * 64), path, files=LocalFiles()
+        )
+        second = certify_module.apply_performance(
+            GateEvidence(sha256="b" * 64), path, files=LocalFiles()
+        )
         assert first.sha256 != second.sha256
 
     @pytest.mark.parametrize(
@@ -333,7 +344,7 @@ class TestPerformance:
         """Bad windows, shapes, a missing seed, bad trials or zero equity are errors."""
         path = _performance_file(tmp_path, {**_strong_performance("train_val"), **change})
         with pytest.raises(EvidenceError):
-            certify_module.apply_performance(GateEvidence(), path)
+            certify_module.apply_performance(GateEvidence(), path, files=LocalFiles())
 
     def test_strong_backtest_passes_the_gate(self, tmp_path: Path) -> None:
         """Computed metrics plus a calibration fill certify the backtest end to end."""
@@ -349,7 +360,7 @@ class TestPerformance:
                 "--performance",
                 str(performance_path),
                 "--config-dir",
-                str(_PROJECT_ROOT / "config"),
+                str(REPO_ROOT / "config"),
                 "--store-dir",
                 str(store_dir),
             ],
@@ -369,18 +380,18 @@ class TestReleaseLayout:
     ) -> None:
         """An installed package with no repository above it still certifies a release."""
         release = tmp_path / "release"
-        shutil.copytree(_PROJECT_ROOT / "config", release / "config")
+        shutil.copytree(REPO_ROOT / "config", release / "config")
         experiment = release / "docs" / "experiments" / "swing-mvp1"
         experiment.mkdir(parents=True)
         shutil.copy(
-            _PROJECT_ROOT / "docs" / "experiments" / "swing-mvp1" / "pre-registration-v1.md",
+            REPO_ROOT / "docs" / "experiments" / "swing-mvp1" / "pre-registration-v1.md",
             experiment,
         )
 
         def _no_repository() -> Path:
             raise FileNotFoundError("no pyproject.toml above the installed package")
 
-        monkeypatch.setattr(PreRegistration, "_detect_project_root", staticmethod(_no_repository))
+        monkeypatch.setattr(project_root_module, "find_project_root", _no_repository)
         evidence_path = _evidence_file(tmp_path, {"backtest": {"calibration_fill_count": 40}})
         performance_path = _performance_file(tmp_path, _strong_performance("train_val"))
         store_dir = tmp_path / "store"
@@ -411,12 +422,12 @@ class TestReleaseLayout:
     ) -> None:
         """No file beside the config and no repository: exit 3 with one ERROR line."""
         release = tmp_path / "release"
-        shutil.copytree(_PROJECT_ROOT / "config", release / "config")
+        shutil.copytree(REPO_ROOT / "config", release / "config")
 
         def _no_repository() -> Path:
             raise FileNotFoundError("no pyproject.toml above the installed package")
 
-        monkeypatch.setattr(PreRegistration, "_detect_project_root", staticmethod(_no_repository))
+        monkeypatch.setattr(project_root_module, "find_project_root", _no_repository)
         err = io.StringIO()
         code = certify_module.main(
             [_SID, "--config-dir", str(release / "config"), "--store-dir", str(tmp_path / "s")],
@@ -537,7 +548,7 @@ class TestShadowRoundTrips:
     def test_main_counts_the_ledgers_sells_for_the_strategy(self, tmp_path: Path) -> None:
         """``--db`` reads 2 SELLs of this strategy and ignores the other strategy's."""
         db = _ledger_with_round_trips(tmp_path, sells=2)
-        fingerprint = serve_module.parameter_fingerprint_for(load_config(_PROJECT_ROOT / "config"))
+        fingerprint = serve_module.parameter_fingerprint_for(load_config(REPO_ROOT / "config"))
         store_dir = tmp_path / "store"
         JsonCertificationStore(store_dir).save(
             CertificationRecord(
@@ -549,7 +560,7 @@ class TestShadowRoundTrips:
             [
                 _SID,
                 "--config-dir",
-                str(_PROJECT_ROOT / "config"),
+                str(REPO_ROOT / "config"),
                 "--store-dir",
                 str(store_dir),
                 "--db",
@@ -560,3 +571,338 @@ class TestShadowRoundTrips:
         assert [line[:27] for line in out.getvalue().splitlines() if "round trips" in line] == [
             "WEAK  shadow round trips: 2"
         ]
+
+
+_SHADOW = {"days": 90, "drift_p50_bps": 10.0, "kill_fired": False, "drift_breached": False}
+
+
+_DAY_ZERO = datetime(2026, 10, 3, tzinfo=UTC)
+
+
+def _apply(evidence: GateEvidence, path: Path) -> GateEvidence:
+    """Apply a parity file for the run that started at ``_DAY_ZERO``, under the 90-day rule."""
+    return certify_module.apply_shadow_parity(evidence, path, _SID, day_zero=_DAY_ZERO, min_days=90)
+
+
+def _parity_file(tmp_path: Path, **change: object) -> Path:
+    payload = {
+        "strategy_id": _SID,
+        "since": "2026-10-03T00:00:00+00:00",
+        "until": "2027-01-02T00:00:00+00:00",
+        "m09": "pass",
+        "m10": "pass",
+        **change,
+    }
+    path = tmp_path / "parity.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+class TestShadowParity:
+    """`--shadow-parity` feeds M-09 and M-10 to the shadow gate (#965)."""
+
+    def test_the_statuses_join_the_shadow_evidence_already_loaded(self, tmp_path: Path) -> None:
+        """The file sets M-09 and M-10 and keeps days, drift and kill from --evidence."""
+        loaded = load_evidence(_evidence_file(tmp_path, {"shadow": _SHADOW}), files=LocalFiles())
+        path = _parity_file(tmp_path, m10="block")
+
+        evidence = _apply(loaded, path)
+
+        assert evidence.shadow == ShadowEvidence(
+            days=90,
+            drift_p50_bps=10.0,
+            kill_fired=False,
+            drift_breached=False,
+            m09=MetricStatus.OK,
+            m10=MetricStatus.BLOCK,
+        )
+
+    def test_the_hash_chains_the_evidence_hash_with_the_parity_file(self, tmp_path: Path) -> None:
+        """The recorded hash is sha256(evidence hash + sha256(parity file)), like --performance."""
+        path = _parity_file(tmp_path)
+        file_hash = hashlib.sha256(path.read_bytes()).hexdigest()
+
+        evidence = _apply(GateEvidence(sha256="a" * 64), path)
+
+        assert evidence.sha256 == hashlib.sha256(("a" * 64 + file_hash).encode("ascii")).hexdigest()
+
+    @pytest.mark.parametrize(
+        "change",
+        [
+            {"m09": "ok"},
+            {"m10": 0.12},
+            {"strategy_id": "swing-mvp1-v2"},
+            {"correlation": 0.9},
+        ],
+    )
+    def test_a_malformed_parity_file_is_rejected(
+        self, tmp_path: Path, change: dict[str, object]
+    ) -> None:
+        """An unknown status, a value instead of a status, another strategy, an extra key."""
+        with pytest.raises(EvidenceError):
+            _apply(GateEvidence(), _parity_file(tmp_path, **change))
+
+    def test_a_parity_file_without_a_status_is_rejected(self, tmp_path: Path) -> None:
+        """Both statuses are required: a file with M-09 only is not a window verdict."""
+        path = tmp_path / "parity.json"
+        path.write_text(json.dumps({"strategy_id": _SID, "m09": "pass"}), encoding="utf-8")
+
+        with pytest.raises(EvidenceError):
+            _apply(GateEvidence(), path)
+
+    @pytest.mark.parametrize(
+        ("change", "message"),
+        [
+            ({"since": "2026-10-04T00:00:00+00:00"}, "not at day 0"),
+            ({"until": "2026-12-31T23:59:00+00:00"}, "covers 89 days, not 90"),
+            ({"since": "2026-10-03T00:00:00"}, "since must be an ISO time"),
+            ({"until": 1}, "until must be an ISO time"),
+        ],
+    )
+    def test_only_the_counted_run_over_the_shadow_length_is_accepted(
+        self, tmp_path: Path, change: dict[str, object], message: str
+    ) -> None:
+        """A window not starting at day 0, shorter than 90 days or without UTC times is refused."""
+        path = _parity_file(tmp_path, **change)
+
+        with pytest.raises(EvidenceError, match=message):
+            _apply(GateEvidence(), path)
+
+    def test_a_window_of_exactly_the_shadow_length_is_accepted(self, tmp_path: Path) -> None:
+        """Day 0 to day 0 + 90 days is the full shadow: its statuses join the evidence."""
+        path = _parity_file(tmp_path, until="2027-01-01T00:00:00+00:00")
+
+        evidence = _apply(GateEvidence(), path)
+
+        assert evidence.shadow == ShadowEvidence(m09=MetricStatus.OK, m10=MetricStatus.OK)
+
+    def _certify(
+        self, tmp_path: Path, *extra: str, day_zero: datetime | None = _DAY_ZERO
+    ) -> tuple[int, str, CertificationRecord | None]:
+        db = tmp_path / "hermes.sqlite3"
+        if day_zero is not None:
+            write_day_zero(db, _SID, day_zero)
+        store_dir = tmp_path / "store"
+        JsonCertificationStore(store_dir).save(
+            CertificationRecord(
+                _SID,
+                CertificationState.BACKTEST_CERTIFIED,
+                parameter_fingerprint=serve_module.parameter_fingerprint_for(
+                    load_config(REPO_ROOT / "config")
+                ),
+            )
+        )
+        out = io.StringIO()
+        code = certify_module.main(
+            [
+                _SID,
+                "--evidence",
+                str(_evidence_file(tmp_path, {"shadow": _SHADOW})),
+                "--config-dir",
+                str(REPO_ROOT / "config"),
+                "--store-dir",
+                str(store_dir),
+                "--db",
+                str(db),
+                *extra,
+            ],
+            stream=out,
+        )
+        return code, out.getvalue(), JsonCertificationStore(store_dir).load(_SID)
+
+    # SEV-1: the shadow gate must not certify without ADR-021 Done rule 3
+    def test_without_the_file_the_shadow_gate_fails_on_both_metrics(self, tmp_path: Path) -> None:
+        """90 days, low drift and no kill are not enough: M-09 and M-10 fail as not computed."""
+        code, out, record = self._certify(tmp_path)
+
+        assert code == 1
+        assert out.count("not computed (--shadow-parity)") == 2
+        assert record is not None
+        assert record.state == CertificationState.BACKTEST_CERTIFIED
+
+    def test_both_metrics_passed_certify_the_shadow(self, tmp_path: Path) -> None:
+        """With the window's pass verdicts the gate records SHADOW_CERTIFIED."""
+        code, out, record = self._certify(tmp_path, "--shadow-parity", str(_parity_file(tmp_path)))
+
+        assert code == 0, out
+        assert record is not None
+        assert record.state == CertificationState.SHADOW_CERTIFIED
+
+    def test_a_bad_parity_file_exits_three(self, tmp_path: Path) -> None:
+        """A parity file for another strategy is an evidence error, not a gate verdict."""
+        code, out, _ = self._certify(
+            tmp_path, "--shadow-parity", str(_parity_file(tmp_path, strategy_id="other"))
+        )
+
+        assert (code, out) == (3, "")
+
+    def test_a_parity_file_without_a_day_zero_record_exits_three(self, tmp_path: Path) -> None:
+        """No counted run is recorded beside the ledger, so the file has no run to judge."""
+        code, out, _ = self._certify(
+            tmp_path, "--shadow-parity", str(_parity_file(tmp_path)), day_zero=None
+        )
+
+        assert (code, out) == (3, "")
+
+    def test_a_parity_file_from_an_earlier_run_exits_three(self, tmp_path: Path) -> None:
+        """The latest run started later than the file's window: the file is not this run's."""
+        code, out, _ = self._certify(
+            tmp_path,
+            "--shadow-parity",
+            str(_parity_file(tmp_path)),
+            day_zero=_DAY_ZERO + timedelta(days=1),
+        )
+
+        assert (code, out) == (3, "")
+
+
+# ---------------------------------------------------------------------------
+# --batch (ADR-026, issue #1058)
+# ---------------------------------------------------------------------------
+
+
+def _batch_argv(tmp_path: Path, files: CandidateEvidence, *extra: str) -> list[str]:
+    return [
+        candidate_evidence.STRATEGY_ID,
+        "--batch",
+        BATCH_PATH,
+        "--evidence",
+        str(files.evidence),
+        "--performance",
+        str(files.performance),
+        "--funnel-evidence",
+        str(files.funnel_evidence),
+        "--trial-log",
+        str(tmp_path / "trial-log.jsonl"),
+        "--store-dir",
+        str(tmp_path / "store"),
+        *extra,
+    ]
+
+
+def _config_with_candidate(tmp_path: Path) -> Path:
+    """Copy the shipped config and add the candidate's roster entry, as a new strategy does."""
+    config = tmp_path / "config"
+    shutil.copytree(REPO_ROOT / "config", config)
+    roster = config / "strategies.yaml"
+    entry = (
+        f"  - name: {candidate_evidence.STRATEGY_ID}\n"
+        "    enabled: false\n"
+        '    weight: "1.0"\n'
+        '    capital_budget: "5000"\n'
+        "    quote: USDT\n"
+        "    exit_pricing: bar_close\n"
+        "    sizing:\n"
+        '      risk_pct: "0.01"\n'
+        '      max_position_pct: "0.05"\n'
+        '      max_total_exposure_pct: "0.15"\n'
+    )
+    roster.write_text(roster.read_text(encoding="utf-8") + entry, encoding="utf-8")
+    return config
+
+
+class TestBatch:
+    """`hermes certify <id> --batch FILE`: one gate for any candidate of a signed batch."""
+
+    @pytest.fixture(autouse=True)
+    def _in_tmp(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Start at the clone's root: the batch is named by its repo-relative path."""
+        monkeypatch.chdir(tmp_path)
+        candidate_evidence.write_trial_log(tmp_path / "trial-log.jsonl", [0.05, 0.06])
+
+    def test_a_train_run_prints_na_and_records_nothing(self, tmp_path: Path) -> None:
+        """Issue #1037: validation_vs_train is NA on Train, and a Train pass certifies nothing."""
+        files = write_candidate(tmp_path, days=TRAIN_DAYS).files
+        out = io.StringIO()
+
+        code = certify_module.main(_batch_argv(tmp_path, files), stream=out, err=io.StringIO())
+
+        lines = out.getvalue().splitlines()
+        assert (code, lines[0], lines[-1], (tmp_path / "store").exists()) == (
+            0,
+            "# hermes certify swing-alpha: batch b1, judged on Train only",
+            "TRAIN PASSED: nothing recorded; the backtest gate is judged on Train + Validation",
+            False,
+        )
+        assert "NA    validation_vs_train      not applicable: judged on Train only" in lines
+
+    def test_a_validation_pass_records_backtest_certified(self, tmp_path: Path) -> None:
+        """A new candidate certifies with no code beyond its roster entry (issue #1058)."""
+        files = write_candidate(tmp_path).files
+        config = _config_with_candidate(tmp_path)
+        out = io.StringIO()
+
+        code = certify_module.main(
+            _batch_argv(tmp_path, files, "--config-dir", str(config)),
+            stream=out,
+            err=io.StringIO(),
+        )
+
+        record = JsonCertificationStore(tmp_path / "store").load(candidate_evidence.STRATEGY_ID)
+        assert (code, record.state if record else None) == (
+            0,
+            CertificationState.BACKTEST_CERTIFIED,
+        ), out.getvalue()
+
+    def test_a_candidate_without_a_roster_entry_is_a_config_error(self, tmp_path: Path) -> None:
+        """Recording needs the strategy's roster entry for its parameter fingerprint."""
+        files = write_candidate(tmp_path).files
+        err = io.StringIO()
+
+        code = certify_module.main(
+            _batch_argv(tmp_path, files, "--config-dir", str(REPO_ROOT / "config")),
+            stream=io.StringIO(),
+            err=err,
+        )
+
+        assert (code, err.getvalue().startswith("ERROR: config:")) == (3, True)
+
+    def test_an_id_the_batch_does_not_name_is_refused(self, tmp_path: Path) -> None:
+        """Only a candidate a signed batch names is judged; nothing else certifies this way."""
+        files = write_candidate(tmp_path).files
+        argv = _batch_argv(tmp_path, files)
+        argv[0] = "swing-x"
+        out = io.StringIO()
+
+        code = certify_module.main(argv, stream=out, err=io.StringIO())
+
+        assert (code, out.getvalue().splitlines()[-1]) == (
+            1,
+            "REFUSED: batch b1 does not name 'swing-x'",
+        )
+
+    def test_a_draft_batch_is_refused(self, tmp_path: Path) -> None:
+        """Only a SIGNED batch binds thresholds; a DRAFT certifies nothing."""
+        files = write_candidate(tmp_path).files
+        batch_file = tmp_path / BATCH_PATH
+        batch_file.write_text(
+            batch_file.read_text(encoding="utf-8").replace("status: SIGNED", "status: DRAFT"),
+            encoding="utf-8",
+        )
+        out = io.StringIO()
+
+        code = certify_module.main(_batch_argv(tmp_path, files), stream=out, err=io.StringIO())
+
+        assert (code, "only a SIGNED batch is judged" in out.getvalue()) == (1, True)
+
+    def test_batch_needs_every_evidence_file(self, tmp_path: Path) -> None:
+        """The gate reads three files; a missing flag is a usage error, not a FAIL."""
+        files = write_candidate(tmp_path).files
+        argv = _batch_argv(tmp_path, files)
+        at = argv.index("--funnel-evidence")
+        del argv[at : at + 2]
+        err = io.StringIO()
+
+        code = certify_module.main(argv, stream=io.StringIO(), err=err)
+
+        assert (code, "--batch needs --funnel-evidence" in err.getvalue()) == (2, True)
+
+    def test_trial_log_without_batch_is_a_usage_error(self, tmp_path: Path) -> None:
+        """v1 and v2 read their trials from the performance file; --trial-log is batch-only."""
+        err = io.StringIO()
+
+        code = certify_module.main(
+            [_SID, "--trial-log", str(tmp_path / "trial-log.jsonl")], stream=io.StringIO(), err=err
+        )
+
+        assert (code, "--trial-log applies to --batch only" in err.getvalue()) == (2, True)

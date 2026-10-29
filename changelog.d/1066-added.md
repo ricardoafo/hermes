@@ -1,0 +1,1 @@
+- **Research candidate `swing-b1-pullback`** (batch swing-b1, C4): a long entry when the 4h RSI(14) crosses back above `rsi_reentry` inside a rising daily uptrend, with an RSI, fixed-stop, time-stop and regime exit, plus a Wilder RSI engine. Disabled in `config/strategies.yaml`, built through the strategy factory as `signal: rsi_pullback`. Refs #1066.

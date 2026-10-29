@@ -6,14 +6,11 @@ which is reserved for documentation, so even a broken guard sends nothing
 anywhere real.
 """
 
-from __future__ import annotations
-
-from pathlib import Path
-
 import pytest
 
+from tests.support.paths import REPO_ROOT
+
 _PLUGIN = ("-p", "tests.plugins.network_guard")
-_REPO_ROOT = Path(__file__).resolve().parents[2]
 _INI = """
 [pytest]
 markers =
@@ -25,7 +22,7 @@ markers =
 @pytest.fixture(autouse=True)
 def _repo_on_path(monkeypatch: pytest.MonkeyPatch, pytester: pytest.Pytester) -> None:
     """Let the subprocess import ``tests.plugins`` and know the exempt markers."""
-    monkeypatch.setenv("PYTHONPATH", str(_REPO_ROOT))
+    monkeypatch.setenv("PYTHONPATH", str(REPO_ROOT))
     pytester.makeini(_INI)
 
 

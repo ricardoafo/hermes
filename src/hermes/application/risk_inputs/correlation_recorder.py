@@ -19,8 +19,6 @@ these rows are for review.
 Reference: GitHub issues #514, #835.
 """
 
-from __future__ import annotations
-
 from collections.abc import Sequence
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -32,8 +30,8 @@ from hermes.domain.portfolio.correlation import (
     CORRELATION_WINDOW_DAYS,
     PairCorrelation,
     aligned_daily_returns,
-    pearson,
 )
+from hermes.domain.statistics.correlation import pearson
 from hermes.domain.value_objects.pair import Pair
 from hermes.ports.live_bars import LiveBarStorePort
 from hermes.ports.risk_inputs import RiskInputStorePort

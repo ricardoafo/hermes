@@ -4,10 +4,8 @@ The application builds what a sheet says (headings, paragraphs, tables); an
 adapter turns it into a file. Keeps the PDF library out of the application
 layer and lets tests assert on content, not bytes.
 
-Reference: openspec/changes/568-tax-pack/change.md D-8.
+Reference: openspec/archive/568-tax-pack/change.md D-8.
 """
-
-from __future__ import annotations
 
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass

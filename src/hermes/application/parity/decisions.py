@@ -8,10 +8,8 @@ prices legitimately differ (#353 owns price drift).
 
 Pure: no I/O, no clock.
 
-Reference: openspec/changes/358-parity-check/change.md D-1.
+Reference: openspec/archive/358-parity-check/change.md D-1.
 """
-
-from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -111,11 +109,15 @@ class ParityReport:
         day: The UTC day checked.
         matched: Signals both sides produced with the same outcome.
         mismatches: Every difference, oldest bar first.
+        missed_bars: Bars serve reached late that day (#1078). Their entries
+            are left unfilled and their exits fill later by rule, so the day
+            is not compared and holds no mismatch.
     """
 
     day: date
     matched: int
     mismatches: tuple[Mismatch, ...]
+    missed_bars: int = 0
 
     @property
     def in_parity(self) -> bool:

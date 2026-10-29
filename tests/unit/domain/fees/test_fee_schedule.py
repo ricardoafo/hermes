@@ -18,8 +18,6 @@ Reference: docs/guides/ai-authored-tests.md,
 docs/decisions/2026-08-24-kraken-public-adapter.md.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 import pytest
@@ -151,7 +149,7 @@ class TestFeeForVolume:
 class TestFromTiersProperty:
     """Property: from_tiers(shuffled) always yields the canonical tuple."""
 
-    @settings(max_examples=50, deadline=None, derandomize=True)
+    @settings(max_examples=50)
     @given(
         thresholds=st.lists(
             st.integers(min_value=0, max_value=10_000_000),

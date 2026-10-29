@@ -9,8 +9,6 @@ Reference: code-conventions.md §1 (Value Object), §2 (hybrid Result/exceptions
 §4 (Factory methods), §6 (Decimal for ledger values).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
@@ -26,8 +24,8 @@ __all__ = ["Money"]
 class Money:
     """Immutable monetary value: a Decimal amount in a specific currency.
 
-    Use named arithmetic methods (``add``, ``sub``, ``multiply``, ``divide``)
-    — they all return ``Result`` so callers are forced to handle the
+    Use the named arithmetic methods (``add``, ``sub``)
+    — they return ``Result`` so callers are forced to handle the
     currency-mismatch case via mypy. Arithmetic dunders are NOT defined;
     attempting ``money_a + money_b`` is a type error.
 
@@ -118,36 +116,6 @@ class Money:
         if self.currency != other.currency:
             return Failure(CurrencyMismatch(expected=self.currency, actual=other.currency))
         return Success(Money(amount=self.amount - other.amount, currency=self.currency))
-
-    def multiply(self, factor: Decimal | int) -> Money:
-        """Scalar multiplication. Always succeeds — no currency involved.
-
-        Args:
-            factor: Decimal or int scalar.
-
-        Returns:
-            New ``Money`` with amount scaled by ``factor``.
-
-        Reference: code-conventions.md §4.
-        """
-        return Money(amount=self.amount * Decimal(factor), currency=self.currency)
-
-    def divide(self, divisor: Decimal | int) -> Result[Money, DomainError]:
-        """Scalar division.
-
-        Args:
-            divisor: Decimal or int divisor. Must not be zero.
-
-        Returns:
-            ``Success(Money)`` with divided amount, or
-            ``Failure(InvalidLot)`` when ``divisor`` is zero.
-
-        Reference: code-conventions.md §4.
-        """
-        d = Decimal(divisor)
-        if d == Decimal("0"):
-            return Failure(InvalidLot(reason="Division by zero on Money"))
-        return Success(Money(amount=self.amount / d, currency=self.currency))
 
     # ------------------------------------------------------------------
     # String representation

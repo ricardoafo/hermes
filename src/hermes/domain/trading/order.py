@@ -18,8 +18,6 @@ D-4 (Fill | Rejection discriminated union); ADR-011 D-03 (strategy_id on
 every aggregate).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from decimal import Decimal
 from enum import StrEnum
@@ -90,8 +88,3 @@ class Order:
                 f"Order.limit_price must be > 0 when set, got {self.limit_price!r} "
                 f"(pair={self.pair}, side={self.side})"
             )
-
-    @property
-    def is_market(self) -> bool:
-        """Return ``True`` when no limit price is set (market order semantics)."""
-        return self.limit_price is None

@@ -235,21 +235,22 @@ category — there is no separate `Change type` section in the template.
   can unblock a merge.
 - **Author cannot approve own PR** — enforced by branch protection setting
   "Require review from Code Owners" + "Dismiss stale approvals".
-- **`ai-bot` PRs** — same rule. Bot opens, Ricardo reviews, Ricardo
-  merges (or asks bot to merge post-approval via Claude Code session).
+- **`ai-bot` PRs** — same rule. Bot opens, Ricardo reviews and approves,
+  and the merge queue merges the approved PR once CI is green
+  ([`pr-flow.md`](pr-flow.md)).
 
 ### CI checks (required, all live)
 
 The following must pass before a PR can merge:
 
 - Pre-commit hooks (markdownlint, ruff, mypy, conventional-commits,
-  detect-secrets, trailing-whitespace, end-of-file-fixer)
+  gitleaks, trailing-whitespace, end-of-file-fixer)
 - Unit + integration tests (pytest)
 - Coverage thresholds per ADR-007 (domain ≥95%, application ≥90%, adapters
   ≥80-90%)
-- Supply-chain checks (safety, pip-audit) per ADR-010
-- CHANGELOG update check per ADR-006 (for `feat` / `fix` / `refactor` / `perf`
-  / breaking commits)
+- Supply-chain checks (pip-audit, license check) per ADR-010
+- CHANGELOG update check per AGENTS.md (a `changelog.d/` fragment, for
+  `feat` / `fix` / `refactor` / `perf` / breaking commits)
 
 During the initial bootstrap window (before MVP1 CI was wired), only the markdown
 pre-commit hook ran. Full CI has been enforced since then.
@@ -567,6 +568,22 @@ expected as this rule surfaces existing footprint).
 - Public tooling names (`ruff`, `mypy`, `pytest`, `uv`) — these are what we depend on
 - Public standards (`Conventional Commits`, `Keep a Changelog`, `SemVer`)
 - Public specifications and regulations (`DGT V2232-25`, `LOPDGDD`)
+- Public package names in a dependency assessment: what was weighed for
+  installing and why it was not added
+
+### Dated prior-art research (carve-out)
+
+Research that compares hermes with prior art can't do its job without naming
+that prior art. Two places may name public outside projects, as evidence:
+
+- the dated research files under `docs/research/`;
+- accepted ADRs under `docs/architecture/`, which are dated, immutable
+  records of the alternatives weighed and the evidence behind each choice.
+
+Everywhere else (guides, experiment notes, specs, code, tests, comments,
+commits, PR and issue bodies) the rule above holds. The names the CI check
+looks for live in `docs/research/prior-art-names.txt`, inside the carve-out,
+so the check itself leaves no footprint.
 
 ### Editorial scrubs
 

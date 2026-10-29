@@ -3,8 +3,6 @@
 Reference: Orden HFP/887/2023; RGAT art. 42 quater.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -24,6 +22,7 @@ from hermes.domain.filing.modelo721 import (
 from hermes.domain.lots.selection import InsufficientInventory
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.quantity import Quantity
 
 _RULES = Modelo721Rules(threshold_eur=Decimal("50000"), increase_eur=Decimal("20000"))
 _MARCH = datetime(2026, 3, 1, 12, tzinfo=UTC)
@@ -81,7 +80,10 @@ class TestYearEndPositions:
     def test_selling_more_than_held_is_an_error(self) -> None:
         """Invariant: inconsistent trades fail instead of reporting negative units."""
         result = year_end_positions(2026, [_trade(1, OrderSide.SELL, "1", _MARCH)])
-        assert isinstance(result.failure(), InsufficientInventory)
+        assert result.failure() == InsufficientInventory(
+            requested=Quantity(amount=Decimal("1"), asset=Currency.BTC),
+            available=Quantity(amount=Decimal("0"), asset=Currency.BTC),
+        )
 
 
 class TestFirstDeclaration:

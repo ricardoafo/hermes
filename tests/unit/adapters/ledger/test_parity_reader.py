@@ -10,10 +10,9 @@ Invariants protected here:
 - signals are selected by ``after < occurred_at <= upto`` and the latest signal
   is per pair and bounded; asked for one kind, it skips newer signals of the
   other kind (#706);
-- trades come back with their stored fields, oldest first.
+- trades come back with their stored fields, oldest first;
+- missed bars are counted by close time, ``after < close <= upto`` (#1078).
 """
-
-from __future__ import annotations
 
 import sqlite3
 from datetime import timedelta
@@ -23,6 +22,7 @@ import pytest
 
 from hermes.adapters.ledger.parity_reader import SqliteParityReader
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
+from hermes.domain.events.bar_missed import BarMissed
 from hermes.domain.events.trade_executed import TradeSide
 from hermes.domain.strategy.signal import SignalKind
 from hermes.ports.parity_source import ParitySourcePort
@@ -52,6 +52,12 @@ def db(tmp_path: Path) -> Path:
     ledger.append_event(signal_event(DAY_END + timedelta(hours=4), SignalKind.EXIT))
     ledger.append_event(trade_event(DAY_START + timedelta(hours=4, seconds=5)))
     ledger.append_event(trade_event(DAY_START + timedelta(hours=1), TradeSide.SELL))
+    for close in (DAY_START, DAY_START + timedelta(hours=4), DAY_END):
+        ledger.append_event(
+            BarMissed.from_bar(
+                bar(close), handled_at=DAY_END + timedelta(hours=1), correlation_id=f"m{close:%H}"
+            )
+        )
     connection.close()
     return path
 
@@ -129,3 +135,11 @@ def test_trades_come_back_oldest_first_with_their_side(db: Path) -> None:
         (TradeSide.SELL, DAY_START + timedelta(hours=1)),
         (TradeSide.BUY, DAY_START + timedelta(hours=4, seconds=5)),
     ]
+
+
+def test_missed_bars_are_counted_by_close_time_after_exclusive_upto_inclusive(db: Path) -> None:
+    """#1078: the bar closing at the day's start is the day before's; the one at its end counts."""
+    with SqliteParityReader.open(db) as reader:
+        count = reader.missed_bars_between(DAY_START, DAY_END)
+
+    assert count == 2

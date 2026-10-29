@@ -5,10 +5,8 @@ capital: risk 1% of capital ÷ stop distance * entry, a 5% per-position cap and
 a 15% total exposure cap. The properties hold the caps for any configured
 capital and percentages.
 
-Reference: openspec/changes/sizing-per-prereg/change.md R-1..R-3.
+Reference: openspec/archive/sizing-per-prereg/change.md R-1..R-3.
 """
-
-from __future__ import annotations
 
 from decimal import Decimal
 from fractions import Fraction

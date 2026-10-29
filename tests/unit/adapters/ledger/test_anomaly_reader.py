@@ -5,10 +5,9 @@ Invariants under test:
 - an appended ``AnomalyDetected`` reads back equal to what was appended;
 - only anomalies at or after ``since`` are returned, newest first, and no
   other event type is;
-- the reader never creates a missing ledger and never writes an existing one.
+- the reader never creates a missing ledger and never writes an existing one;
+- the reader waits out a writer's lock for the ledger's shared busy timeout (#1176).
 """
-
-from __future__ import annotations
 
 import hashlib
 import sqlite3
@@ -19,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from hermes.adapters.ledger.anomaly_reader import SqliteAnomalyReader, latest_anomaly
+from hermes.adapters.ledger.connection import BUSY_TIMEOUT_SECONDS
 from hermes.adapters.ledger.sqlite_ledger import SqliteLedger
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.anomaly_detected import AnomalyDetected, AnomalySeverity
@@ -105,6 +105,16 @@ def test_reading_leaves_the_ledger_byte_identical(tmp_path: Path) -> None:
         reader.since(_T0)
 
     assert hashlib.sha256(db.read_bytes()).hexdigest() == before
+
+
+def test_the_reader_waits_the_shared_busy_timeout(tmp_path: Path) -> None:
+    """A reader next to ``hermes serve`` waits 10 s for a lock, as every ledger connection does."""
+    db = _ledger(tmp_path, _anomaly(1))
+
+    with SqliteAnomalyReader.open(db) as reader:
+        timeout_ms = reader._conn.execute("PRAGMA busy_timeout").fetchone()[0]
+
+    assert timeout_ms == int(BUSY_TIMEOUT_SECONDS * 1000)
 
 
 def test_a_naive_bound_is_refused(tmp_path: Path) -> None:

@@ -23,8 +23,6 @@ Rerun one seed by its test id, which ends in ``[hater-7]`` or ``[walk-7]``,
 with the same ``HERMES_SCENARIO_SEEDS`` when the seed is outside 0 to 9.
 """
 
-from __future__ import annotations
-
 import os
 from collections.abc import Callable
 from pathlib import Path
@@ -45,7 +43,7 @@ pytestmark = pytest.mark.integration
 SEEDS_ENV = "HERMES_SCENARIO_SEEDS"
 _DEFAULT_SEEDS = 10
 
-REGRESSION_SEEDS: dict[str, tuple[int, ...]] = {"walk": (), "hater": ()}
+REGRESSION_SEEDS: dict[str, tuple[int, ...]] = {"walk": (20744067,), "hater": (20744079,)}
 """Seeds the daily fresh-seed run found failing (issue #869); every PR runs them too."""
 
 
@@ -153,6 +151,7 @@ def test_a_saved_regression_seed_runs_on_every_pr_but_not_in_a_named_run(
 ) -> None:
     """Issue #869: a seed the daily run found failing joins the PR set; a named run is unchanged."""
     monkeypatch.setitem(REGRESSION_SEEDS, "hater", (20261007, 3))
+    monkeypatch.setitem(REGRESSION_SEEDS, "walk", ())
     assert (seeds_for("hater", None), seeds_for("walk", None), seeds_for("hater", "2@5")) == (
         [*range(10), 20261007],
         list(range(10)),

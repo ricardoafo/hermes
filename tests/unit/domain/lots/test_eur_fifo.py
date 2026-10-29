@@ -4,8 +4,6 @@ Reference: ADR-016 item 3 (fees in acquisition and transmission value),
 IRPF art. 35.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal, localcontext
 
@@ -25,6 +23,7 @@ from hermes.domain.lots.eur_fifo import (
 from hermes.domain.lots.selection import InsufficientInventory
 from hermes.domain.trading.order import OrderSide
 from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.quantity import Quantity
 
 _T0 = datetime(2026, 1, 2, 10, 0, tzinfo=UTC)
 
@@ -129,8 +128,12 @@ class TestWorkedExamples:
                 _trade(2, OrderSide.SELL, "2", "100", "0"),
             ),
         )
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), InsufficientInventory)
+        assert result == Failure(
+            InsufficientInventory(
+                requested=Quantity(amount=Decimal("2"), asset=Currency.BTC),
+                available=Quantity(amount=Decimal("1"), asset=Currency.BTC),
+            )
+        )
 
 
 class TestPending:

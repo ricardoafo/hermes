@@ -1,7 +1,5 @@
 """Tests for the Renta Web campaign layouts config (change 568-tax-pack D-6)."""
 
-from __future__ import annotations
-
 from datetime import date
 from pathlib import Path
 
@@ -10,9 +8,9 @@ import pytest
 from hermes.domain.filing.renta_campaign import CampaignLayout
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.renta import load_renta_campaigns
+from tests.support.paths import REPO_ROOT
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[4]
-_CONFIG_DIR = _PROJECT_ROOT / "config"
+_CONFIG_DIR = REPO_ROOT / "config"
 
 
 def test_repo_config_holds_the_2025_virtual_currency_box() -> None:

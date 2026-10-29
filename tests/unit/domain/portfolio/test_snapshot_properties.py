@@ -8,8 +8,6 @@ use ``==``, not a tolerance.
 Reference: 308-signal-event-portfolio-state change.md D-5, Test plan.
 """
 
-from __future__ import annotations
-
 from collections import defaultdict
 from collections.abc import Iterator
 from decimal import Decimal
@@ -39,7 +37,7 @@ from tests.strategies.portfolio import (
     starting_cash,
 )
 
-_SETTINGS = settings(max_examples=100, deadline=None, derandomize=True)
+_SETTINGS = settings(max_examples=100)
 _STRATEGY = StrategyId("swing-donchian-4h")
 _QTY = st.decimals(min_value=Decimal("0.0001"), max_value=Decimal("5"), places=4)
 _PRICE = st.decimals(min_value=Decimal("1"), max_value=Decimal("100000"), places=2)
@@ -152,13 +150,20 @@ def test_sell_is_accepted_exactly_when_the_position_covers_it(
     """A SELL is refused with InvalidPortfolioTransition iff the pair is unheld or too small."""
     for op, before, _after, accepted in _steps(_seed(cash), ops):
         if isinstance(op, FillOp) and op.fill.order.side == OrderSide.SELL:
-            held = before.positions.get(op.fill.order.pair)
+            pair = op.fill.order.pair
+            held = before.positions.get(pair)
             covered = held is not None and op.fill.executed_qty <= held.quantity
-            assert accepted == covered
-            if not accepted:
-                result = before.after_fill(op.fill)
-                assert isinstance(result, Failure)
-                assert isinstance(result.failure(), InvalidPortfolioTransition)
+            refusal: Failure[InvalidPortfolioTransition] | None = None
+            if not covered:
+                reason = (
+                    f"SELL of {pair} without a position"
+                    if held is None
+                    else f"SELL of {op.fill.executed_qty} {pair} exceeds the position of "
+                    f"{held.quantity}"
+                )
+                refusal = Failure(InvalidPortfolioTransition(reason=reason))
+            outcome = None if accepted else before.after_fill(op.fill)
+            assert (accepted, outcome) == (covered, refusal)
 
 
 @_SETTINGS

@@ -1,3 +1,7 @@
+# Serve reads the recharacterization block on every daily close (#1181); the
+# first three keys are not read yet. The file is optional; every key has the
+# same default in TaxGuardConfig.
+#
 # Tax guard thresholds — Spain / LOPDGDD-flavoured.
 #
 # Loaded by hermes.infrastructure.config.load_config into TaxGuardConfig.

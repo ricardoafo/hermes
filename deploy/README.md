@@ -7,7 +7,7 @@
 ## Status
 
 The bootstrap and the deploy path are implemented
-(`openspec/changes/179-cd-first-real-deploy/change.md`). The health timer,
+(`openspec/archive/179-cd-first-real-deploy/change.md`). The health timer,
 the backup timer and the smoke suite are still placeholders. See ADR-003 §09
 (`docs/architecture/adr-003-solution-architecture/09-deployment.md`)
 for the target design.
@@ -92,10 +92,16 @@ Cross-references:
 - `systemd/hermes-brief.timer`: Fires the brief daily at 07:15 Europe/Madrid. Status: installed by `vps-bootstrap`; left off until enabled by hand.
 - `systemd/hermes-tax-pack.service`: Refreshes the tax filing packs in `/var/lib/hermes-tax-pack` (`hermes tax-pack`, ledger read-only). Status: installed by `vps-bootstrap`.
 - `systemd/hermes-tax-pack.timer`: Fires the refresh daily at 07:30 Europe/Madrid. Status: installed by `vps-bootstrap`; left off until enabled by hand.
-- `systemd/hermes-notify-failure@.service`: Started by `hermes.service`'s `OnFailure=`; sends one Telegram message. Status: installed by `vps-bootstrap`.
+- `systemd/hermes-notify-failure@.service`: Started by the `OnFailure=` of `hermes.service`, `hermes-bot`, `hermes-backup`, `hermes-brief`, `hermes-daily` and `hermes-tax-pack`; sends one Telegram message. Status: installed by `vps-bootstrap`.
 - `systemd/hermes-bot.service`: Read-only Telegram bot (`hermes bot`, ADR-015); reads only `/etc/hermes/env.bot`. Status: `vps-bootstrap` enables it when the Telegram secrets are set.
+- `systemd/hermes-lab-memory.service`: The staging lab's memory watch: runs `hermes-lab-memory.sh` as `hermes-staging`, reading `/etc/hermes/env.staging` for the Telegram chat. Status: installed by `vps-bootstrap`; staging only.
+- `systemd/hermes-lab-memory.timer`: Fires the watch every minute. Status: installed by `vps-bootstrap`; left off until enabled on hermes-01 with `sudo systemctl enable --now hermes-lab-memory.timer`.
+- `systemd/hermes-lab-health.service`: The staging lab's liveness ping: runs `hermes-lab-health-ping.sh` as `hermes-staging`, reading the lab's own check URL from `/etc/hermes/env.staging`. Status: installed by `vps-bootstrap`; staging only.
+- `systemd/hermes-lab-health.timer`: Fires the lab ping every 5 min. Status: installed by `vps-bootstrap`; left off until the lab's check exists (see "Alerting when the lab goes quiet").
 - `hermes-health-ping.sh`: The progress ping: `hermes status --json` decides success or `/fail` while the unit is active. Status: shipped in each release.
 - `hermes-notify-failure.sh`: Builds and sends the Telegram failure message; needs only bash and curl. Status: `/opt/hermes/bin`: `vps-bootstrap`, then each good deploy.
+- `hermes-lab-memory.sh`: Logs `MemAvailable` and each running `hermes-shadow@` instance's `MemoryCurrent` once a minute, and sends one Telegram message when available memory drops below 1 GiB and one when it recovers (ADR-024 §6). Read a day of figures with `journalctl -u hermes-lab-memory.service --since=-1d --output=cat`. With no Telegram chat in `env.staging`, a due alert fails the run instead of going nowhere. Status: shipped in each release; run from `/opt/hermes-staging/current/deploy`.
+- `hermes-lab-health-ping.sh`: The lab's progress ping: `hermes status --json --unit hermes-shadow@<name>.service` on each enabled shadow's ledger; all current sends a success ping, any inactive, late or unreadable shadow a `/fail` ping, and no enabled shadow no ping. Status: shipped in each release; run from `/opt/hermes-staging/current/deploy`.
 - `hermes-notify-crash.sh`: `hermes.service`'s `ExecStopPost=`: one Slack line after a stop that was not clean. Status: `/opt/hermes/bin`: `vps-bootstrap`, then each good deploy.
 
 The scripts the workflows run live in `scripts/deploy/`:
@@ -152,12 +158,18 @@ ssh hermes-01 'id hermes; stat -c "%a %U:%G" /etc/hermes/env.production; systemc
 
 ### Alerting when hermes is down
 
+Every unit carries the same systemd sandbox (no capabilities, kernel and
+device protections, a `@system-service` syscall filter, `UMask=0027`);
+`tests/unit/deploy/test_systemd_units.py` keeps the set identical (#1192).
+The staging lab's units, `hermes-health` (healthchecks.io already alerts)
+and `hermes-archive-check` (it alerts on a mismatch itself) never page.
+
 Two independent paths reach the operator on Telegram, and a third posts
 same-day notices to Slack:
 
 | Path                  | Fires when                                                                                      | Needs                                                     |
 | --------------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `OnFailure=` notifier | `hermes.service` enters `failed`: start limit tripped (5 starts in 10 min) or exit code 2 or 3  | `HERMES_TELEGRAM__BOT_TOKEN`, `HERMES_TELEGRAM__CHAT_ID`  |
+| `OnFailure=` notifier | `hermes.service` or a prod-side unit (bot, backup, brief, daily, tax-pack) enters `failed`      | `HERMES_TELEGRAM__BOT_TOKEN`, `HERMES_TELEGRAM__CHAT_ID`  |
 | healthchecks.io ping  | the ping stops (service stopped, crash-looping, VPS down) or `hermes status` says late or down  | `HERMES_HEALTHCHECKS__PING_URL` and the integration below |
 | Slack crash notice    | any stop that is not clean (crash, signal, timeout), including the ones `Restart=` recovers     | `HERMES_SLACK__BOT_TOKEN` and `__DEFAULT_CHANNEL`         |
 
@@ -190,6 +202,52 @@ Check the notifier end to end (sends a real message):
 sudo systemctl start hermes-notify-failure@hermes.service
 journalctl -u hermes-notify-failure@hermes.service --since "1 minute ago"
 ```
+
+### Alerting when the lab goes quiet
+
+The staging lab (every enabled `hermes-shadow@` instance, ADR-024 §6) has its
+own healthchecks.io check, separate from prod's, and its alerts go to the lab
+Telegram chat (#1079). `hermes-lab-health-ping.sh` runs `hermes status --json`
+for each enabled shadow on its own unit and ledger. It sends a success ping
+when every one is active and current, and a `/fail` ping, naming the shadow in
+the body, when any is stopped, late or has an unreadable ledger. With no
+shadow enabled it sends nothing, and the silence alerts.
+
+The URL comes from `HERMES_HEALTHCHECKS__PING_URL` in `/etc/hermes/env.staging`.
+Staging refuses prod's ping URL at load and in the install preflight (#970),
+and every shadow's status then fails, so a copied URL turns the lab check red
+instead of pinging as prod.
+
+The one-time operator steps, once the lab runs a release that carries
+`hermes-lab-health-ping.sh` (the bundle fix is #1286):
+
+1. On healthchecks.io, create a new check named `hermes lab`: period 5
+   minutes, grace 10 minutes. Copy its ping URL.
+2. Integrations: add the lab Telegram chat and tick it for this check only
+   (not for prod's `hermes` check).
+3. On hermes-01, add the URL to the lab's env file:
+
+   ```bash
+   sudo nano /etc/hermes/env.staging
+   # HERMES_HEALTHCHECKS__PING_URL=https://hc-ping.com/<the lab check's uuid>
+   ```
+
+4. Once at least one shadow is enabled on hermes-01 (with none, the timer
+   sends nothing and the check alerts), start the timer and check the first
+   tick:
+
+   ```bash
+   sudo systemctl enable --now hermes-lab-health.timer
+   sudo systemctl start hermes-lab-health.service
+   journalctl -u hermes-lab-health.service --since "2 minutes ago" --output=cat
+   ```
+
+   The last line reads `ping sent: ok (N shadows)`, and the check turns green.
+
+5. Once, to see the alert reach the lab chat: just after a 4h bar close,
+   stop one shadow (`sudo systemctl stop hermes-shadow@<name>.service`),
+   wait for the next tick and the alert, then start it again well before
+   the next close.
 
 ### Sentry in prod
 

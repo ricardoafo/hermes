@@ -7,8 +7,6 @@ own Python block with ``urllib.request.urlopen`` replaced, so no network
 is touched; the real API call is exercised by every AI review run.
 """
 
-from __future__ import annotations
-
 import io
 import json
 import re
@@ -23,8 +21,9 @@ from typing import Any
 import pytest
 import yaml
 
-_ROOT = Path(__file__).resolve().parents[3]
-_WORKFLOW = _ROOT / ".github" / "workflows" / "ai-review.yml"
+from tests.support.paths import REPO_ROOT
+
+_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ai-review.yml"
 _FAKE_BEARER = "ghs_FAKEtokenFAKEtokenFAKEtokenFAKE0000"  # gitleaks:allow (fake test token)
 _STEP = "Gather review context"
 

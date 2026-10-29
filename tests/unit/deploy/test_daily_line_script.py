@@ -16,8 +16,6 @@ Invariants protected here:
 - missing credentials and Slack's ``ok:false`` fail the run.
 """
 
-from __future__ import annotations
-
 import os
 import shutil
 import subprocess
@@ -30,7 +28,9 @@ from urllib.parse import parse_qs
 
 import pytest
 
-_SCRIPT = Path(__file__).resolve().parents[3] / "deploy" / "hermes-daily-line.sh"
+from tests.support.paths import REPO_ROOT
+
+_SCRIPT = REPO_ROOT / "deploy" / "hermes-daily-line.sh"
 _BASH = shutil.which("bash")
 _CURL = shutil.which("curl")
 
@@ -159,7 +159,7 @@ def _run(host: _Host, slack: _Slack, **env: str) -> subprocess.CompletedProcess[
             "REAL_CURL": _CURL,
             "NO_PROXY": "*",
             "HERMES_DAILY_HERMES_BIN": (host.bin / "hermes").as_posix(),
-            "HERMES_NOTIFY_SLACK_API_BASE": slack.url,
+            "HERMES_SLACK__API_BASE": slack.url,
             "HERMES_SLACK__BOT_TOKEN": _TOKEN,
             "HERMES_SLACK__DEFAULT_CHANNEL": _CHANNEL,
             "STATE_DIRECTORY": host.state.as_posix(),

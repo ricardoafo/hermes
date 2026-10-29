@@ -5,10 +5,8 @@ PSR and DSR formulas use. Kurtosis is the plain fourth standardised moment
 (3 for a normal distribution), not excess kurtosis.
 
 Reference: pre-registration-v1.md §8.1; Bailey and López de Prado (2014),
-"The Deflated Sharpe Ratio"; openspec/changes/354-certification-statistics D-2.
+"The Deflated Sharpe Ratio"; openspec/archive/354-certification-statistics D-2.
 """
-
-from __future__ import annotations
 
 import math
 from collections.abc import Sequence
@@ -64,7 +62,7 @@ def sharpe_t_statistic(returns: Sequence[float]) -> float | None:
         ``mean / (s / sqrt(T))`` with ``s`` the sample standard deviation, or
         ``None`` when the Sharpe ratio is undefined.
 
-    Reference: ADR-021 §5; openspec/changes/v2-backtest-funnel D-5.
+    Reference: ADR-021 §5; openspec/archive/v2-backtest-funnel D-5.
     """
     sharpe = sharpe_ratio(returns)
     if sharpe is None:

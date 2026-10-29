@@ -14,10 +14,8 @@ Property tests (Hypothesis):
 - ``advance(d).now() == prior + d`` for random non-negative deltas.
 - ``set(t)`` raises iff ``t < current``.
 
-Reference: openspec/changes/spec-4a-clock-port/change.md D-4, D-5.
+Reference: openspec/archive/spec-4a-clock-port/change.md D-4, D-5.
 """
-
-from __future__ import annotations
 
 import threading
 from datetime import UTC, datetime, timedelta, timezone
@@ -27,7 +25,6 @@ from hypothesis import given, settings
 from hypothesis import strategies as st
 
 from hermes.adapters.clock import SimulatedClock
-from hermes.ports.clock import ClockPort
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Shared fixtures
@@ -57,11 +54,6 @@ class TestSimulatedClockConstructor:
         start = datetime(2026, 6, 15, 12, 0, 0, tzinfo=UTC)
         clock = SimulatedClock(start=start)
         assert clock.now() == start
-
-    def test_isinstance_clock_port(self) -> None:
-        """SimulatedClock satisfies ClockPort via runtime_checkable isinstance."""
-        clock = SimulatedClock(start=_EPOCH)
-        assert isinstance(clock, ClockPort)
 
 
 class TestSimulatedClockNow:

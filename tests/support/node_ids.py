@@ -6,12 +6,11 @@ Shared by the lists that point at their proofs: the pre-registration rule list
 must fail those lists instead of leaving an entry pointing at nothing.
 """
 
-from __future__ import annotations
-
 import importlib
-from pathlib import Path
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+from tests.support.paths import REPO_ROOT
+
+PROJECT_ROOT = REPO_ROOT
 
 
 def names_a_test(node_id: str) -> bool:

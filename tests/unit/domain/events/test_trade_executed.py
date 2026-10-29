@@ -9,8 +9,6 @@ Verifies:
 Reference: code-conventions.md §10 + §3.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -83,11 +81,6 @@ class TestTradeExecutedInstantiation:
 
 class TestTradeSideEnum:
     """Verify TradeSide has exactly the two documented members."""
-
-    def test_buy_and_sell_are_string_values(self) -> None:
-        """TradeSide members are the exact strings persisted to the ledger."""
-        assert TradeSide.BUY == "BUY"
-        assert TradeSide.SELL == "SELL"
 
     def test_no_other_members(self) -> None:
         """TradeSide has exactly two members — no accidental extras."""

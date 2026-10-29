@@ -19,8 +19,6 @@ Reference: spec-2a-fill-model-port/change.md D-4 (Fill | Rejection
 discriminated union — native union, not Result).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -57,6 +55,9 @@ class Fill:
         timestamp: UTC-aware :class:`~datetime.datetime` when the fill was
             recorded. Naive datetimes are rejected — the no-naive-datetime
             pre-commit hook enforces this at edit time.
+        fee_estimated: ``True`` when the adapter could not read the real fee
+            and charged an estimate (issue #1014), so cost basis and tax can
+            list it for correction from the exchange's trade history.
     """
 
     order: Order
@@ -64,6 +65,7 @@ class Fill:
     avg_price: Decimal
     fee: Money
     timestamp: datetime
+    fee_estimated: bool = False
 
     @property
     def strategy_id(self) -> StrategyId:

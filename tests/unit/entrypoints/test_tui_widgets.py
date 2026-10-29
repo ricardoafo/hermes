@@ -19,8 +19,6 @@ Invariants:
   only when asked.
 """
 
-from __future__ import annotations
-
 from hypothesis import given
 from hypothesis import strategies as st
 from rich.console import Console
@@ -94,11 +92,14 @@ def test_idle_title_is_a_chrome_gradient() -> None:
 
 
 def test_bottom_edge_carries_hints_and_the_magenta_corner() -> None:
-    """The bottom edge reads the key hints and ends with ━┛ in the AI colour."""
+    """The bottom edge reads the key hints from the body column (one cell in) and ends with ━┛.
+
+    The corner is in the AI colour; issue #1096 moved the hint from column 2 to 1.
+    """
     edge = bottom_edge("D W M Y range", 30, NEON)
     corner = _style_at(edge, 29)
     assert (edge.plain, _hex(corner.color)) == (
-        "  D W M Y range ────────────━┛",
+        " D W M Y range ─────────────━┛",
         "#FF3DF0",
     )
 
@@ -121,21 +122,16 @@ def test_narrow_top_edge_drops_the_label_before_the_title() -> None:
     assert edge.plain == "┏━ ACTIVITY  " + "─" * 3
 
 
-def test_window_bar_has_mark_status_and_clock() -> None:
-    """The bar opens with ▐ HERMES // SHADOW CONSOLE, then the status, and ends with the clock."""
-    status = Text("next bar 03:48:00")
-    bar = window_bar_text(80, NEON, status=status, clock="14:12:00").plain
-    assert (
-        bar.startswith("▐ HERMES // SHADOW CONSOLE  next bar 03:48:00 "),
-        bar.endswith("14:12:00 "),
-        len(bar),
-    ) == (True, True, 80)
-
-
-def test_window_bar_with_empty_status_has_only_mark_and_clock() -> None:
-    """With nothing to show (hermes late or down, no ticker) the bar is the mark and the clock."""
-    bar = window_bar_text(40, NEON, status=Text(""), clock="14:12:00").plain
-    assert bar == "▐ HERMES // SHADOW CONSOLE" + " " * 5 + "14:12:00 "
+def test_window_bar_has_no_characters_at_any_width() -> None:
+    """The bar is blank cells at every width and every sheet: nothing to read, only chrome."""
+    bars = [
+        window_bar_text(width, tokens).plain
+        for width in (0, 1, 40, 80, 200)
+        for tokens in (NEON, BASE)
+    ]
+    assert [(bar.strip(), len(bar)) for bar in bars] == [
+        ("", width) for width in (0, 0, 1, 1, 40, 40, 80, 80, 200, 200)
+    ]
 
 
 def test_tabs_show_names_and_numbers_when_wide() -> None:
@@ -243,7 +239,7 @@ def test_meter_turns_amber_on_the_callers_warning() -> None:
 def test_meter_solid_colour_wins_over_gradient_and_warning() -> None:
     """A stale stop meter is drawn ``dim`` even while the stop is close."""
     bar = Meter(1, width=2, warn=True).render(BASE, colour=BASE.dim)
-    assert {_hex(_style_at(bar, i).color) for i in range(2)} == {"#5D6780"}
+    assert {_hex(_style_at(bar, i).color) for i in range(2)} == {BASE.dim}
 
 
 def test_meter_with_caps_label_and_percent() -> None:

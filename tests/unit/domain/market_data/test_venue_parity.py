@@ -12,8 +12,6 @@ Invariants under test:
 - ``worst`` is the bar with the largest divergence.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 

@@ -21,8 +21,6 @@ The scenario suite (issue #689) builds on this module; these tests only prove
 the fake itself is faithful.
 """
 
-from __future__ import annotations
-
 import asyncio
 import json
 from datetime import UTC, date, datetime, timedelta
@@ -32,11 +30,9 @@ from pathlib import Path
 import httpx
 import pytest
 
-from hermes.adapters.exchanges.rate_limiter import RateLimitConfig, RateLimiter
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
 from hermes.adapters.fx.frankfurter import FrankfurterAdapter
 from hermes.adapters.fx.frankfurter import FrankfurterConfig as FrankfurterWireConfig
-from hermes.adapters.fx.rate_limiter import RateLimitConfig as FxRateLimitConfig
-from hermes.adapters.fx.rate_limiter import RateLimiter as FxRateLimiter
 from hermes.adapters.market_data.binance_depth_snapshot import (
     DEPTH_LEVELS,
     BinanceDepthSnapshotAdapter,
@@ -326,7 +322,7 @@ def test_the_real_frankfurter_adapter_gets_fridays_rate_on_a_saturday() -> None:
     adapter = FrankfurterAdapter(
         config=FrankfurterWireConfig(base_url=FX_URL, wire_codes=FrankfurterWireConfig.USDT_AS_USD),
         client=httpx.Client(base_url=FX_URL, transport=exchange.transport()),
-        limiter=FxRateLimiter(config=FxRateLimitConfig(max_weight=60, window_seconds=60)),
+        limiter=RateLimiter(config=RateLimitConfig(max_weight=60, window_seconds=60)),
     )
     rate = adapter.get_for_date(Currency.EUR, Currency.USDT, date(2024, 11, 2))
     adapter.close()

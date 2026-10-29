@@ -3,8 +3,6 @@
 Reference: ADR-016 decisions 1, 10 and 12.
 """
 
-from __future__ import annotations
-
 import io
 import json
 import logging
@@ -22,10 +20,10 @@ from hermes.domain.trading.order import OrderSide
 from hermes.entrypoints import cli as cli_module
 from hermes.entrypoints import tax as tax_module
 from hermes.infrastructure.config.tax import TaxpayerProfile, load_tax_scales
+from tests.support.paths import REPO_ROOT
 from tests.unit.adapters.ledger.test_sqlite_trade_ledger import _record, _trade
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
-_CONFIG_DIR = _PROJECT_ROOT / "config"
+_CONFIG_DIR = REPO_ROOT / "config"
 _NOW = datetime(2026, 1, 2, 18, tzinfo=UTC)
 _PROFILE = """\
 years:
@@ -186,10 +184,10 @@ def test_profile_values_are_never_logged_or_printed(
 
 
 def test_missing_ledger_fails_without_creating_one(tmp_path: Path) -> None:
-    """A wrong --db path exits 1 and leaves no empty ledger behind."""
+    """A wrong --db path exits 3 (no ledger, #1187) and leaves no empty ledger behind."""
     db = tmp_path / "nope.sqlite3"
     code, out, err = _run_err(tmp_path, "--db", str(db))
-    assert (code, out, err, db.exists()) == (1, "", f"ERROR: ledger not found at {db}\n", False)
+    assert (code, out, err, db.exists()) == (3, "", f"ERROR: no ledger at {db}\n", False)
 
 
 def test_unreadable_ledger_exits_1(tmp_path: Path) -> None:

@@ -4,22 +4,18 @@ The example documents the production env file. If it names a variable the
 config loader rejects, an operator who copies it gets `hermes serve`
 exit 3 at start (issue #306).
 
-Reference: openspec/changes/306-serve-systemd-boot/change.md.
+Reference: openspec/archive/306-serve-systemd-boot/change.md.
 """
-
-from __future__ import annotations
-
-from pathlib import Path
 
 import pytest
 from dotenv import dotenv_values
 
 from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import load_config
+from tests.support.paths import REPO_ROOT
 
-_REPO_ROOT = Path(__file__).resolve().parents[3]
-_EXAMPLE = _REPO_ROOT / "deploy" / "systemd" / "hermes.env.example"
-_CONFIG_DIR = _REPO_ROOT / "config"
+_EXAMPLE = REPO_ROOT / "deploy" / "systemd" / "hermes.env.example"
+_CONFIG_DIR = REPO_ROOT / "config"
 
 
 @pytest.fixture

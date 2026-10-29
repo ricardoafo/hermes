@@ -3,7 +3,7 @@
 Every test protects one invariant of the orderbook-walk fill model:
 
 - Port conformance: ``isinstance(impl, FillModelPort)`` → ``True``.
-- **Anti-Zipline** (SA-2 AP-1): market order at bar T fills at bar T+1
+- **No look-ahead fill** (SA-2 AP-1): market order at bar T fills at bar T+1
   open — the fill price is the first level in the book, never the
   previous bar's close.
 - Fill quantity ≤ order quantity (never over-fill).
@@ -19,11 +19,11 @@ Reference: spec-2b-orderbook-walk-fill-model/change.md,
 ADR-011 D-10/D-11/D-02, pre-reg §6.2.
 """
 
-from __future__ import annotations
-
+import inspect
 import random
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import get_type_hints
 
 import pytest
 from hypothesis import given, settings
@@ -35,6 +35,7 @@ from hermes.domain.market_data.orderbook import Orderbook, OrderbookLevel
 from hermes.domain.trading.fill import Fill, Rejection
 from hermes.domain.trading.order import Order, OrderSide
 from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.quantity import Quantity
 from hermes.domain.value_objects.strategy_id import StrategyId
@@ -124,37 +125,43 @@ def _make_model(
 class TestPortConformance:
     """OrderbookWalkFillModel must satisfy FillModelPort at the structural level."""
 
-    def test_isinstance_fill_model_port(self) -> None:
-        """``isinstance(OrderbookWalkFillModel(), FillModelPort)`` must be True.
+    def test_fill_order_signature_matches_the_port(self) -> None:
+        """The model's ``fill_order`` has the port's parameters and return annotation."""
+        port = inspect.signature(FillModelPort.fill_order)
+        impl = inspect.signature(OrderbookWalkFillModel.fill_order)
 
-        FillModelPort is @runtime_checkable — this test enforces structural
-        conformance at the Protocol level.
-        """
-        model = OrderbookWalkFillModel()
-        assert isinstance(model, FillModelPort), (
-            "OrderbookWalkFillModel must satisfy FillModelPort via structural subtyping. "
-            "Check that fill_order signature matches the Protocol exactly."
+        assert [(p.name, p.kind) for p in impl.parameters.values()] == [
+            (p.name, p.kind) for p in port.parameters.values()
+        ]
+        assert get_type_hints(OrderbookWalkFillModel.fill_order) == get_type_hints(
+            FillModelPort.fill_order
         )
 
-    def test_fill_order_returns_fill_or_rejection(self) -> None:
-        """fill_order return value must be Fill or Rejection (discriminated union)."""
+    def test_market_buy_returns_the_full_fill_at_the_best_ask(self) -> None:
+        """A 0.5 BTC market BUY on the single-level book is one whole Fill at 60001.
+
+        The fee is the 26 bps taker rate on the notional: 0.5 x 60001 x 0.0026.
+        """
         model = _make_model()
         order = _make_order(qty_amount=Decimal("0.5"))
         result = model.fill_order(
             order=order, orderbook=_SINGLE_LEVEL_BOOK, clock=_CLOCK, fees=_STANDARD_SCHEDULE
         )
-        assert isinstance(result, (Fill, Rejection)), (
-            f"fill_order must return Fill or Rejection, got {type(result).__name__!r}. "
-            "The discriminated union contract is defined in spec-2a."
+        assert result == Fill(
+            order=order,
+            executed_qty=Decimal("0.5"),
+            avg_price=Decimal("60001"),
+            fee=Money(amount=Decimal("78.0013"), currency=Currency.USDT),
+            timestamp=_CLOCK,
         )
 
 
 # ---------------------------------------------------------------------------
-# Anti-Zipline test (SA-2 AP-1)
+# No look-ahead fill test (SA-2 AP-1)
 # ---------------------------------------------------------------------------
 
 
-class TestAntiZipline:
+class TestNoLookaheadFill:
     """Market order fills at the orderbook's first level — NOT the previous close.
 
     ADR-011 D-10: the caller is responsible for passing the NEXT bar's open
@@ -167,7 +174,7 @@ class TestAntiZipline:
     def test_market_buy_fills_at_best_ask_not_prior_close(self) -> None:
         """Market BUY fills at the best ask (= next bar's open), not the prior close.
 
-        Anti-Zipline invariant (SA-2 AP-1): fill_order must NOT apply the
+        No look-ahead invariant (SA-2 AP-1): fill_order must NOT apply the
         prior-bar-close logic that produces look-ahead bias. The composition
         root provides a synthetic book where asks[0].price == next_bar_open.
         """
@@ -194,18 +201,18 @@ class TestAntiZipline:
         assert result.avg_price == next_bar_open, (
             f"Market BUY must fill at best ask (next bar open) {next_bar_open}, "
             f"got {result.avg_price!r}. Fill model must NOT use prior_bar_close={prior_bar_close}. "
-            "Anti-Zipline invariant violated (SA-2 AP-1)."
+            "No look-ahead invariant violated (SA-2 AP-1)."
         )
         assert result.avg_price != prior_bar_close, (
             f"Fill price {result.avg_price!r} equals prior_bar_close={prior_bar_close} — "
-            "this is the Zipline look-ahead bias bug. Market orders fill at T+1 open, "
+            "this is the look-ahead bias bug. Market orders fill at T+1 open, "
             "never at T close."
         )
 
     def test_market_sell_fills_at_best_bid_not_prior_close(self) -> None:
         """Market SELL fills at the best bid (= next bar's open), not the prior close.
 
-        Symmetric anti-Zipline check for the SELL side.
+        Symmetric no-look-ahead check for the SELL side.
         """
         next_bar_open_bid = Decimal("60900")
         prior_bar_close = Decimal("61000")  # must NOT appear in fill
@@ -228,11 +235,11 @@ class TestAntiZipline:
         )
         assert result.avg_price == next_bar_open_bid, (
             f"Market SELL must fill at best bid (next bar open) {next_bar_open_bid}, "
-            f"got {result.avg_price!r}. Anti-Zipline invariant violated (SA-2 AP-1, SELL side)."
+            f"got {result.avg_price!r}. No look-ahead invariant violated (SA-2 AP-1, SELL side)."
         )
         assert result.avg_price != prior_bar_close, (
             f"Fill price {result.avg_price!r} equals prior_bar_close={prior_bar_close} — "
-            "Zipline bias. Market SELL fills at next bar bid, never at prior close."
+            "Look-ahead bias. Market SELL fills at next bar bid, never at prior close."
         )
 
 
@@ -280,21 +287,17 @@ class TestQuantityBound:
                 f"> order.qty.amount {order.qty.amount!r} (qty={qty!r})."
             )
 
-    def test_fill_qty_preserves_fill_domain_invariant(self) -> None:
-        """Fill.executed_qty must pass Fill's own domain validation (≤ order.qty).
-
-        This is a belt-and-suspenders check: Fill.__post_init__ already
-        enforces this, but we verify the fill model produces a value that
-        does not cause the Fill constructor to raise.
-        """
+    def test_executed_qty_equals_the_order_qty_when_depth_covers_it(self) -> None:
+        """A 0.1 BTC order against 1 BTC of depth executes exactly 0.1 BTC."""
         model = _make_model()
         order = _make_order(qty_amount=Decimal("0.1"))
         result = model.fill_order(
             order=order, orderbook=_SINGLE_LEVEL_BOOK, clock=_CLOCK, fees=_STANDARD_SCHEDULE
         )
-        # If Fill constructor raises, the model produced an invalid executed_qty.
-        assert isinstance(result, (Fill, Rejection)), (
-            "fill_order must return Fill or Rejection, never raise on valid input."
+        assert isinstance(result, Fill)
+        assert (result.executed_qty, result.fee) == (
+            Decimal("0.1"),
+            Money(amount=Decimal("15.60026"), currency=Currency.USDT),
         )
 
 
@@ -575,24 +578,23 @@ class TestDeterminism:
                 f"{result_a.fee.amount!r} vs {result_b.fee.amount!r} (seed={seed!r})."
             )
 
-    def test_different_seeds_do_not_guarantee_different_fills(self) -> None:
-        """Different seeds MAY produce different results — documented boundary.
-
-        For a purely deterministic model (VWAP without random tie-breaking at
-        current scope), fills are identical regardless of seed. We verify the
-        model at least runs without error with different seeds — the important
-        invariant is that same seed → same result (tested above).
-        """
+    def test_the_seed_does_not_change_a_fill_without_slippage(self) -> None:
+        """With slippage off nothing draws from the RNG, so every seed fills identically."""
         order = _make_order(qty_amount=Decimal("0.5"))
-        for seed in (1, 2, 99, 12345):
-            model = _make_model(seed=seed)
-            result = model.fill_order(
+        expected = Fill(
+            order=order,
+            executed_qty=Decimal("0.5"),
+            avg_price=Decimal("60001"),
+            fee=Money(amount=Decimal("78.0013"), currency=Currency.USDT),
+            timestamp=_CLOCK,
+        )
+        results = [
+            _make_model(seed=seed).fill_order(
                 order=order, orderbook=_SINGLE_LEVEL_BOOK, clock=_CLOCK, fees=_STANDARD_SCHEDULE
             )
-            assert isinstance(result, (Fill, Rejection)), (
-                f"fill_order must return Fill or Rejection for seed={seed!r}, "
-                f"got {type(result).__name__!r}."
-            )
+            for seed in (1, 2, 99, 12345)
+        ]
+        assert results == [expected] * 4
 
     def test_repeated_calls_with_same_inputs_are_consistent(self) -> None:
         """Multiple calls with identical inputs produce consistent results."""
@@ -715,37 +717,41 @@ class TestRejectionMatrix:
         )
 
     def test_limit_buy_at_exactly_best_ask_fills(self) -> None:
-        """Limit BUY with limit_price == best_ask fills successfully."""
+        """Limit BUY with limit_price == best_ask fills in full at the ask."""
         model = _make_model(apply_slippage=False)
-        best_ask = Decimal("60001")
         order = _make_order(
             side=OrderSide.BUY,
             qty_amount=Decimal("0.5"),
-            limit_price=best_ask,
+            limit_price=Decimal("60001"),
         )
         result = model.fill_order(
             order=order, orderbook=_SINGLE_LEVEL_BOOK, clock=_CLOCK, fees=_STANDARD_SCHEDULE
         )
-        assert isinstance(result, Fill), (
-            f"Expected Fill when limit_price == best_ask {best_ask!r}, "
-            f"got {type(result).__name__!r}. At-limit orders must fill."
+        assert result == Fill(
+            order=order,
+            executed_qty=Decimal("0.5"),
+            avg_price=Decimal("60001"),
+            fee=Money(amount=Decimal("78.0013"), currency=Currency.USDT),
+            timestamp=_CLOCK,
         )
 
     def test_limit_sell_at_exactly_best_bid_fills(self) -> None:
-        """Limit SELL with limit_price == best_bid fills successfully."""
+        """Limit SELL with limit_price == best_bid fills in full at the bid."""
         model = _make_model(apply_slippage=False)
-        best_bid = Decimal("60000")
         order = _make_order(
             side=OrderSide.SELL,
             qty_amount=Decimal("0.5"),
-            limit_price=best_bid,
+            limit_price=Decimal("60000"),
         )
         result = model.fill_order(
             order=order, orderbook=_SINGLE_LEVEL_BOOK, clock=_CLOCK, fees=_STANDARD_SCHEDULE
         )
-        assert isinstance(result, Fill), (
-            f"Expected Fill when limit_price == best_bid {best_bid!r}, "
-            f"got {type(result).__name__!r}. At-limit SELL orders must fill."
+        assert result == Fill(
+            order=order,
+            executed_qty=Decimal("0.5"),
+            avg_price=Decimal("60000"),
+            fee=Money(amount=Decimal("78"), currency=Currency.USDT),
+            timestamp=_CLOCK,
         )
 
     def test_rejection_preserves_original_order(self) -> None:

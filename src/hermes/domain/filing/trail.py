@@ -10,24 +10,21 @@ figure to the trades that produced it:
 A piece with any pending EUR value has no gain; the Modelo 100 report leaves
 its whole sale out of the totals.
 
-Reference: openspec/changes/568-tax-pack/change.md, ADR-016 item 3.
+Reference: openspec/archive/568-tax-pack/change.md, ADR-016 item 3.
 """
-
-from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import date, datetime
-from decimal import Decimal, localcontext
-from typing import Final
+from decimal import Decimal
 
 from hermes.domain.filing.modelo100 import DisposalPiece
 from hermes.domain.value_objects.currency import Currency
+from hermes.domain.value_objects.precision import exact
 
 __all__ = ["TradeRate", "TrailLine", "build_trail"]
 
 # Stored shares carry up to 30 decimals; the default 28-digit context would round them.
-_PRECISION: Final[int] = 100
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,8 +93,7 @@ def build_trail(
 def _line(piece: DisposalPiece, rates: Mapping[str, TradeRate]) -> TrailLine:
     gain = None
     if piece.proceeds_eur is not None and piece.fee_eur is not None and piece.cost_eur is not None:
-        with localcontext() as ctx:
-            ctx.prec = _PRECISION
+        with exact():
             gain = piece.proceeds_eur - piece.fee_eur - piece.cost_eur
     return TrailLine(
         sell_ref=piece.sell_ref,

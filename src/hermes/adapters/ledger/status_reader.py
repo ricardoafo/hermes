@@ -6,20 +6,17 @@ write even by accident, and never runs migrations (unlike
 migrates). Safe to run next to a live ``hermes serve``: a read takes only a
 shared lock for the length of one query.
 
-Reference: openspec/changes/370-hermes-status/change.md.
+Reference: openspec/archive/370-hermes-status/change.md.
 """
-
-from __future__ import annotations
 
 import json
 import sqlite3
 from datetime import datetime
-from pathlib import Path
-from typing import Self
+from decimal import Decimal
 
 from hermes.adapters.ledger._cells import decimal_cell, time_cell
 from hermes.adapters.ledger.anomaly_reader import latest_anomaly
-from hermes.adapters.ledger.connection import open_ledger
+from hermes.adapters.ledger.connection import ReadOnlyLedgerReader
 from hermes.adapters.ledger.risk_halt_rows import RISK_HALT_EVENT_TYPE, risk_halt_from_payload
 from hermes.domain.errors import LedgerError
 from hermes.domain.events.anomaly_detected import CLOCK_SKEW_SOURCE, AnomalyDetected
@@ -33,52 +30,8 @@ from hermes.ports.status import ShadowEntry
 __all__ = ["SqliteStatusReader"]
 
 
-class SqliteStatusReader:
+class SqliteStatusReader(ReadOnlyLedgerReader):
     """Answer the status questions from a ledger file, read-only."""
-
-    def __init__(self, connection: sqlite3.Connection) -> None:
-        """Wrap an already-open read-only connection.
-
-        Args:
-            connection: A connection opened by :meth:`open` (or a test's own).
-        """
-        self._conn = connection
-
-    @classmethod
-    def open(cls, path: Path) -> Self:
-        """Open ``path`` read-only.
-
-        Args:
-            path: The ledger file.
-
-        Returns:
-            A reader over a ``mode=ro`` connection.
-
-        Raises:
-            FileNotFoundError: There is no file at ``path``. SQLite would
-                otherwise report a generic "unable to open" error.
-            LedgerError: SQLite refused to open the file.
-        """
-        resolved = path.resolve()
-        if not resolved.is_file():
-            raise FileNotFoundError(str(path))
-        try:
-            connection = open_ledger(resolved, read_only=True)
-        except sqlite3.Error as exc:
-            raise LedgerError(msg=f"cannot open {path} read-only: {exc}") from exc
-        return cls(connection)
-
-    def close(self) -> None:
-        """Close the connection."""
-        self._conn.close()
-
-    def __enter__(self) -> Self:
-        """Return ``self`` for ``with`` blocks."""
-        return self
-
-    def __exit__(self, *_exc_info: object) -> None:
-        """Close the connection, whatever ended the ``with`` block."""
-        self.close()
 
     def last_processed_close(self, pair: Pair, interval: KlineInterval) -> datetime | None:
         """Return the newest ``BarProcessed`` close time for one stream.
@@ -250,6 +203,40 @@ class SqliteStatusReader:
             LedgerError: On any SQLite read failure or an unreadable payload.
         """
         return latest_anomaly(self._conn, CLOCK_SKEW_SOURCE)
+
+    def bar_check_seconds(self, limit: int) -> tuple[Decimal, ...]:
+        """Return how many seconds after each bar's close its check was recorded.
+
+        The console's System screen draws these as the bar-check time
+        sparkline (issue #717). ``BarProcessed.occurred_at`` is the bar's
+        close and ``recorded_at`` the wall clock when the row was written, so
+        the gap is the time the loop took to fetch, check and record the bar.
+
+        Args:
+            limit: How many of the newest bar checks to return.
+
+        Returns:
+            Whole seconds, oldest first; empty when no bar was checked yet.
+
+        Raises:
+            LedgerError: On any SQLite read failure or an unreadable time.
+        """
+        try:
+            rows = self._conn.execute(
+                "SELECT occurred_at, recorded_at FROM events "
+                "WHERE event_type = 'BarProcessed' ORDER BY id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        except sqlite3.Error as exc:
+            raise LedgerError(msg=f"bar_check_seconds failed: {exc}") from exc
+        try:
+            gaps = [
+                datetime.fromisoformat(recorded) - datetime.fromisoformat(occurred)
+                for occurred, recorded in rows
+            ]
+        except (TypeError, ValueError) as exc:
+            raise LedgerError(msg=f"bar_check_seconds: unreadable time: {exc}") from exc
+        return tuple(Decimal(int(gap.total_seconds())) for gap in reversed(gaps))
 
     def _fetchone(self, sql: str, params: tuple[str, ...]) -> tuple[str | int | None, ...] | None:
         """Run one read query and return its first row."""

@@ -31,8 +31,6 @@ Exit codes:
     2 - usage error
 """
 
-from __future__ import annotations
-
 import argparse
 import asyncio
 import json
@@ -72,7 +70,7 @@ from hermes.application.order_router.risk_engine import RiskEngine
 from hermes.application.order_router.sizing import SizingPolicy
 from hermes.application.portfolio.tracker import PortfolioTracker
 from hermes.application.strategy_protocol.kill_trigger_evaluator import KillTriggerEvaluator
-from hermes.application.strategy_protocol.preregistration import PreRegistration
+from hermes.application.strategy_protocol.strategy_factory import strategy_kind
 from hermes.application.strategy_protocol.trial_log import trial_split
 from hermes.domain.errors import DataManifestFormatError, DomainError, TrialLogError
 from hermes.domain.fees.fee_schedule import FeeSchedule
@@ -83,7 +81,6 @@ from hermes.domain.fees.fee_schedule_selector import (
 from hermes.domain.portfolio.snapshot import PortfolioSnapshot
 from hermes.domain.statistics.performance import daily_returns
 from hermes.domain.statistics.sharpe import sharpe_ratio
-from hermes.domain.strategy.swing.adapter import SwingStrategyAdapter
 from hermes.domain.value_objects.money import Money
 from hermes.domain.value_objects.pair import Pair
 from hermes.domain.value_objects.strategy_id import StrategyId
@@ -91,6 +88,7 @@ from hermes.infrastructure.config.errors import ConfigError
 from hermes.infrastructure.config.loader import load_config
 from hermes.infrastructure.config.models import StrategyConfig
 from hermes.infrastructure.logging import new_correlation_id
+from hermes.infrastructure.project_root import load_pre_registration
 
 _DEFAULT_PAIR = "BTCUSDT"
 _DEFAULT_START = "2024-01-01"
@@ -235,7 +233,7 @@ def _kernel(strategy_id: StrategyId, starting_cash: Money, sizing: SizingPolicy)
     return FillKernel(
         fill_model=OrderbookWalkFillModel(apply_slippage=False, rng=random.Random(_RNG_SEED)),  # noqa: S311 — deterministic replay, not crypto
         risk_engine=RiskEngine(rules=[]),
-        kill_evaluator=KillTriggerEvaluator(pre_reg=PreRegistration()),
+        kill_evaluator=KillTriggerEvaluator(pre_reg=load_pre_registration()),
         tracker=PortfolioTracker(PortfolioSnapshot.seed(strategy_id, starting_cash)),
         strategy_id=strategy_id,
         sizing=sizing,
@@ -285,7 +283,7 @@ async def _run(args: argparse.Namespace) -> int:
     try:
         run = replay(
             _merge_by_close_time(bars_4h, bars_1d),
-            strategy=SwingStrategyAdapter(**parameters),
+            strategy=strategy_kind(None).create(parameters),
             kernel=kernel,
             window_start=start,
             window_end=end,

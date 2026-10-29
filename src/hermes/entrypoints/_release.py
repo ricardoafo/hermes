@@ -1,4 +1,4 @@
-"""The running release, read from the ``current`` symlink (shared by version, status, serve).
+"""The running release and package version (shared by version, status, serve, shadow-start).
 
 ``scripts/deploy/install_release.sh`` flips ``/opt/hermes/current`` to the new
 release directory; its name is the release. Kept apart from
@@ -6,14 +6,19 @@ release directory; its name is the release. Kept apart from
 without importing the version command (which imports serve).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from importlib import metadata
 from pathlib import Path
 from typing import Final
 
-__all__ = ["DEFAULT_RELEASE_LINK", "UNKNOWN_RELEASE", "ReleaseInfo", "read_release"]
+__all__ = [
+    "DEFAULT_RELEASE_LINK",
+    "UNKNOWN_RELEASE",
+    "ReleaseInfo",
+    "package_version",
+    "read_release",
+]
 
 DEFAULT_RELEASE_LINK: Final = Path("/opt/hermes/current")
 UNKNOWN_RELEASE: Final = "unknown"
@@ -53,3 +58,16 @@ def read_release(link: Path = DEFAULT_RELEASE_LINK) -> ReleaseInfo:
     except OSError:
         return ReleaseInfo(UNKNOWN_RELEASE, None)
     return ReleaseInfo(target.name, flipped)
+
+
+def package_version() -> str:
+    """Return the installed ``hermes`` package version; never raises.
+
+    Returns:
+        The distribution's version, or ``unknown`` when it is not installed
+        (a source tree run without ``uv sync``).
+    """
+    try:
+        return metadata.version("hermes")
+    except metadata.PackageNotFoundError:
+        return UNKNOWN_RELEASE

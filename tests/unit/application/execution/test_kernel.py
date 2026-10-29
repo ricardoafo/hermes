@@ -11,8 +11,6 @@ Invariants (backtest-driver-mvp1-phase2 change.md D-2, R-2, R-4):
 - Replaying the returned trades rebuilds the same portfolio.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -360,7 +358,7 @@ def test_an_entry_that_fits_the_cap_at_the_ask_still_fills() -> None:
 _prices = st.decimals(min_value=Decimal("1"), max_value=Decimal("100000"), places=2)
 
 
-@settings(max_examples=40, deadline=None)
+@settings(max_examples=40)
 @given(steps=st.lists(st.tuples(st.booleans(), _prices), min_size=1, max_size=12))
 def test_replaying_the_returned_trades_rebuilds_the_same_portfolio(
     steps: list[tuple[bool, Decimal]],

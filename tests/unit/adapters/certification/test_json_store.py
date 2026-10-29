@@ -1,16 +1,13 @@
 """Unit tests for the JSON certification store (#355 D-7)."""
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from hermes.adapters.certification.json_store import JsonCertificationStore
-from hermes.application.calibration.certification_gates import CertificationRecord
-from hermes.application.calibration.lifecycle import CertificationState
-from hermes.ports.certification import CertificationStoreError, CertificationStorePort
+from hermes.domain.calibration.certification import CertificationRecord, CertificationState
+from hermes.ports.certification import CertificationStoreError
 
 _AT = datetime(2027, 1, 1, tzinfo=UTC)
 
@@ -29,11 +26,6 @@ def _record() -> CertificationRecord:
             CertificationState.SHADOW_CERTIFIED, at=_AT, reason="gate passed", fingerprint="f" * 64
         )
     )
-
-
-def test_satisfies_the_port(tmp_path: Path) -> None:
-    """The adapter is a structural CertificationStorePort."""
-    assert isinstance(JsonCertificationStore(tmp_path), CertificationStorePort)
 
 
 def test_round_trip_keeps_every_field(tmp_path: Path) -> None:

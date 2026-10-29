@@ -5,8 +5,6 @@ forgetting to list it, and a new version of the document fails here until the
 list in ``rules.py`` is reviewed against it.
 """
 
-from __future__ import annotations
-
 import hashlib
 import re
 
@@ -33,6 +31,7 @@ _SECTIONS = {
     "Post-kill protocol": "10 post-kill",
 }
 _ISSUE = re.compile(r"^issue #\d+: \S")
+_NOTEBOOK = "docs/experiments/swing-mvp1/lab-notebook.md"
 
 
 def _document() -> str:
@@ -97,3 +96,31 @@ def test_every_named_proof_is_a_test_that_exists() -> None:
     """A renamed or deleted test cannot leave a rule pointing at nothing."""
     missing = [node for rule in _all_rules() for node in rule.proved_by if not names_a_test(node)]
     assert missing == []
+
+
+def test_every_deviation_names_a_notebook_entry_and_proves_its_replacement() -> None:
+    """A rule replaced by a §11 deviation names an existing lab-notebook entry and has tests.
+
+    A deviation that is not logged in the notebook, or that only names one,
+    would leave the replaced rule with no proof of what serve does instead.
+    """
+    headings = {
+        line.removeprefix("### ")
+        for line in (PROJECT_ROOT / _NOTEBOOK).read_text(encoding="utf-8").splitlines()
+        if line.startswith("### ")
+    }
+    wrong = [
+        rule.starts
+        for rule in _all_rules()
+        if rule.deviation and (rule.deviation not in headings or not rule.proved_by)
+    ]
+    assert wrong == []
+
+
+def test_the_exit_rule_names_the_deviation_that_replaced_it() -> None:
+    """§5.3's stop-market exit is the rule the 2026-10-18 deviation replaced (issue #1157)."""
+    exit_rule = next(r for r in PRE_REGISTERED["5.3"] if r.starts.startswith("Exit:"))
+
+    assert exit_rule.deviation.startswith(
+        "2026-10-18T15:46:01Z | shadow | operator | §11 deviation"
+    )

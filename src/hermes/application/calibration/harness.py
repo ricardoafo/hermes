@@ -14,12 +14,10 @@ Design notes:
   regime labels — the harness does not call any ports.
 - This matches the composition-root pattern: the harness is wired at startup with
   real or fake ports depending on mode (backtest vs shadow). For MVP1, callers
-  provide pre-collected fills from a ``SimulatedExchangeAdapter`` run.
+  provide pre-collected fills from a ``FillKernel`` backtest run.
 
 Reference: spec-6-calibration-harness/change.md R-4, D-1.
 """
-
-from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -129,7 +127,7 @@ class CalibrationHarness:
     """Orchestrates calibration metric collection across a backtest data window.
 
     The harness is a thin orchestrator: it receives pre-collected fill events
-    (from a ``SimulatedExchangeAdapter`` run), calls the domain metric calculators,
+    (from a ``FillKernel`` backtest run), calls the domain metric calculators,
     and assembles a :class:`CalibrationReport`.
 
     For MVP1 the caller provides all inputs — fills, rejections, mid-prices,

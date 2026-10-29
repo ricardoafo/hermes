@@ -14,8 +14,6 @@ Verifies the class-level invariants documented on :class:`Lot`:
 Reference: ADR-003 §03, code-conventions.md §1 + §3.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -149,8 +147,7 @@ class TestLotOpenFactory:
             strategy_id=_SWING,
             opened_at=datetime(2026, 8, 23, tzinfo=UTC),
         )
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), InvalidLot)
+        assert result == Failure(InvalidLot(reason="Lot.open: qty must be > 0"))
 
 
 class TestLotConsume:
@@ -180,15 +177,24 @@ class TestLotConsume:
         """Trying to consume more than remaining returns Failure(InvalidLot)."""
         lot = _btc_lot(remaining=Decimal("0.1"), original=Decimal("0.5"))
         result = lot.consume(Quantity(amount=Decimal("0.3"), asset=Currency.BTC))
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), InvalidLot)
+        assert result == Failure(
+            InvalidLot(
+                reason=(f"Lot.consume: cannot consume 0.3 from lot {lot.lot_id} with remaining 0.1")
+            )
+        )
 
     def test_asset_mismatch_returns_failure(self) -> None:
         """Consume with a different asset returns Failure(InvalidLot)."""
         lot = _btc_lot()
         result = lot.consume(Quantity(amount=Decimal("0.1"), asset=Currency.ETH))
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), InvalidLot)
+        assert result == Failure(
+            InvalidLot(
+                reason=(
+                    f"Lot.consume: amount asset {Currency.ETH!r} does not match "
+                    f"lot asset {Currency.BTC!r}"
+                )
+            )
+        )
 
 
 class TestLotIsClosed:

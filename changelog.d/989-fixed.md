@@ -1,1 +1,0 @@
-- The console switches screens and animates without stalling on a long ledger: the market watch finds each stream's newest bar check in one pass instead of one lookup per check (about 2 s down to about 15 ms at 60 days of history).

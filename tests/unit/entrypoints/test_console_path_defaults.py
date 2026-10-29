@@ -4,8 +4,6 @@ On the VPS the wrapper exports ``HERMES_DB_PATH`` and ``HERMES_CONFIG_DIR`` so
 `hermes status` works bare; an explicit flag always wins.
 """
 
-from __future__ import annotations
-
 import io
 from pathlib import Path
 

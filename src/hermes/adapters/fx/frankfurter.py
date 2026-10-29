@@ -43,17 +43,15 @@ Reference: docs/decisions/2026-08-23-fx-rate-source-frankfurter.md,
 ADR-002 §Decision 4 (EUR-first accounting, ECB reference rates).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import Decimal, InvalidOperation
 from typing import ClassVar, Final
 
 import httpx
 import structlog
 
-from hermes.adapters.fx.rate_limiter import RateLimitConfig, RateLimiter
+from hermes.adapters._shared.rate_limiter import RateLimitConfig, RateLimiter
+from hermes.adapters._shared.wire import validate_http_config, wire_decimal
 from hermes.domain.errors import FxRateError
 from hermes.domain.fx.fx_rate import FxRate
 from hermes.domain.value_objects.currency import Currency
@@ -61,11 +59,9 @@ from hermes.domain.value_objects.currency import Currency
 __all__ = ["FrankfurterAdapter", "FrankfurterConfig"]
 
 
-# The public host moved: this URL now answers 301 to api.frankfurter.dev/v1,
-# which the client does not follow. config/frankfurter.yaml carries the new
-# host; this default stays until its unit test is updated (change
-# trade-eur-values, Risks).
-_DEFAULT_BASE_URL: Final[str] = "https://api.frankfurter.app"
+# Same host as the config default: api.frankfurter.app answers 301 here, and
+# the client does not follow redirects (#1176).
+_DEFAULT_BASE_URL: Final[str] = "https://api.frankfurter.dev/v1"
 _LATEST_PATH: Final[str] = "/latest"
 _DEFAULT_TIMEOUT_SEC: Final[float] = 10.0
 _HTTP_ERROR_THRESHOLD: Final[int] = 400
@@ -118,12 +114,7 @@ class FrankfurterConfig:
 
     def __post_init__(self) -> None:
         """Validate the URL scheme and timeout — cheap fail-fast in the config layer."""
-        if not self.base_url.startswith("https://"):
-            raise ValueError(
-                f"FrankfurterConfig.base_url must start with https://, got {self.base_url!r}"
-            )
-        if self.timeout_sec <= 0:
-            raise ValueError(f"FrankfurterConfig.timeout_sec must be > 0, got {self.timeout_sec}")
+        validate_http_config("FrankfurterConfig", url=self.base_url, timeout_sec=self.timeout_sec)
 
 
 @dataclass(slots=True)
@@ -383,20 +374,9 @@ def _parse_response(
         )
 
     rate_value = rates_raw[rate_key]
-    if not isinstance(rate_value, (int, float, str)):
-        raise FxRateError(f"Frankfurter rate for {rate_key!r} is not numeric: {rate_value!r}")
-    # Decimal(str(x)) — never Decimal(x) — so IEEE-754 float error does
-    # not leak into the domain Decimal layer. See code-conventions §6.
-    try:
-        rate_decimal = Decimal(str(rate_value))
-    except InvalidOperation as exc:
-        raise FxRateError(
-            f"Frankfurter rate for {rate_key!r} not parseable as Decimal: {rate_value!r}"
-        ) from exc
-    if not rate_decimal.is_finite():
-        raise FxRateError(
-            f"Frankfurter rate for {rate_key!r} is not a finite number: {rate_value!r}"
-        )
+    rate_decimal = wire_decimal(
+        rate_value, field=f"Frankfurter rate for {rate_key!r}", error=FxRateError
+    )
 
     try:
         return FxRate(

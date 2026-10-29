@@ -1,1 +1,0 @@
-- After a restart, serve marks every open position at the last closed bar before it handles new bars, so the exposure cap, equity and drawdown no longer read entry prices until each pair's next bar (issue #863).

@@ -23,8 +23,6 @@ Reference: docs/decisions/2026-08-23-slack-alongside-telegram.md;
     docs/guides/ai-authored-tests.md §"The unit-test standard".
 """
 
-from __future__ import annotations
-
 import json
 import re
 from datetime import UTC, date, datetime
@@ -37,6 +35,7 @@ import pytest
 import respx
 from structlog.testing import capture_logs
 
+from hermes.adapters.endpoint import EndpointConfigError
 from hermes.adapters.notifier import (
     SlackAdapter,
     SlackConfig,
@@ -962,3 +961,30 @@ class TestEurRate:
             assert self._sent_price(adapter) == "\u20ac41,928.16"
         finally:
             adapter.close()
+
+
+_CREDENTIALS = {"HERMES_SLACK__BOT_TOKEN": "xoxb-token-abc", "HERMES_SLACK__DEFAULT_CHANNEL": "#c"}
+
+
+def test_from_env_defaults_to_the_real_web_api() -> None:
+    """Without HERMES_SLACK__API_BASE the adapter's client targets slack.com."""
+    adapter = SlackAdapter.create(SlackConfig.from_env(_CREDENTIALS))
+
+    assert str(adapter.client.base_url) == "https://slack.com"
+
+
+def test_create_targets_the_configured_api_base() -> None:
+    """HERMES_SLACK__API_BASE alone moves the client to another host (#970)."""
+    env = {**_CREDENTIALS, "HERMES_SLACK__API_BASE": "http://localhost:8082"}
+
+    adapter = SlackAdapter.create(SlackConfig.from_env(env))
+
+    assert str(adapter.client.base_url) == "http://localhost:8082"
+
+
+def test_a_bad_api_base_is_an_endpoint_error_not_missing_credentials() -> None:
+    """A mistyped base fails loudly; callers that drop a channel without credentials keep it."""
+    env = {**_CREDENTIALS, "HERMES_SLACK__API_BASE": "ftp://127.0.0.1"}
+
+    with pytest.raises(EndpointConfigError, match="HERMES_SLACK__API_BASE"):
+        SlackConfig.from_env(env)

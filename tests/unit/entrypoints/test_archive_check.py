@@ -6,8 +6,6 @@ configured pair and interval and maps the outcome to its exit code (0 match,
 file. Each mismatch alert is recorded once as an ``AnomalyDetected`` row (#136).
 """
 
-from __future__ import annotations
-
 import io
 import sqlite3
 from datetime import UTC, date, datetime, timedelta
@@ -27,8 +25,9 @@ from hermes.domain.value_objects.pair import Pair
 from hermes.entrypoints import archive_check as module
 from hermes.entrypoints import cli
 from tests.support.anomaly_rows import recorded_anomalies
+from tests.support.paths import REPO_ROOT
 
-_PROJECT_CONFIG = Path(__file__).resolve().parents[3] / "config"
+_PROJECT_CONFIG = REPO_ROOT / "config"
 
 
 class _EmptyArchive:

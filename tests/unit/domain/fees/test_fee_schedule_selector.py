@@ -10,8 +10,6 @@ Verifies the pre-registration v1 §6.1 fee model:
 The property test asserts idempotency within a tier's effective window.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -127,7 +125,7 @@ def test_out_of_range_before_first_row_raises() -> None:
     days_after_2020_09_01=st.integers(min_value=0, max_value=365 * 6),  # 2020-09-01 .. ~2026-09
     base=st.sampled_from(["BTC", "ETH", "SOL"]),
 )
-@settings(max_examples=100, deadline=None)
+@settings(max_examples=100)
 def test_property_selection_deterministic(days_after_2020_09_01: int, base: str) -> None:
     """Same (timestamp, pair) always returns the same schedule (determinism)."""
     ts = datetime(2020, 9, 1, tzinfo=UTC) + timedelta(days=days_after_2020_09_01)
@@ -157,7 +155,7 @@ def test_property_selection_deterministic(days_after_2020_09_01: int, base: str)
     day_2_offset=st.integers(min_value=0, max_value=200),
     base=st.sampled_from(["BTC", "ETH", "SOL"]),
 )
-@settings(max_examples=50, deadline=None)
+@settings(max_examples=50)
 def test_property_idempotent_inside_baseline_window(
     day_1_offset: int, day_2_offset: int, base: str
 ) -> None:

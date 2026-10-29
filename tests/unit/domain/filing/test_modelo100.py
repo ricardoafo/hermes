@@ -3,8 +3,6 @@
 Reference: ADR-016 items 2, 3 and 8; IRPF art. 35 and 33.5.f.
 """
 
-from __future__ import annotations
-
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
@@ -17,7 +15,6 @@ from hermes.domain.filing.modelo100 import (
     DisposalPiece,
     PendingSale,
     PurchaseRecord,
-    add_months,
     build_modelo100,
 )
 from hermes.domain.value_objects.currency import Currency
@@ -213,12 +210,16 @@ class TestRepurchaseFlag:
         assert build_modelo100(2026, [self._loss()], [own]).flags == ()
 
     def test_purchases_outside_the_window_or_of_other_coins_do_not_flag(self) -> None:
-        """Invariant: only the same coin within two calendar months either side counts."""
+        """Invariant: only the same coin within two calendar months either side counts.
+
+        The sale is 15 June, Madrid; 00:00 on 16 August, Madrid (22:00 UTC on
+        15 August) is the first instant past the window's last date.
+        """
         purchases = [
             PurchaseRecord(
                 ref="b7",
                 asset=Currency.BTC,
-                acquired_at=add_months(_JUNE, 2) + timedelta(seconds=1),
+                acquired_at=datetime(2026, 8, 15, 22, 0, tzinfo=UTC),
             ),
             PurchaseRecord(ref="b8", asset=Currency.ETH, acquired_at=_JUNE),
         ]
@@ -230,16 +231,42 @@ class TestRepurchaseFlag:
         assert build_modelo100(2026, [_piece("s1")], [buy]).flags == ()
 
 
-class TestAddMonths:
-    """Calendar-month arithmetic for the repurchase window."""
+class TestRepurchaseWindowEdges:
+    """Issue #1171: the window counts Madrid calendar dates, never the time of day.
 
-    def test_day_is_clamped_to_the_end_of_a_shorter_month(self) -> None:
-        """Invariant: 31 December minus two months is 31 October; 31 Dec + 2 is 28 Feb."""
-        at = datetime(2026, 12, 31, 12, tzinfo=UTC)
-        assert (add_months(at, -2), add_months(at, 2)) == (
-            datetime(2026, 10, 31, 12, tzinfo=UTC),
-            datetime(2027, 2, 28, 12, tzinfo=UTC),
-        )
+    The loss sale is 12:00 UTC on 15 June 2026, 14:00 in Madrid (CEST, UTC+2),
+    so the window runs from 15 April to 15 August, Madrid dates, both included.
+    """
+
+    def _flagged(self, sold_at: datetime, bought_at: datetime) -> bool:
+        sale = _piece("s1", proceeds="500", cost="700", fee="5", buy="b1", at=sold_at)
+        buy = PurchaseRecord(ref="b9", asset=Currency.BTC, acquired_at=bought_at)
+        return [f.purchase_refs for f in build_modelo100(2026, [sale], [buy]).flags] == [("b9",)]
+
+    def test_a_buy_late_on_the_last_day_is_inside(self) -> None:
+        """23:59:59 Madrid on 15 August is after the sale's time of day, and still flags."""
+        assert self._flagged(_JUNE, datetime(2026, 8, 15, 21, 59, 59, tzinfo=UTC)) is True
+
+    def test_a_buy_at_midnight_after_the_last_day_is_outside(self) -> None:
+        """00:00 Madrid on 16 August (22:00 UTC on 15 August) is past the window."""
+        assert self._flagged(_JUNE, datetime(2026, 8, 15, 22, 0, tzinfo=UTC)) is False
+
+    def test_a_buy_at_midnight_on_the_first_day_is_inside(self) -> None:
+        """00:00 Madrid on 15 April (22:00 UTC on 14 April) opens the window."""
+        assert self._flagged(_JUNE, datetime(2026, 4, 14, 22, 0, tzinfo=UTC)) is True
+
+    def test_a_buy_just_before_the_first_day_is_outside(self) -> None:
+        """23:59:59 Madrid on 14 April is the day before the window."""
+        assert self._flagged(_JUNE, datetime(2026, 4, 14, 21, 59, 59, tzinfo=UTC)) is False
+
+    def test_a_sale_after_midnight_madrid_moves_the_window_a_day(self) -> None:
+        """22:30 UTC on 15 June is 00:30 on 16 June in Madrid, so 16 August is inside.
+
+        Read on the UTC date the window would end on 15 August; noon UTC on
+        16 August would then be outside.
+        """
+        sold_at = datetime(2026, 6, 15, 22, 30, tzinfo=UTC)
+        assert self._flagged(sold_at, datetime(2026, 8, 16, 12, 0, tzinfo=UTC)) is True
 
 
 _cents = st.decimals(min_value=Decimal("0"), max_value=Decimal("100000"), places=2)

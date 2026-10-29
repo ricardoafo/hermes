@@ -1,7 +1,5 @@
 """``hermes shadow-start``: see :mod:`hermes.entrypoints.shadow_start`."""
 
-from __future__ import annotations
-
 from hermes.entrypoints import shadow_start as _impl
 from hermes.entrypoints.commands import Command
 

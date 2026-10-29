@@ -88,7 +88,7 @@
 # Select and Batch prefer `vars.OPS_RUNNER_LABEL`, a runner reserved for
 # repository operations, so a busy CI pool cannot hold up a merge pass.
 # Until that variable exists they fall back to `vars.RUNNER_LABEL`, then
-# to `ubuntu-latest`.
+# to the fixed self-hosted label set of server-01's CI pool.
 #
 # ## Trigger set — why each event is here
 #
@@ -189,7 +189,7 @@ jobs:
        || github.event.review.state == 'approved')
       && (github.event_name != 'push'
        || github.actor != 'hermes-automation-bot[bot]')
-    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]') }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -338,7 +338,7 @@ jobs:
     name: Revalidate
     needs: select
     if: needs.select.outputs.any == 'true'
-    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.OPS_RUNNER_LABEL && fromJSON(vars.OPS_RUNNER_LABEL) || vars.RUNNER_LABEL && fromJSON(vars.RUNNER_LABEL) || fromJSON('["self-hosted","linux","hermes"]') }}
     # One gate run is a few minutes; a red batch adds a few more per
     # bisect step. The cap is for a hung gate, not for a normal pass.
     timeout-minutes: 45
@@ -468,7 +468,7 @@ jobs:
       - name: Mint App token
         id: app-token
         if: vars.HERMES_AUTOMATION_APP_ID != ''
-        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         with:
           app-id: ${{ vars.HERMES_AUTOMATION_APP_ID }}
           private-key: ${{ secrets.HERMES_AUTOMATION_APP_KEY }}

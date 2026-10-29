@@ -7,8 +7,6 @@ across all 8 rules.
 Reference: spec-8-risk-overlay change.md § Decisions D-1; R-3.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from hermes.domain.risk.correlation_lock import CorrelationLock
@@ -209,3 +207,17 @@ class TestRiskActionSeverityOrdering:
         assert not RiskAction.HALT.is_worse_than(RiskAction.HALT), (
             "HALT must not be worse than itself"
         )
+
+    def test_severity_ranks_ok_warn_halt(self) -> None:
+        """The one ordinal is OK 0, WARN 1, HALT 2 (#1179: the engine sorts by it)."""
+        assert [a.severity for a in (RiskAction.OK, RiskAction.WARN, RiskAction.HALT)] == [0, 1, 2]
+
+    def test_is_worse_than_agrees_with_severity_for_every_pair(self) -> None:
+        """is_worse_than is exactly 'higher severity', for all nine ordered pairs."""
+        disagreements = [
+            (a, b)
+            for a in RiskAction
+            for b in RiskAction
+            if a.is_worse_than(b) != (a.severity > b.severity)
+        ]
+        assert disagreements == []

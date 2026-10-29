@@ -5,17 +5,16 @@ Reference: issue #781; ADR-014; AGENTS.md rule 7.
 
 import dataclasses
 import pickle
-from pathlib import Path
 
 import pytest
 
-from hermes.application.calibration.certification_gates import CertificationRecord
-from hermes.application.calibration.lifecycle import CertificationState
+from hermes.domain.calibration.certification import CertificationRecord, CertificationState
 from hermes.infrastructure.config import HermesConfig, load_config
 from hermes.infrastructure.env_gate import EnvGateError
 from hermes.infrastructure.mainnet_permit import MainnetPermit, issue_mainnet_permit
+from tests.support.paths import REPO_ROOT
 
-_REPO_CONFIG = Path(__file__).resolve().parents[3] / "config"
+_REPO_CONFIG = REPO_ROOT / "config"
 _SID = "swing-donchian-4h"
 _FP = "fingerprint-a"
 
@@ -107,7 +106,7 @@ def test_a_permit_cannot_be_pickled() -> None:
 # SEV-1: real capital stays behind the live-approval gate (AGENTS.md rule 7, ADR-014)
 def test_no_other_source_module_names_the_mint_key() -> None:
     """Only mainnet_permit.py may name the mint key, so production code cannot forge a permit."""
-    src = Path(__file__).resolve().parents[3] / "src" / "hermes"
+    src = REPO_ROOT / "src" / "hermes"
     users = sorted(
         str(path.relative_to(src))
         for path in src.rglob("*.py")

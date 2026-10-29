@@ -32,8 +32,6 @@ Reference: ``docs/decisions/2026-08-23-slack-alongside-telegram.md``;
     (docstring names the invariant, one behavior claim per test).
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -341,15 +339,6 @@ class TestRouterPurity:
         assert len(second) == expected_size
         assert first == expected_tuple
         assert second == expected_tuple
-
-    @given(event_class=st.sampled_from(list(EventClass)))
-    def test_return_type_is_always_a_tuple(self, event_class: EventClass) -> None:
-        """route() always returns a tuple — never a list, never None."""
-        config, _telegram, _slack = _both_wired()
-
-        result = route(event_class, config)
-
-        assert isinstance(result, tuple)
 
 
 # ---------------------------------------------------------------------------

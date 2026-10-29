@@ -5,18 +5,18 @@ mutation across concurrent writers — the bug that motivated change
 ``data-manifest-file-lock`` (#257).
 """
 
-from __future__ import annotations
-
 import importlib.util
 import json
 import sys
 from pathlib import Path
 from threading import Thread
 
+from tests.support.paths import REPO_ROOT
+
 
 def _import_manifest_util():
     """Import the same-dir helper module used by scripts/data/ ingest scripts."""
-    root = Path(__file__).resolve().parents[3]
+    root = REPO_ROOT
     module_path = root / "scripts" / "data" / "_manifest_util.py"
     assert module_path.exists(), f"missing helper module: {module_path}"
     spec = importlib.util.spec_from_file_location("_manifest_util", module_path)

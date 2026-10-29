@@ -10,13 +10,13 @@ JSON file per (coin, year, month) under
 Purpose: feeds the SA-9 depeg overlay wired by Spec 8 (pre-registration
 v1 §5.5 correlation lock + depeg WARN 1.5% / HALT 3% rules).
 
-Provider swap history (see `openspec/changes/peg-ingest-defillama-swap/`):
+Provider swap history (see `openspec/archive/peg-ingest-defillama-swap/`):
     CoinGecko free tier changed 2026-08 (401/429 across the board);
     DefiLlama's public chart endpoint is free, no-auth, and aggregates
     from CoinGecko + on-chain sources.
 
 Reference:
-    - openspec/changes/peg-ingest-defillama-swap/change.md
+    - openspec/archive/peg-ingest-defillama-swap/change.md
     - docs/experiments/swing-mvp1/data-ingest-plan.md §3 (Runbook)
     - docs/research/paper-trading/sa9-portfolio-shocks.md (depeg overlay)
 
@@ -38,15 +38,13 @@ Exit codes:
     1 - one or more failures (see stderr)
 """
 
-from __future__ import annotations
-
 import argparse
 import hashlib
 import json
 import os
 import sys
 import time
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
@@ -272,7 +270,7 @@ def process_window(
             "year": year,
             "month": month,
             "chunk_urls": chunk_urls,
-            "downloaded_at": date.today().isoformat(),
+            "downloaded_at": datetime.now(UTC).date().isoformat(),
         },
     }
     body = json.dumps(merged_envelope, indent=2, sort_keys=True).encode()
@@ -285,7 +283,7 @@ def process_window(
         "size_bytes": len(body),
         "prices_count": len(deduped),
         "provider": "defillama",
-        "downloaded_at": date.today().isoformat(),
+        "downloaded_at": datetime.now(UTC).date().isoformat(),
     }
     return "ok", f"OK ({len(deduped)} points, {len(body):,} bytes, {len(chunk_offsets)} chunks)"
 

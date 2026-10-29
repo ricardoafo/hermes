@@ -21,12 +21,10 @@ Depth per side is the bar's volume times ``depth_frac``. Serve also walks
 every live fill's order against this book to measure its drift (change
 ``353-fill-kernel-in-serve`` D-4).
 
-Reference: openspec/changes/backtest-driver-mvp1-phase2/change.md D-1;
-openspec/changes/353-fill-kernel-in-serve/change.md D-2, D-4;
-openspec/changes/v2-strategy-config/change.md D-1.
+Reference: openspec/archive/backtest-driver-mvp1-phase2/change.md D-1;
+openspec/archive/353-fill-kernel-in-serve/change.md D-2, D-4;
+openspec/archive/v2-strategy-config/change.md D-1.
 """
-
-from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal

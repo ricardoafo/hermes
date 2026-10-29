@@ -1,7 +1,5 @@
 """Unit tests for shadow-parity metrics M-09 and M-10, computed blind (#360)."""
 
-from __future__ import annotations
-
 import logging
 
 import pytest
@@ -45,6 +43,11 @@ class TestM09:
     def test_fewer_than_thirty_trades_is_insufficient(self) -> None:
         """SA-5: below 30 matched trades the metric is not evaluated."""
         verdict = m09_pnl_correlation(_TRADES[:29], _TRADES[:29], seed=1, resamples=50)
+        assert verdict.status is MetricStatus.INSUFFICIENT
+
+    def test_a_flat_shadow_curve_is_insufficient(self) -> None:
+        """A shadow with zero P&L on every trade has a flat curve: r is undefined (#1179)."""
+        verdict = m09_pnl_correlation([0.0] * 40, _TRADES, seed=1, resamples=50)
         assert verdict.status is MetricStatus.INSUFFICIENT
 
     def test_same_seed_same_verdict(self) -> None:

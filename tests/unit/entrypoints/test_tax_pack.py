@@ -5,8 +5,6 @@ with a constant fake FX rate and a fixed clock. Exit codes: 0 written,
 1 ledger failure, 2 usage, 3 config, 5 frozen.
 """
 
-from __future__ import annotations
-
 import hashlib
 import io
 import json
@@ -23,10 +21,10 @@ from pathlib import Path
 from hermes.domain.trading.order import OrderSide
 from hermes.entrypoints import tax_pack
 from hermes.entrypoints.commands import discover
+from tests.support.paths import REPO_ROOT
 from tests.unit.adapters.ledger.filing_ledger import constant_fx, record_fill, standard_ledger
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
-_CONFIG_DIR = _PROJECT_ROOT / "config"
+_CONFIG_DIR = REPO_ROOT / "config"
 _DURING_YEAR = datetime(2026, 10, 4, 5, 30, tzinfo=UTC)
 _AFTER_YEAR_END = datetime(2027, 1, 5, 6, 30, tzinfo=UTC)
 _STREAM = re.compile(rb"stream\r?\n(.*?)\r?\nendstream", re.DOTALL)
@@ -269,13 +267,13 @@ def test_out_defaults_to_the_environment_folder(tmp_path: Path) -> None:
     assert (folder / "2026" / "README.md").is_file()
 
 
-def test_missing_ledger_exits_1(tmp_path: Path) -> None:
-    """Invariant: no ledger file is a ledger failure and writes no pack."""
+def test_missing_ledger_exits_3(tmp_path: Path) -> None:
+    """Invariant: no ledger file exits 3 (#1187) and writes no pack."""
     out = tmp_path / "packs"
     code, _, errors = _invoke(
         ["--year", "2026", "--db", str(tmp_path / "missing.sqlite3"), "--out", str(out)], tmp_path
     )
-    assert (code, out.exists()) == (1, False)
+    assert (code, out.exists()) == (3, False)
     assert "ERROR: no ledger at" in errors
 
 

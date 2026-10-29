@@ -10,12 +10,10 @@ Invariants protected here:
   added only by the verbose form;
 - the ref is the ellipsis and the last six characters of the correlation id.
 
-Reference: openspec/changes/144-notification-system/change.md (R-2).
+Reference: openspec/archive/144-notification-system/change.md (R-2).
 """
 
 # ruff: noqa: RUF001 - the typographic minus sign is the character under test
-
-from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
@@ -29,11 +27,11 @@ from hermes.application.messages.format import (
     GLYPH_HALF,
     GLYPH_OK,
     GLYPH_STOP,
+    fmt_asset_qty,
     fmt_distance_pct,
     fmt_duration,
     fmt_money,
     fmt_pp,
-    fmt_qty,
     fmt_quote_money,
     fmt_ref,
     fmt_weight,
@@ -71,7 +69,7 @@ def test_eur_money_has_the_symbol_in_front_and_two_decimals(amount: Decimal) -> 
 @given(amount=_AMOUNTS)
 def test_quantity_always_has_four_decimals_and_the_asset_code(amount: Decimal) -> None:
     """Any quantity renders with exactly four decimals followed by its asset code."""
-    number, code = fmt_qty(amount, Currency.BTC).rsplit(" ", 1)
+    number, code = fmt_asset_qty(amount, Currency.BTC).rsplit(" ", 1)
 
     assert (bool(_GROUPED_FOUR.match(number)), code) == (True, "BTC")
 
@@ -95,7 +93,7 @@ def test_money_rounds_half_up_and_never_shows_negative_zero(
 
 def test_quantity_keeps_trailing_zeros_to_four_places() -> None:
     """A quantity shows fixed precision, so 0.004 BTC reads 0.0040 BTC."""
-    assert fmt_qty(Decimal("0.004"), Currency.BTC) == "0.0040 BTC"
+    assert fmt_asset_qty(Decimal("0.004"), Currency.BTC) == "0.0040 BTC"
 
 
 @pytest.mark.parametrize(

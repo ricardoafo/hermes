@@ -3,8 +3,6 @@
 Reference: ADR-016 item 5.
 """
 
-from __future__ import annotations
-
 import io
 import sqlite3
 from datetime import UTC, date, datetime
@@ -27,10 +25,10 @@ from hermes.domain.value_objects.strategy_id import StrategyId
 from hermes.entrypoints import cli as cli_module
 from hermes.entrypoints import fx as fx_module
 from hermes.infrastructure.config.models import FrankfurterConfig
+from tests.support.paths import REPO_ROOT
 from tests.unit.application.ledger.fake_fx import FakeFx
 
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
-_CONFIG_DIR = _PROJECT_ROOT / "config"
+_CONFIG_DIR = REPO_ROOT / "config"
 _FILL_DAY = date(2026, 1, 2)
 
 
@@ -139,3 +137,20 @@ def test_backfill_command_reports_seeds_when_the_ledger_has_one(tmp_path: Path) 
     )
 
     assert (code, stream.getvalue()) == (0, "filled=0 pending=0\nseeds_filled=1 seeds_pending=0\n")
+
+
+def test_backfill_on_a_missing_ledger_creates_no_file(tmp_path: Path) -> None:
+    """A wrong --db path is reported, never created as an empty ledger (#1187)."""
+    missing = tmp_path / "absent.sqlite3"
+    err = io.StringIO()
+
+    fx_module.main(
+        ["backfill", "--db", str(missing), "--config-dir", str(_CONFIG_DIR)],
+        stream=io.StringIO(),
+        fx_factory=lambda _cfg: FakeFx(rates={}),
+        err=err,
+    )
+
+    assert (missing.exists(), err.getvalue()) == (False, f"ERROR: no ledger at {missing}\n"), (
+        "nothing created, the path named"
+    )

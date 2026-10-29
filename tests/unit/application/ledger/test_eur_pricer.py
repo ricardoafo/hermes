@@ -3,10 +3,10 @@
 Reference: ADR-016 item 5.
 """
 
-from __future__ import annotations
-
 from datetime import date, timedelta
 from decimal import Decimal
+
+from structlog.testing import capture_logs
 
 from hermes.application.ledger.eur_pricer import (
     FAILURE_RETRY_SEC,
@@ -108,8 +108,8 @@ def test_cached_only_view_prices_warmed_rates_and_never_calls_the_provider() -> 
 def test_prior_day_rate_on_the_fill_day_is_not_final() -> None:
     """Invariant (A-2.3): a same-day lookup that resolves to an earlier date is not stored."""
     fx = FakeFx(rates={_MON: (Decimal("1.17"), _FRI)})
-    assert EurPricer(fx).price(Currency.USDT, _MON, today=_MON) is None
-    assert len(fx.calls) == 1
+    pricing = EurPricer(fx).price(Currency.USDT, _MON, today=_MON)
+    assert (pricing, fx.calls) == (None, [(Currency.EUR, Currency.USDT, _MON)])
 
 
 def test_weekend_fill_takes_friday_once_the_weekend_is_past() -> None:
@@ -122,13 +122,28 @@ def test_weekend_fill_takes_friday_once_the_weekend_is_past() -> None:
     )
 
 
+def test_a_rate_five_days_older_than_a_past_fill_stays_pending_with_a_warning() -> None:
+    """Invariant (#996): a frozen source's old rate is not stored; the trade stays pending."""
+    fill = date(2026, 1, 9)
+    fx = FakeFx(rates={fill: (Decimal("1.17"), date(2026, 1, 4))})
+    pricer = EurPricer(fx)
+
+    with capture_logs() as logs:
+        pricing = pricer.price(Currency.USDT, fill, today=date(2026, 1, 12))
+
+    assert (pricing, [e["event"] for e in logs if e["log_level"] == "warning"]) == (
+        None,
+        ["eur_rate_too_old"],
+    )
+
+
 def test_final_rates_are_cached_per_currency_and_day() -> None:
     """Invariant (A-2.4): a second fill on the same day does not call the provider again."""
     fx = FakeFx(rates={_FRI: (Decimal("1.1721"), _FRI)})
     pricer = EurPricer(fx)
     pricer.price(Currency.USDT, _FRI, today=_FRI)
     pricer.price(Currency.USDT, _FRI, today=_FRI)
-    assert len(fx.calls) == 1
+    assert fx.calls == [(Currency.EUR, Currency.USDT, _FRI)]
 
 
 def test_eur_quote_needs_no_lookup() -> None:

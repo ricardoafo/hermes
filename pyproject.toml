@@ -1,21 +1,21 @@
 [project]
 name = "hermes"
-version = "1.0.0a1"
+version = "0.2.0"
 description = "Crypto trading engine — hexagonal, event-sourced, tax-compliant."
 requires-python = ">=3.14,<3.15"
 readme = "README.md"
 license = { text = "Proprietary" }
 authors = [{ name = "Ricardo Afonso" }]
 dependencies = [
-  "pydantic>=2.13.5,<3",
+  "pydantic>=2.14.1,<3",
   "pydantic-settings>=2.5,<3",
   "httpx>=0.27,<1",
   "structlog>=26.1.0,<27",
-  "typer>=0.27.2,<1",
+  "typer>=0.27.3,<1",
   "textual>=8.2.8,<9",
   # Console renderers import Rich directly (application/console/render.py);
   # promoted from a transitive dep of textual and typer so an upstream
-  # constraint change cannot drop it. See openspec/changes/console-read-model.
+  # constraint change cannot drop it. See openspec/archive/console-read-model.
   "rich>=15,<16",
   "apscheduler>=3.10,<4",
   "python-telegram-bot>=22.8,<23",
@@ -28,19 +28,19 @@ dependencies = [
   # Loads .env.local at process start for local dev (systemd EnvironmentFile
   # in prod, GH Actions secrets in CI). See
   # docs/decisions/2026-08-23-credential-storage-layered-by-env.md.
-  "python-dotenv>=1,<2",
+  "python-dotenv>=1.2.4,<2",
   # Sentry SDK — error reporting. Initialized once at CLI startup via
   # hermes.infrastructure.sentry_integration.initialize(); after that the
   # SDK installs a global sys.excepthook + captures explicit
   # sentry_sdk.capture_exception() calls. No framework integrations enabled
   # (we run vanilla Python, no Django/Flask/etc.). See
   # docs/decisions/ (Sentry wiring entry) for the design rationale.
-  "sentry-sdk>=2.71.0,<3",
+  "sentry-sdk>=2.72.0,<3",
   # Cross-platform file lock for multi-writer manifest transactions in
   # the ingest scripts (scripts/data/_manifest_util.py). Was a transitive
   # dep of virtualenv; promoted to direct after we started depending on
   # it explicitly. See docs/decisions/... and change data-manifest-file-lock (#257).
-  "filelock>=4.0.7,<5",
+  "filelock>=4.1.1,<5",
   # Writes the tax pack's Renta Web sheet and dossier as PDF (#568, change
   # 568-tax-pack D-8). Pure Python; approved by the Code Owner 2026-10-04.
   "fpdf2>=2.8,<3",
@@ -66,13 +66,17 @@ dev = [
   # for Windows compatibility (signals do not interrupt blocking C-level
   # calls on Windows the way they do on POSIX).
   "pytest-timeout>=2.3,<3",
-  "hypothesis>=6.168.3,<7",
+  "hypothesis>=6.169.0,<7",
   "syrupy>=6.1.1,<7",  # bumped to unblock pytest 9 (see PYSEC-2026-1845 note above)
   "respx>=0.21,<1",
+  # scripts/dev/fresh-seed-report.py parses the fresh-seed JUnit report with
+  # it (Semgrep use-defused-xml). Promoted from a transitive dep of fpdf2 so
+  # an upstream change cannot drop it.
+  "defusedxml>=0.7.1,<1",
   "freezegun>=1.5,<2",
   "coverage[toml]>=7.16.2,<8",
-  "ruff>=0.16.9,<1",
-  "mypy>=2.3.1,<3",
+  "ruff>=0.17.0,<1",
+  "mypy>=2.4.0,<3",
   "import-linter>=2.15,<3",
   # safety dropped 2026-08-22: v3.7.0 requires interactive auth OR --key API key
   # (breaking change from pre-2024 flow), and the scan command crashes with a
@@ -81,9 +85,9 @@ dev = [
   "pip-audit>=2.7,<3",
   "cyclonedx-python-lib>=11.12.0,<12",
   "pre-commit>=4.6.2,<5",
-  "radon>=6.0,<7",
   "vulture>=2.13,<3",
   "types-pyyaml>=6.0.12.20260906,<7",
+  "types-defusedxml>=0.7.0.20260504,<1",
   # Mutation testing — parso-backed (Python 3.14 native). See
   # docs/decisions/2026-08-22-mutation-testing-cosmic-ray.md for the
   # tool-choice rationale + spike evidence. Weekly workflow at
@@ -104,7 +108,7 @@ line-length = 100
 extend-exclude = ["src/hermes/**/__init__.py"]
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PL", "RUF", "S", "PTH", "ERA", "PGH", "D", "FURB", "PERF"]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PL", "RUF", "S", "PTH", "ERA", "PGH", "D", "FURB", "PERF", "DTZ", "C90", "TID251"]
 ignore = [
   "PLR0913",  # arg count — hexagonal use cases take many ports
   # Decimal("100") over Decimal(100): every money literal stays a string, so a
@@ -112,12 +116,20 @@ ignore = [
   "FURB157",
 ]
 
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"__future__.annotations".msg = "Python 3.14 evaluates annotations lazily (PEP 649); drop the import."
+
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = [
   "S101", "PLR2004", "PLR0917",  # assert + magic numbers + many-arg property tests fine
   # A test whose only assertion is `x is None` fails the no-vague-test-assertions
   # hook; `type(x) is type(None)` is how such a test states "returns nothing".
   "FURB169",
+  # Tests build fixed naive datetimes to prove the domain rejects them.
+  "DTZ001",
 ]
 # D-family docstring enforcement is TEST-SCOPED for this PR (see docs/guides/ai-authored-tests.md
 # §"Enforcement in this repo"). Production src has variable docstring coverage; a global roll-out
@@ -125,6 +137,10 @@ ignore = [
 # so every test names the invariant it protects.
 "src/**/*.py" = ["D"]
 "scripts/**/*.py" = ["D", "PLR2004", "PLR0911", "PLR0912", "PLR0915", "PLR0917", "S310"]
+# Complexity baseline (#1201): these predate C901 and only shrink; no new entry.
+"scripts/backtest/assemble_results.py" = ["C901"]
+"scripts/backtest/run_portfolio_backtest.py" = ["C901"]
+"scripts/data/ingest_defillama_peg.py" = ["C901"]
 # Domain errors intentionally omit the "Error" suffix — CurrencyMismatch and
 # InvalidLot read more naturally as domain concepts than CurrencyMismatchError.
 # The layer + hierarchy (DomainError base) make the exception nature clear.
@@ -136,6 +152,7 @@ ignore = [
 [tool.mypy]
 strict = true
 python_version = "3.14"
+enable_error_code = ["deprecated"]
 mypy_path = "src"
 packages = ["hermes"]
 exclude = ["build/", "dist/", ".venv/"]
@@ -168,6 +185,9 @@ addopts = "-ra --strict-markers --strict-config -m 'not contract'"
 # interrupt blocking C-level calls on Windows the way they do on POSIX.
 timeout = 60
 timeout_method = "thread"
+# An xfail test that passes fails the run; tests/plugins/xfail_guard.py fails any
+# xfail outcome, so a green run means every test passed (#1193).
+xfail_strict = true
 
 # filterwarnings — surface deprecated APIs as HARD test failures so we
 # discover them at PR time (not at "the day the library removed the API").
@@ -183,12 +203,10 @@ timeout_method = "thread"
 # issue. Never a bare `default::DeprecationWarning` — that silences the
 # whole class and defeats the discipline.
 filterwarnings = [
-  "error::DeprecationWarning",
-  "error::PendingDeprecationWarning",
-  # Unclosed connections/files are real leaks (#759); GC-time warnings
-  # surface as unraisable exceptions, so both must fail the run.
-  "error::ResourceWarning",
-  "error::pytest.PytestUnraisableExceptionWarning",
+  # Every warning fails the run, including a never-awaited coroutine
+  # (RuntimeWarning) and the unclosed connections/files of #759; GC-time
+  # warnings surface as unraisable exceptions, which this covers as well.
+  "error",
   # Third-party warnings we cannot fix — allow with a comment explaining why:
   # (add exceptions here as they surface, with justification + upstream link)
 ]
@@ -226,11 +244,33 @@ type = "forbidden"
 source_modules = ["hermes.application"]
 forbidden_modules = ["hermes.adapters", "hermes.infrastructure", "hermes.entrypoints"]
 
+# Issue #1186: a port names only domain values, so an adapter that implements
+# it never depends on the application layer through it.
+[[tool.importlinter.contracts]]
+name = "ports-import-only-domain"
+type = "forbidden"
+source_modules = ["hermes.ports"]
+forbidden_modules = [
+  "hermes.application", "hermes.adapters",
+  "hermes.infrastructure", "hermes.entrypoints",
+]
+
 [[tool.importlinter.contracts]]
 name = "adapters-never-import-entrypoints"
 type = "forbidden"
 source_modules = ["hermes.adapters"]
 forbidden_modules = ["hermes.entrypoints"]
+
+# Issue #1220: a read-only exchange client never imports the modules that place
+# orders, so reading a balance cannot pull order placement into a process.
+[[tool.importlinter.contracts]]
+name = "read-only-exchange-clients-never-import-order-placement"
+type = "forbidden"
+source_modules = ["hermes.adapters.exchanges.binance_balance_reader"]
+forbidden_modules = [
+  "hermes.adapters.exchanges.binance_spot",
+  "hermes.adapters.exchanges.kraken_spot",
+]
 
 # change trade-eur-values D-3: EUR ledger values are measurement only. Strategy,
 # sizing, fees, risk and kill rules keep reading native (USDT) values.
@@ -287,6 +327,28 @@ forbidden_modules = [
   "hermes.ports.filing",
 ]
 
+# issue #1181 (Code Owner, 18 Oct 2026): the pre-registration §8.3 walk-forward and
+# purged CPCV folds are reported evidence only. Nothing that judges a run, selects
+# a champion or decides a trade may import them (openspec/changes/1181-fold-evidence).
+[[tool.importlinter.contracts]]
+name = "fold-evidence-is-reported-only"
+type = "forbidden"
+source_modules = [
+  "hermes.application.calibration",
+  "hermes.application.order_router",
+  "hermes.application.strategy_protocol",
+  "hermes.domain.strategy",
+  "hermes.domain.fees",
+  "hermes.domain.risk",
+  "hermes.entrypoints.certify",
+  "hermes.entrypoints.funnel",
+  "hermes.entrypoints.funnel_batch",
+]
+forbidden_modules = [
+  "hermes.application.backtest.fold_evidence",
+  "hermes.domain.statistics.fold_metrics",
+]
+
 # ADR-012 D-08: the supervisor layer reads through read-only ports and
 # projections only. It never reaches an exchange, an order path, the ledger's
 # write port, the portfolio or the composition root (change 34-supervisor-read-tools).
@@ -340,6 +402,9 @@ source_modules = [
 ]
 forbidden_modules = [
   "hermes.application.console.live",
+  "hermes.application.console.live_context",
+  "hermes.application.console.live_book",
+  "hermes.entrypoints.tui_feeds",
   "hermes.ports.live_prices",
   "hermes.entrypoints.tui_live",
 ]
@@ -368,6 +433,29 @@ forbidden_modules = [
   "hermes.application.risk_inputs",
   "hermes.ports.risk_inputs",
   "hermes.domain.market_data.spread_sample",
+]
+
+# The Logs screen shows the journal, which can hold money figures, to the
+# operator only: nothing from it reaches an AI or a notification channel (#716).
+# Direct imports only: the shared console widgets reach the Briefs screen's
+# supervisor reader through hermes.application.console.views, and that read-only
+# path is not a way for a journal line to leave.
+[[tool.importlinter.contracts]]
+name = "logs-screen-never-leaves-the-console"
+type = "forbidden"
+allow_indirect_imports = true
+source_modules = [
+  "hermes.application.console.log_figures",
+  "hermes.entrypoints.tui_logs",
+]
+forbidden_modules = [
+  "hermes.adapters.notifier",
+  "hermes.adapters.telegram_bot",
+  "hermes.ports.notifier",
+  "hermes.ports.supervisor",
+  "hermes.application.supervisor",
+  "hermes.application.notification_router",
+  "hermes.application.signal_notifier",
 ]
 
 [[tool.importlinter.contracts]]

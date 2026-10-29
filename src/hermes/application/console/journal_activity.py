@@ -17,10 +17,8 @@ feed rows, read-only and without a new service:
 :func:`fold_checks` then folds every per-coin bar check and signal of one
 candle into a single quiet line: ``checked 3 coins · no signal``.
 
-Reference: openspec/changes/653-live-activity/change.md.
+Reference: openspec/archive/653-live-activity/change.md.
 """
-
-from __future__ import annotations
 
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass

@@ -11,21 +11,20 @@ Domain purity: stdlib and other domain value objects only.
 Reference: ADR-002 §3, ADR-016 items 2 and 5, change ``trade-eur-values`` D-1, D-2.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
 from typing import Final
-from zoneinfo import ZoneInfo
 
 from hermes.domain.fx.fx_rate import FxRate
 from hermes.domain.value_objects.currency import Currency
 from hermes.domain.value_objects.money import Money
+from hermes.domain.value_objects.time import MADRID
 
 __all__ = [
     "IDENTITY_SOURCE",
+    "MAX_RATE_AGE_DAYS",
     "EurPricing",
     "EurStatus",
     "fill_date_madrid",
@@ -33,7 +32,13 @@ __all__ = [
 ]
 
 IDENTITY_SOURCE: Final[str] = "identity"
-_MADRID: Final = ZoneInfo("Europe/Madrid")
+
+# Why 4: the longest real gap between a fill date and the ECB business day
+# before it is 4 days (Thursday's rate for Easter Monday; Friday's for 26 Dec
+# when 25 Dec is a Monday). An older rate means the source froze, not a
+# holiday, so the trade stays pending instead (issue #996).
+MAX_RATE_AGE_DAYS: Final[int] = 4
+"""Most calendar days a fill's stored rate may be dated before the fill."""
 
 
 class EurStatus(StrEnum):
@@ -146,7 +151,7 @@ def fill_date_madrid(at: datetime) -> date:
     """
     if at.tzinfo is None:
         raise ValueError(f"fill_date_madrid needs a timezone-aware datetime, got {at!r}")
-    return at.astimezone(_MADRID).date()
+    return at.astimezone(MADRID).date()
 
 
 def rate_is_final(*, fill_date: date, rate_date: date, today: date) -> bool:
@@ -155,7 +160,8 @@ def rate_is_final(*, fill_date: date, rate_date: date, today: date) -> bool:
     The ECB publishes the day's rate in the afternoon; a same-day lookup
     before that returns the prior business day, which is not the fill
     date's rate. Once the fill date is in the past, the closest prior
-    business day is the right rate (weekends and holidays).
+    business day is the right rate (weekends and holidays), as long as it
+    is at most :data:`MAX_RATE_AGE_DAYS` before the fill.
 
     Args:
         fill_date: Madrid calendar date of the fill.
@@ -164,6 +170,9 @@ def rate_is_final(*, fill_date: date, rate_date: date, today: date) -> bool:
 
     Returns:
         ``True`` when the rate is for the fill date, or the fill date is
-        before ``today``.
+        before ``today`` and the rate is no older than
+        :data:`MAX_RATE_AGE_DAYS` before it.
     """
-    return rate_date == fill_date or fill_date < today
+    if rate_date == fill_date:
+        return True
+    return fill_date < today and (fill_date - rate_date).days <= MAX_RATE_AGE_DAYS

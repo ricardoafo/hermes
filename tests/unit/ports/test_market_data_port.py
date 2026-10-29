@@ -2,8 +2,9 @@
 
 Protects the following invariants:
 
-1. Any object implementing the four Protocol methods satisfies ``isinstance(x, MarketDataPort)``.
-2. An object missing any of the four methods does NOT satisfy ``isinstance(x, MarketDataPort)``.
+1. The port declares exactly four public methods: ``stream_bars``, ``stream_trades``,
+   ``stream_orderbook_diffs`` and ``get_snapshot``.
+2. The reusable fake's methods have the port's parameter names, kinds and type hints.
 3. ``stream_bars`` yields :class:`~hermes.domain.market_data.bar.Bar` instances that round-trip
    correctly.
 4. ``stream_trades`` yields :class:`~hermes.domain.market_data.trade.Trade` instances that
@@ -29,12 +30,12 @@ This module provides a reusable ``FakeMarketDataAdapter`` that any adapter autho
 import to validate their own implementation satisfies the Protocol contract.
 """
 
-from __future__ import annotations
-
 import asyncio
+import inspect
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+from typing import get_type_hints
 
 import pytest
 
@@ -151,14 +152,14 @@ class FakeMarketDataAdapter:
         return _make_snapshot()
 
 
-class _MissingGetSnapshot:
-    """An object that has three Protocol methods but omits ``get_snapshot``."""
+_PORT_METHODS = ["stream_bars", "stream_trades", "stream_orderbook_diffs", "get_snapshot"]
 
-    async def stream_bars(self, pair: Pair, interval: KlineInterval) -> AsyncIterator[Bar]: ...
 
-    async def stream_trades(self, pair: Pair) -> AsyncIterator[Trade]: ...
-
-    async def stream_orderbook_diffs(self, pair: Pair) -> AsyncIterator[OrderbookDiff]: ...
+def _public_methods(cls: type) -> list[str]:
+    """Return the sorted names of ``cls``'s public callables."""
+    return sorted(
+        name for name, member in vars(cls).items() if not name.startswith("_") and callable(member)
+    )
 
 
 # ────────────────────────────────────────────────────────────────
@@ -169,25 +170,25 @@ class _MissingGetSnapshot:
 class TestMarketDataPortConformance:
     """Protocol implementability: ``isinstance`` guards match structurally."""
 
-    def test_fake_adapter_satisfies_protocol(self) -> None:
-        """An object with all four methods satisfies MarketDataPort at runtime."""
-        adapter = FakeMarketDataAdapter()
-        assert isinstance(adapter, MarketDataPort), (
-            "FakeMarketDataAdapter must satisfy MarketDataPort — missing or misnamed method(s)"
-        )
+    def test_port_declares_exactly_the_four_stream_and_snapshot_methods(self) -> None:
+        """The port's public surface is the four documented methods, no more."""
+        assert _public_methods(MarketDataPort) == [
+            "get_snapshot",
+            "stream_bars",
+            "stream_orderbook_diffs",
+            "stream_trades",
+        ]
 
-    def test_plain_object_does_not_satisfy_protocol(self) -> None:
-        """object() has no port methods and must NOT satisfy MarketDataPort."""
-        assert not isinstance(object(), MarketDataPort), (
-            "object() must not satisfy MarketDataPort — Protocol runtime check is too permissive"
-        )
+    @pytest.mark.parametrize("method", _PORT_METHODS)
+    def test_fake_adapter_method_matches_the_port_signature(self, method: str) -> None:
+        """Each fake method has the port's parameter names, kinds and type hints."""
+        fake = getattr(FakeMarketDataAdapter, method)
+        port = getattr(MarketDataPort, method)
 
-    def test_partial_implementation_does_not_satisfy_protocol(self) -> None:
-        """An object missing one required method must NOT satisfy MarketDataPort."""
-        incomplete = _MissingGetSnapshot()
-        assert not isinstance(incomplete, MarketDataPort), (
-            "_MissingGetSnapshot lacks get_snapshot() and must not satisfy MarketDataPort"
-        )
+        assert [(p.name, p.kind) for p in inspect.signature(fake).parameters.values()] == [
+            (p.name, p.kind) for p in inspect.signature(port).parameters.values()
+        ]
+        assert get_type_hints(fake) == get_type_hints(port)
 
 
 # ────────────────────────────────────────────────────────────────
@@ -604,5 +605,9 @@ class TestOrderbookDiffInvariants:
             first_update_id=500,
             final_update_id=500,
         )
-        assert len(diff.bids) == 0, f"diff.bids must be empty, got {diff.bids!r}"
-        assert len(diff.asks) == 0, f"diff.asks must be empty, got {diff.asks!r}"
+        assert (diff.bids, diff.asks, diff.first_update_id, diff.final_update_id) == (
+            (),
+            (),
+            500,
+            500,
+        )

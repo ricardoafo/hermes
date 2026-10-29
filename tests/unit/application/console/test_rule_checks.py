@@ -10,8 +10,6 @@ Invariants:
 - a rule check carries no number: no price, indicator value or distance.
 """
 
-from __future__ import annotations
-
 import dataclasses
 from datetime import UTC, datetime, timedelta
 
@@ -131,10 +129,10 @@ def test_a_rule_check_holds_no_number() -> None:
     kinds = {field.name: field.type for field in dataclasses.fields(RuleCheck)}
 
     assert kinds == {
-        "at": "datetime",
-        "coin": "str",
-        "interval": "str",
-        "breakout": "bool",
-        "momentum": "bool",
-        "regime": "bool",
+        "at": datetime,
+        "coin": str,
+        "interval": str,
+        "breakout": bool,
+        "momentum": bool,
+        "regime": bool,
     }

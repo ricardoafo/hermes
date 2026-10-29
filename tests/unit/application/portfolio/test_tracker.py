@@ -7,8 +7,6 @@ accepted, and hand out the risk state for it.
 Reference: 308-signal-event-portfolio-state change.md D-4, D-7, Test plan.
 """
 
-from __future__ import annotations
-
 from decimal import Decimal
 
 from hypothesis import given, settings
@@ -130,8 +128,9 @@ class TestRefusedFill:
     def test_refused_fill_returns_the_failure(self) -> None:
         """A BUY over cash returns Failure(InvalidPortfolioTransition) to the caller."""
         result = PortfolioTracker(_seed()).apply_fill(make_fill(OrderSide.BUY, "1", "6000"))
-        assert isinstance(result, Failure)
-        assert isinstance(result.failure(), InvalidPortfolioTransition)
+        assert result == Failure(
+            InvalidPortfolioTransition(reason="BUY of 1 BTC/USDT costs 6000, cash is 5000")
+        )
 
     def test_refused_fill_leaves_the_state_unchanged(self) -> None:
         """After a refused BUY the risk state equals what it was before the call."""
@@ -149,7 +148,7 @@ class TestRefusedFill:
         assert tracker.open_position_count() == 1
 
 
-@settings(max_examples=60, deadline=None, derandomize=True)
+@settings(max_examples=60)
 @given(cash=starting_cash, ops=operations())
 def test_tracker_state_matches_the_pure_fold_of_the_same_operations(
     cash: Decimal, ops: list[Operation]
@@ -242,7 +241,7 @@ class TestRebuilt:
         assert "LATERBAD" not in str(result.failure())
 
 
-@settings(max_examples=60, deadline=None, derandomize=True)
+@settings(max_examples=60)
 @given(cash=starting_cash, ops=operations())
 def test_rebuilt_equals_the_live_tracker_for_any_accepted_fill_sequence(
     cash: Decimal, ops: list[Operation]

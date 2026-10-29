@@ -8,10 +8,8 @@ else becomes ``?`` rather than failing a daily refresh.
 The creation date is the refresh instant, so the same pack renders the same
 bytes and the manifest only changes when a figure does.
 
-Reference: openspec/changes/568-tax-pack/change.md D-8.
+Reference: openspec/archive/568-tax-pack/change.md D-8.
 """
-
-from __future__ import annotations
 
 from datetime import datetime
 from typing import Final

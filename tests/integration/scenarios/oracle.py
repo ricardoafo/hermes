@@ -42,13 +42,12 @@ on the bar whose low reached the stop, not a resting stop order, so no fill
 price is compared with the stop.
 
 An equity mismatch that matches the open positions valued at their fill price
-right after a boot is reported under ``marks-after-boot``, not ``equity``: a
-suspected defect pinned by its own strict xfail. Not checked: the correlation
+right after a boot is reported under ``marks-after-boot``, not ``equity``, so
+a return of the warm-up marking defect (#863, fixed in #885) is named as such;
+``test_generated_paths.py`` asserts it never appears. Not checked: the correlation
 lock, spread spike and depeg rules and the time-to-recovery kill (issue #514:
-serve does not feed them).
+shadow does not feed them; only real money does, #1158).
 """
-
-from __future__ import annotations
 
 import itertools
 import json
@@ -87,7 +86,7 @@ FEE_TABLE: tuple[tuple[date, frozenset[str], Decimal], ...] = (
 """§6.1 VIP0 taker rate by date and pair, from ``fee-history.csv``; BNB discount off."""
 
 MARKS_AFTER_BOOT = "marks-after-boot"
-"""The equity rule broken in one known way: see ``test_generated_paths.py``'s strict xfail."""
+"""The equity rule broken in one known way (#863); ``test_generated_paths.py`` pins its absence."""
 
 RULES = ("cash", "risk", "notional", "exposure", "stop", "pairing", "equity", "fee", "book")
 
