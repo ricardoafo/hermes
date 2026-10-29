@@ -1,15 +1,26 @@
 # Hermes
 
+[![CI](https://github.com/ricardoafo/hermes/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ricardoafo/hermes/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![Python 3.14](https://img.shields.io/badge/python-3.14-blue.svg)](https://docs.python.org/3.14/)
+[![Checked with mypy](https://img.shields.io/badge/mypy-strict-blue.svg)](https://mypy-lang.org/)
+
 Hermes is a crypto trading engine written in Python. It runs rule-based strategies on
 live public market data in paper-trading mode. Every fill is recorded in an
 event-sourced FIFO ledger, and the ledger produces EUR valuations and Spanish tax
 figures (Modelo 100 and 721). Strategies reach it only through a research pipeline that
 is pre-registered and tested out of sample.
 
+The aim is to answer one question honestly: does a strategy still work on data it has
+never seen, after fees, slippage and tax? Everything else, from the sealed test window
+to the hash-chained trial log, exists so that the answer can't be fooled.
+
 **Status:** paper trading only. No exchange key is installed and no order is sent.
 Versions stay at `0.y.z` until real capital is involved
 ([ADR-027](docs/architecture/adr-027-zero-major-versions-until-real-capital.md)).
 Nothing here is financial advice.
+
+![The read-only console on demo data: portfolio, positions, market checks and activity](docs/images/console-demo.svg)
 
 ## What it does
 
@@ -96,6 +107,17 @@ The full setup, including the git hooks, is in
 `hermes --help` lists every command, and `hermes <command> --help` gives its options and
 exit codes. Most commands accept `--json`.
 
+## Roadmap
+
+| Stage | State |
+| ----- | ----- |
+| Engine, ledger, tax figures and console | Done |
+| Research funnel and strategy sweep | In progress |
+| 90-day shadow test of the winning strategy | Next |
+| Live trading with small real capital | Only after the shadow test and the other gates in [ADR-021](docs/architecture/adr-021-strategy-lifecycle-ready-and-done.md) pass |
+
+Open work is tracked in the [milestones](https://github.com/ricardoafo/hermes/milestones).
+
 ## Quality bar
 
 - mypy in strict mode, ruff, and zero warnings from every linter
@@ -112,6 +134,7 @@ exit codes. Most commands accept `--json`.
 
 | Where | What |
 | ----- | ---- |
+| [`docs/`](docs/README.md) | Index of all documentation. |
 | [`docs/architecture/`](docs/architecture/) | Architecture decision records, numbered in order. |
 | [`docs/guides/`](docs/guides/) | How-to guides: development workflow, tests, releases. |
 | [`docs/decisions/`](docs/decisions/) | Smaller choices that don't need an ADR. |
@@ -123,6 +146,11 @@ exit codes. Most commands accept `--json`.
 Read [`CONTRIBUTING.md`](CONTRIBUTING.md) before opening an issue or a pull request.
 Report security issues privately, as described in [`SECURITY.md`](SECURITY.md).
 This project follows a [code of conduct](CODE_OF_CONDUCT.md).
+
+## Getting help
+
+Open an issue with one of the [templates](https://github.com/ricardoafo/hermes/issues/new/choose).
+This is a single-maintainer project, so replies can take a few days.
 
 ## License
 
