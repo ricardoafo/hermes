@@ -242,13 +242,14 @@ def test_bootstrap_python_pin_is_an_exact_patch_inside_the_supported_range() -> 
 
 
 def test_every_script_a_unit_runs_from_current_deploy_is_in_the_bundle() -> None:
-    """Units run /opt/hermes/current/deploy/<x>.sh, so the bundle job must ship each one."""
+    """Prod and lab units run <release root>/current/deploy/<x>.sh: the bundle ships each one."""
     units = (REPO_ROOT / "deploy" / "systemd").glob("*.service")
     referenced = {
         name
         for unit in units
         for name in re.findall(
-            r"/opt/hermes/current/deploy/([\w.-]+\.sh)", unit.read_text(encoding="utf-8")
+            r"/opt/hermes(?:-staging)?/current/deploy/([\w.-]+\.sh)",
+            unit.read_text(encoding="utf-8"),
         )
     }
     bundle_text = _bundle_text()
